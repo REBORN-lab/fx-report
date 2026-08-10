@@ -44,14 +44,18 @@ class EventsTest(unittest.TestCase):
         self.assertEqual(len(out), 5)
 
     def test_soft_rate_limit_persistent_becomes_gap(self):
+        thai_calls = {"n": 0}
+
         def route(handler):
             q = urllib.parse.unquote_plus(handler.path)
             if "Thai" in q:
+                thai_calls["n"] += 1
                 return (200, LIMIT_TEXT)
             return (200, SAMPLE)
 
         with FixtureServer({"/doc": route}) as srv:
             out, gaps = events.collect(cfg_with(srv))
+        self.assertEqual(thai_calls["n"], 2)    # 初次 + 恰一次重试,锁定重试上界
         self.assertEqual([g["scope"] for g in gaps], ["THB"])
         self.assertIn("rate-limited", gaps[0]["reason"])
         self.assertNotIn("THB", out)
@@ -110,6 +114,19 @@ class EventsTest(unittest.TestCase):
             out, gaps = events.collect(cfg_with(srv))
         self.assertEqual(out, {})
         self.assertEqual(len(gaps), 5)
+        for g in gaps:
+            self.assertIn("unparseable response", g["reason"])
+
+    def test_deeply_nested_json_body_becomes_gap(self):
+        """HTTP 200 + 深嵌套 JSON(10 万层数组)→ json.loads 抛 RecursionError
+        (非 ValueError 子类)。必须就地归入 unparseable 路径记缺漏,
+        绝不穿透 collect() 上抛(硬契约)。"""
+        deep = "[" * 100000 + "]" * 100000
+        with FixtureServer({"/doc": (200, deep)}) as srv:
+            out, gaps = events.collect(cfg_with(srv))
+        self.assertEqual(out, {})
+        self.assertEqual(sorted(g["scope"] for g in gaps),
+                         ["BRL", "EUR", "PHP", "THB", "USD"])
         for g in gaps:
             self.assertIn("unparseable response", g["reason"])
 

@@ -71,7 +71,9 @@ def _fetch(cfg, query):
         return None, "%s: %s" % (type(e).__name__, e)
     try:
         doc = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # RecursionError:深嵌套 JSON 正文令 json.loads 爆栈,非 ValueError 子类,
+        # 必须一并就地转 gap,不得穿透 collect()(硬契约)
         low = text.lower()
         if any(m in low for m in RATE_LIMIT_MARKERS):
             return None, "soft-rate-limited"
