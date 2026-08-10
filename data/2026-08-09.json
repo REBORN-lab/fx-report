@@ -1,0 +1,324 @@
+{
+  "date": "2026-08-09",
+  "run_at": "2026-08-10T17:44:04+00:00",
+  "schema_version": 1,
+  "rates": {
+    "PHP": {
+      "primary": 60.867,
+      "secondary": 60.83432001,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.054,
+      "suspect": false,
+      "prev_primary": 60.867
+    },
+    "THB": {
+      "primary": 33.055,
+      "secondary": 33.04805197,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.021,
+      "suspect": false,
+      "prev_primary": 33.055
+    },
+    "BRL": {
+      "primary": 5.0998,
+      "secondary": 5.08518303,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.287,
+      "suspect": false,
+      "prev_primary": 5.0998
+    },
+    "EUR": {
+      "primary": 0.86693,
+      "secondary": 0.86502508,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.22,
+      "suspect": false,
+      "prev_primary": 0.86693
+    }
+  },
+  "macro": [
+    {
+      "economy": "US",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.US.PCPI_PC_CP_A_PT",
+      "value": 2.70490239715136,
+      "prev": 2.66921301822231,
+      "period": "2025-07",
+      "is_new_release": false
+    },
+    {
+      "economy": "EA",
+      "indicator": "CPI 同比",
+      "series_id": "ECB/ICP/M.U2.N.000000.4.ANR",
+      "value": 1.9,
+      "prev": 2.1,
+      "period": "2025-12",
+      "is_new_release": false
+    },
+    {
+      "economy": "PH",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.PH.PCPI_PC_CP_A_PT",
+      "value": 1.27388535031847,
+      "prev": 1.43426294820717,
+      "period": "2025-05",
+      "is_new_release": false
+    },
+    {
+      "economy": "TH",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.TH.PCPI_PC_CP_A_PT",
+      "value": 0.235355011152928,
+      "prev": 0.463228123163358,
+      "period": "2025-03",
+      "is_new_release": false
+    },
+    {
+      "economy": "BR",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.BR.PCPI_PC_CP_A_PT",
+      "value": 5.22525470407828,
+      "prev": 5.35128523909063,
+      "period": "2025-07",
+      "is_new_release": false
+    },
+    {
+      "economy": "US",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.US",
+      "value": 4.375,
+      "prev": 4.375,
+      "period": "2025-07-08",
+      "is_new_release": false
+    },
+    {
+      "economy": "EA",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.XM",
+      "value": 2.0,
+      "prev": 2.0,
+      "period": "2025-07-08",
+      "is_new_release": false
+    },
+    {
+      "economy": "PH",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.PH",
+      "value": 5.25,
+      "prev": 5.25,
+      "period": "2025-07-04",
+      "is_new_release": false
+    },
+    {
+      "economy": "TH",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.TH",
+      "value": 1.75,
+      "prev": 1.75,
+      "period": "2025-07-03",
+      "is_new_release": false
+    },
+    {
+      "economy": "BR",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.BR",
+      "value": 15.0,
+      "prev": 15.0,
+      "period": "2025-07-07",
+      "is_new_release": false
+    },
+    {
+      "economy": "US",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.US.BCA_BP6_USD",
+      "value": -410248.0,
+      "prev": -306510.0,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "EA",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.U2.BCA_BP6_USD",
+      "value": 68149.5680178591,
+      "prev": 107943.668573,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "PH",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.PH.BCA_BP6_USD",
+      "value": -4247.6822065757,
+      "prev": -4572.33498631775,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "TH",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.TH.BCA_BP6_USD",
+      "value": 11081.8905202786,
+      "prev": 4480.78427177536,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "BR",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.BR.BCA_BP6_USD",
+      "value": -10522.85858349,
+      "prev": -22285.1435033,
+      "period": "2025-Q2",
+      "is_new_release": false
+    }
+  ],
+  "events": {
+    "USD": {
+      "articles": [
+        {
+          "title": "Gold posts 4 . 73 pc weekly gain as US Fed rate hike bets weaken",
+          "url": "https://www.prokerala.com/news/articles/a1797925.html",
+          "domain": "prokerala.com",
+          "seendate": "20260808T093000Z",
+          "tone": null
+        },
+        {
+          "title": "Gold Jumps 4 . 73 % Weekly on Weak US Jobs Data",
+          "url": "https://www.newkerala.com/news/a/gold-posts-473-pc-weekly-gain-as-us-803.htm",
+          "domain": "newkerala.com",
+          "seendate": "20260808T093000Z",
+          "tone": null
+        },
+        {
+          "title": "Gold price jumps as reopening of Strait of Hormuz buzz dents US Fed rate - hike hopes . Is it the right time to buy gold ? ",
+          "url": "https://www.livemint.com/market/commodities/gold-rate-today-jumps-as-strait-of-hormuz-reopening-buzz-dents-us-fed-rate-hike-hopes-is-it-the-right-time-to-buy-gold-11786181435240.html",
+          "domain": "livemint.com",
+          "seendate": "20260808T113000Z",
+          "tone": null
+        },
+        {
+          "title": "Gold posts 4 . 73 pc weekly gain as US Fed rate hike bets weaken",
+          "url": "https://ianslive.in/gold-posts-473-pc-weekly-gain-as-us-fed-rate-hike-bets-weaken--20260808141958",
+          "domain": "ianslive.in",
+          "seendate": "20260808T093000Z",
+          "tone": null
+        },
+        {
+          "title": "Gold , silver prices today : Check rates in Mumbai , Delhi , Bengaluru and Chennai on August 8",
+          "url": "https://www.ibtimes.co.in/gold-silver-prices-today-check-rates-mumbai-delhi-bengaluru-chennai-august-8-904541",
+          "domain": "ibtimes.co.in",
+          "seendate": "20260808T140000Z",
+          "tone": null
+        },
+        {
+          "title": "Aktuelle Kryptokurse : So stehen Bitcoin , Dogecoin & Co . ",
+          "url": "https://www.finanzen.net/nachricht/devisen/kryptokurse-am-vormittag-15860063",
+          "domain": "finanzen.net",
+          "seendate": "20260808T081500Z",
+          "tone": null
+        },
+        {
+          "title": "So entwickeln sich Bitcoin , Ripple & Co am Samstagnachmittag am Kryptomarkt",
+          "url": "https://www.finanzen.ch/nachrichten/devisen/so-entwickeln-sich-bitcoin-ripple-&-co-am-samstagnachmittag-am-kryptomarkt-1036431990",
+          "domain": "finanzen.ch",
+          "seendate": "20260808T170000Z",
+          "tone": null
+        },
+        {
+          "title": "Trump Is Fawning Like A Schoolgirl Over His New Fed Chair Good Looks",
+          "url": "https://crooksandliars.com/2026/08/trump-fawning-schoolgirl-over-his-new-fed",
+          "domain": "crooksandliars.com",
+          "seendate": "20260808T000000Z",
+          "tone": null
+        }
+      ],
+      "tone_avg": null
+    },
+    "EUR": {
+      "articles": [
+        {
+          "title": "Evrozona više nema novca za velike subvencije",
+          "url": "https://capital.ba/evrozona-vise-nema-novca-za-velike-subvencije/",
+          "domain": "capital.ba",
+          "seendate": "20260808T123000Z",
+          "tone": null
+        },
+        {
+          "title": "环球下周看点 ： 美股创新高后迎关键考验 7月通胀数据或决定美联储9月政策走向 _ 东方财富网",
+          "url": "https://finance.eastmoney.com/a/202608093835874125.html",
+          "domain": "finance.eastmoney.com",
+          "seendate": "20260808T223000Z",
+          "tone": null
+        },
+        {
+          "title": "  Nie  dla sprzedaży złota na ten cel . Skrytykowali plan Glapińskiego",
+          "url": "https://www.money.pl/gospodarka/safe-0-do-kosza-ebc-krytykuje-plan-nbp-nie-bedzie-zbrojen-ze-zlota-7316160843626496a.html",
+          "domain": "money.pl",
+          "seendate": "20260808T101500Z",
+          "tone": null
+        },
+        {
+          "title": "Geopolityka zmienia zasady gry . united states sprzedały euro , kupiły jeny i poinformowały Europejski Bank Centralny już po interwencji",
+          "url": "https://www.pb.pl/geopolityka-zmienia-zasady-gry-usa-sprzedaly-euro-kupily-jeny-i-poinformowaly-europejski-bank-centralny-juz-po-interwencji-1265323",
+          "domain": "pb.pl",
+          "seendate": "20260808T110000Z",
+          "tone": null
+        },
+        {
+          "title": "Geldschein - Designer aus Berlin : Millionen Europäer könnten bald ihren Schein in der Tasche haben",
+          "url": "https://www.tagesspiegel.de/kultur/geldschein-designer-aus-berlin-millionen-europaer-konnten-bald-ihren-schein-in-der-tasche-haben-15922967.html",
+          "domain": "tagesspiegel.de",
+          "seendate": "20260808T133000Z",
+          "tone": null
+        },
+        {
+          "title": "Calendar : What investors need to know for the week ahead",
+          "url": "https://www.theglobeandmail.com/investing/markets/inside-the-market/article-calendar-what-investors-need-to-know-for-the-week-ahead-152/",
+          "domain": "theglobeandmail.com",
+          "seendate": "20260808T200000Z",
+          "tone": null
+        },
+        {
+          "title": "Alpha Bank : Οι μεσοπρόθεσμες προοπτικές για το εισόδημα των νοικοκυριών ... ",
+          "url": "https://www.capital.gr/epixeiriseis/4009894/alpha-bank-oi-mesoprothesmes-prooptikes-gia-to-eisodima-ton-noikokurion-paramenoun-eunoikes/",
+          "domain": "capital.gr",
+          "seendate": "20260808T111500Z",
+          "tone": null
+        },
+        {
+          "title": "Alpha Bank : Ευνοϊκές προοπτικές για το διαθέσιμο εισόδημα και την περιουσιακή θέση των ελληνικών νοικοκυριών",
+          "url": "https://www.mikrometoxos.gr/alpha-bank-evnoikes-prooptikes-gia-to-diathesimo-eisodima-kai-tin-periousiaki-thesi-ton-ellinikon-noikokyrion/",
+          "domain": "mikrometoxos.gr",
+          "seendate": "20260808T193000Z",
+          "tone": null
+        }
+      ],
+      "tone_avg": null
+    }
+  },
+  "calendar_hits": [],
+  "gaps": [
+    {
+      "source": "gdelt",
+      "scope": "PHP",
+      "reason": "HTTPError: HTTP Error 429: Too Many Requests",
+      "at": "2026-08-10T17:43:32+00:00"
+    },
+    {
+      "source": "gdelt",
+      "scope": "THB",
+      "reason": "HTTPError: HTTP Error 429: Too Many Requests",
+      "at": "2026-08-10T17:43:48+00:00"
+    },
+    {
+      "source": "gdelt",
+      "scope": "BRL",
+      "reason": "HTTPError: HTTP Error 429: Too Many Requests",
+      "at": "2026-08-10T17:44:04+00:00"
+    }
+  ],
+  "meta": {
+    "collector_version": "0.1.0"
+  }
+}
