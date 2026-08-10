@@ -1385,7 +1385,7 @@ git commit -m "feat(fx): 快照聚合主入口,单源失败不中断(tasks 2.4)"
 
 **验收标准:** 逐源故障注入下,其余源照常采集且 gaps 符合 spec 场景(覆盖"主源失败降级""端点不可用""部分源失败时快照完整"的**聚合层**表现;单模块行为已在任务 4–7 覆盖)。本任务全部走 `python3 -m scripts.collect` 真实入口(唯一差别是 endpoints 指向 fixture)。
 
-- [ ] **Step 1: 写测试 `tests/test_fault_injection.py`**
+- [x] **Step 1: 写测试 `tests/test_fault_injection.py`**
 
 ```python
 """聚合层故障注入矩阵:每次打掉一个源,断言其余源完好、gaps 精确。"""
@@ -1478,16 +1478,16 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑本文件测试**
+- [x] **Step 2: 跑本文件测试**
 
 Run: `python3 -m unittest tests.test_fault_injection -v` — Expected: 6 tests, `OK`
 
-- [ ] **Step 3: 全量回归并记录实测数字**
+- [x] **Step 3: 全量回归并记录实测数字**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: 全部 `OK`。**把命令输出的实际测试数抄进 commit message(硬规则:先跑后抄,禁止先写预期)。**
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/test_fault_injection.py

@@ -7,10 +7,9 @@
 
 ## 当前任务
 
-- Plan task: Task 9: 采集层故障注入矩阵(tasks.md 2.5)
-- Plan 行区间: 1381-1495
-- OpenSpec task 文本: "2.5 采集层故障注入测试:逐源模拟失败,验证其余源照常采集且 gaps 记录符合 spec 场景"
-- 阶段: implementer 待派发
+- Plan task: Task 10: 决策日志 + 复盘脚本(tasks.md 3.2 的脚本部分)
+- Plan 行区间: 1499-1932
+- 阶段: implementer 待派发(采集层 2.1-2.5 已全部完成,进入日报生成层)
 
 ## 全局备忘
 
@@ -28,3 +27,4 @@
 - Task 6(tasks.md 2.3): 实现 3644a43 + f9cbe94(timespan 24h→48h 归位,根因:协调者派发漏贴模板 _window);spec ✅ 零缺零多(nit×2 移交);quality 攻击 20 形态 0 上抛但深探针发现 RecursionError 穿透窄捕获,Ready-No(Important×1),轮 1 修复 4fbc4b6(except 元组加 RecursionError+10 万层深嵌套测试+Thai 计数断言==2),定向复审 ✅(变异 0 次/2 次重试均被击杀,RED 重放实证,零 issue);接受不修 Minor#1(限速文案在合法 JSON 内,GDELT 实测纯文本)、nit#1(cfg["backfill"] 下标 fail-fast);测试 test_events 13/13,全量 52/52(先跑后抄);plan 区间 810-1045 勾 6/6,tasks.md 2.3 task-checkoff PASS
 - Task 7(plan 年历命中,tasks.md 2.4 部分): 实现 4c7160b;spec ✅ 零缺零多(真实年历 08-26/08-27 命中 BOT/BSP 实测正确);quality ✅ 零轮修复(Ready-Yes,攻击 31 形态 0 上抛,RecursionError 被整体 except Exception 接住实测确认;Minor×3 均不阻塞: #1 非 ISO valid_until 告警静默失效→转 Task 16 README 约束,#2 三处 gap 计数断言略松、#3 RecursionError 无锁定测试→接受,后续轮次如有回炉顺带);测试 test_calendar 11/11,全量 63/63(先跑后抄);plan 区间 1049-1159 勾 5/5;tasks.md 2.4 待 Task 8 完成后勾
 - Task 8(tasks.md 2.4): 实现 4c5c376;spec ✅ 零缺零多(schema 逐键实测 diff);quality Ready-No(Important×2: prev 捕获缺 RecursionError 与 Task 6 同型、兜底无锁定测试),轮 1 修复 53e69d1(捕获元组+RecursionError、prev 顶层非 dict 门+gap、兜底 mock 锁定测试、原子落盘 temp+os.replace),定向复审 ✅(变异 4/4 被杀含原子落盘变异,攻击重放 7 形态全过,无同类残留:prev 是唯一模块级兜底之外的外部 JSON 读取点已收口);判定接受: data_dir 只读 rc=1、prev 内层形态错模块级容错、CLI 非 0、dump 中途异常 .tmp 残留;测试 test_snapshot 7/7,全量 70/70(先跑后抄);plan 区间 1163-1377 勾 6/6,tasks.md 2.4 task-checkoff PASS
+- Task 9(tasks.md 2.5): 提交 6e39d4a(纯测试任务,首跑 6/6 全绿无 RED 如实记录);spec ✅(3 Scenario 映射完整、真实入口、N=76 无虚报;与模板除末尾 1 空行外逐字一致——"零偏离"自报被比对修正入档);quality ✅ 零轮修复(变异实证 4 组: 降级路径破坏 3/6 挂、兜底删除矩阵不受影响而 test_snapshot 锁定测试挂——分工互补无盲区、gaps 聚合漏 extend 两组各被击杀且为聚合层唯一防线;Minor×3 接受: dbnomics 用例与 test_snapshot 真子集重复、双挂用例集合断言偏松、5/6 用例 rc 未断言——均为 plan 定死模板固有);全量 76/76(先跑后抄);plan 区间 1381-1495 勾 4/4,tasks.md 2.5 task-checkoff PASS
