@@ -99,7 +99,7 @@ data/  briefs/  reports/daily/  reports/weekly/   输出目录(.gitkeep 占位)
 
 **验收标准:** 目录树与"文件结构总览"一致;README 有目标概述段;`python3 -m unittest discover -s tests -t .` 可运行(0 个测试也算通过)。
 
-- [ ] **Step 1: 建目录与占位文件**
+- [x] **Step 1: 建目录与占位文件**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -109,7 +109,7 @@ touch data/.gitkeep briefs/.gitkeep reports/daily/.gitkeep reports/weekly/.gitke
       config/.gitkeep state/.gitkeep skills/.gitkeep tests/fixtures/.gitkeep
 ```
 
-- [ ] **Step 2: 写 `.gitignore`**
+- [x] **Step 2: 写 `.gitignore`**
 
 ```
 __pycache__/
@@ -117,7 +117,7 @@ __pycache__/
 .pytest_cache/
 ```
 
-- [ ] **Step 3: 写 `README.md` 目标概述段(运行文档在 Task 16 补全)**
+- [x] **Step 3: 写 `README.md` 目标概述段(运行文档在 Task 16 补全)**
 
 ```markdown
 # macro — 五币种外汇日报/周报管线
@@ -132,12 +132,12 @@ Slack 推送与 cron 调度由使用者自行接线(范围外)。
 (运行文档见下文,由实施任务 16 补全。)
 ```
 
-- [ ] **Step 4: 验证测试骨架可运行**
+- [x] **Step 4: 验证测试骨架可运行**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: `Ran 0 tests` + `OK`(或 `NO TESTS RAN`,退出码 0/5 均可,只要无 import 错误)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .gitignore README.md scripts tests data briefs reports config state skills
