@@ -8,7 +8,7 @@
     {"bank": "BOT", "url": "https://www.bot.or.th/en/our-roles/monetary-policy/mpc-meeting.html"},
     {"bank": "BCB", "url": "https://www.bcb.gov.br/htms/copom_normas/copomcalend.asp"}
   ],
-  "maintenance": "每年 12 月按 sources 官网更新次年日程:新增次年 events、顺延 valid_until;文件名 calendar-<年>.json,采集入口自动取字典序最大的 state/calendar-*.json。",
+  "maintenance": "每年 12 月创建新文件 state/calendar-<次年>.json(不修改本文件),写入该年五行 events 与对应 valid_until;采集入口自动取字典序最大的 state/calendar-*.json,无需改代码;旧文件保留存档。",
   "events": [
     {"date": "2026-08-26", "bank": "BOT", "event": "MPC 货币政策会议(2026年第4次,决议公布日)"},
     {"date": "2026-08-27", "bank": "BSP", "event": "Monetary Board 货币政策会议(2026年第4次)"},
