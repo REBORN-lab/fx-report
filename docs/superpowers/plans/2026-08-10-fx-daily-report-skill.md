@@ -2672,7 +2672,7 @@ git commit -m "feat(fx): 周报端到端验收通过(tasks 4.2)——复核结�
 
 **验收标准:** 文档覆盖:无头模式命令、可选环境变量、目录说明、年历维护方式、交付边界;命令与实际实现逐字一致(照抄 Task 13/15 实际用过的命令)。
 
-- [ ] **Step 1: 在 README.md 追加以下章节(命令须与端到端实测一致,不一致以实测为准修正)**
+- [x] **Step 1: 在 README.md 追加以下章节(命令须与端到端实测一致,不一致以实测为准修正)**
 
 ```markdown
 ## 运行
@@ -2725,12 +2725,12 @@ git commit -m "feat(fx): 周报端到端验收通过(tasks 4.2)——复核结�
 (`scripts/check_report.py`)在每次生成后强制执行该纪律。
 ```
 
-- [ ] **Step 2: 复核文档命令可执行**
+- [x] **Step 2: 复核文档命令可执行**
 
 Run: `python3 -m unittest discover -s tests -t . -v && python3 -m scripts.collect --help`
 Expected: 测试全过;help 正常输出。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md

@@ -7,10 +7,10 @@
 
 ## 当前任务
 
-- Plan task: Task 16: README 运行文档(tasks.md 5.1)
-- Plan 行区间: 2668-2738
-- OpenSpec task 文本: "5.1 README 运行文档:无头模式命令、环境变量(FRED key 可选)、目录说明、年历维护方式、\"交付/调度自行接线\"边界说明"
-- 阶段: implementer 待派发(带全局备忘三条 README 硬要求)
+- Plan task: Task 17: 场景覆盖核对表(tasks.md 5.2,最后一个任务)
+- Plan 行区间: 2742-2796
+- OpenSpec task 文本: "5.2 对照三份 spec 的全部 Scenario 逐条核对已覆盖,记录核对结果"
+- 阶段: implementer 待派发(带全局备忘 spec 措辞漂移处理项)
 
 ## 全局备忘
 
@@ -41,3 +41,4 @@
 - Task 13(tasks.md 3.3): 验收提交 5e66805(四产物,RED/GREEN=N/A);真实运行两轮(第一轮 acceptEdits 内层 python3 无人可批零产物→第二轮加 --allowedTools 白名单全通,CHECK PASSED 一次通过);spec ✅ 独立复核全项(数字全查 6/6 含错误码、gaps 5/5 逐字对应、日志 schema/语义全对、叙事无违禁);quality(叙事)✅ Ready-Yes 6/10(缺漏日+首次运行诚实样本: EUR 链条完整、零流水账、零编造;Important×2 系统性改进候选转 verify 决策,Minor 为零信息日诚实代价);观察清单全执行(heredoc 被安全解析器拦→内层自发临时文件 stdin 等效替代仍经脚本代笔;USD null;无警告行;suspect 场景不适用);全量 133/133;plan 区间 2367-2420 勾 4/4,tasks.md 3.3 task-checkoff PASS
 - Task 14(tasks.md 4.1): 实现 4ba5c6b(SKILL md5 与围栏一致+check_weekly+7 测试+symlink;RED 7 ERROR 占位穿透);spec ✅ 零问题(四 Scenario 全映射、daily 零改动、CLI 双向冒烟);quality 双向攻击+变异 6/8 击杀,Ready-No(Important×1: M6 CURRENCY_MISSING 无反向断言——plan 测试网缺口),轮 1 修复 a71c1cd(make_weekly 加 currency_body 默认逐字节不变+缺币种用例含前置自检),定向复审 ✅(M6 独立重放唯一击杀、9/9 BYTE-IDENTICAL、零 issue);Minor 记档→Task 15 观察清单(顿号编号绕过、变体日期标题、N=0 校验器不拦、token 子串碰撞、缺漏节蹭覆盖、嵌套子弹误拦安全侧、样本 3token 失真);测试 32/32,全量 141/141(先跑后抄);plan 区间 2424-2612 勾 6/6,tasks.md 4.1 task-checkoff PASS
 - Task 15(tasks.md 4.2): 验收提交 b069801(3 回填日报升序+周报 2026-W33,11 文件全产物;CHECK 全首轮通过);spec ✅ 独立复核 9 项全过(五次校验器重跑、stats 20 条明细逐字顺序一致、缺漏 19 条双向 0 缺 0 冗、复盘链自洽、数字 11 个逐字命中);quality(叙事)✅ Ready-Yes 7/10(主线诚实真主题、归因跨日综合零硬凑、Important×3 模板缺口转 verify 决策;"三日快照冻结"疑点经协调者实测澄清为周末休市);verdict 缝隙第一现场: 内层对"触发发生+方向 null"保守判无法判定——SKILL 缝隙未致误判;观察清单全执行;全量 141/141;plan 区间 2616-2664 勾 4/4,tasks.md 4.2 task-checkoff PASS
+- Task 16(tasks.md 5.1): 实现 d6f6484(README 66 行纯追加);合并审查 ✅(spec 五要素/修正 A-D 全落实,claude 命令与实测纪录逐字一致,事实层逐项对照源码印证——年历排序选取/持续告警/非 ISO 静默失效/FRED 零 key 语义/GDELT 常量全吻合;可用性 Minor×2 不阻塞: 未列"需装 claude CLI"前置、既有行"任务 16"黑话受纯追加约束留后续清理);测试命令实测 141 OK 后写入;plan 区间 2668-2738 勾 3/3,tasks.md 5.1 task-checkoff PASS
