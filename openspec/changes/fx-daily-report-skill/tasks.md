@@ -7,7 +7,7 @@
 
 ## 2. 数据采集层(fx-data-collection)
 
-- [ ] 2.1 汇率采集模块:Frankfurter 主源取 USD 兑 PHP/THB/BRL/EUR,exchange-api 版本化端点交叉校验,偏差 >0.5% 标记可疑,主源失败降级并记缺漏
+- [x] 2.1 汇率采集模块:Frankfurter 主源取 USD 兑 PHP/THB/BRL/EUR,exchange-api 版本化端点交叉校验,偏差 >0.5% 标记可疑,主源失败降级并记缺漏
 - [ ] 2.2 宏观采集模块:按 design 阶段确定的指标清单从 DBnomics 取最新值/前值,FRED release dates 判定前日美国数据发布(无 key 时降级记缺漏)
 - [ ] 2.3 GDELT 事件采集模块:五币种关键词组串行查询(间隔 ≥5s),识别"200 但正文为限速提示"软失败并退避重试一次,失败记缺漏
 - [ ] 2.4 快照聚合:年历对照标注 + 全部采集结果落盘 `data/YYYY-MM-DD.json`(含逐源状态与 gaps 结构),单源失败不中断

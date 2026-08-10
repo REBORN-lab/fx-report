@@ -348,7 +348,7 @@ git commit -m "test(fx): 本地 fixture HTTP 服务器测试基建(tasks 2.5 前
 - Scenario"双源偏差超阈":偏差 >0.5% → `suspect: true` 且保留两源数值
 - 追加(Design 降级矩阵):双源全挂 → 四币种 `primary: null`,gaps 记两条,不抛异常
 
-- [ ] **Step 1: 写 `config/endpoints.json`(一次写全 5 个源的完整 URL 模板;后续任务不再改动)**
+- [x] **Step 1: 写 `config/endpoints.json`(一次写全 5 个源的完整 URL 模板;后续任务不再改动)**
 
 ```json
 {
@@ -363,7 +363,7 @@ git commit -m "test(fx): 本地 fixture HTTP 服务器测试基建(tasks 2.5 前
 }
 ```
 
-- [ ] **Step 2: 实测线上端点形态并按需修正模板(只改 JSON,不改代码)**
+- [x] **Step 2: 实测线上端点形态并按需修正模板(只改 JSON,不改代码)**
 
 ```bash
 curl -s "https://api.frankfurter.dev/v1/2026-08-08?base=USD&symbols=PHP,THB,BRL,EUR" | head -c 300; echo
@@ -373,7 +373,7 @@ curl -s "https://2026-08-08.currency-api.pages.dev/v1/currencies/usd.json" | hea
 
 Expected: 第一条返回 `{"base":"USD",...,"rates":{"PHP":...}}`;后两条返回 `{"date":...,"usd":{...}}`。任何一条形态不符(如 Frankfurter 实为 `/v2/rates?quotes=`)→ 修正 `endpoints.json` 里的模板与(必要时)解析键名,把实测输出粘进 commit message。exchange-api 若日期版本号格式不同(如 `2026.8.8`),在模板里保留 `{date}` 并在 rates.py 的 `_secondary_date()` 做格式转换。
 
-- [ ] **Step 3: 写 `scripts/collect/util.py`**
+- [x] **Step 3: 写 `scripts/collect/util.py`**
 
 ```python
 """采集层共用:urllib 封装 + gap 构造。标准库 only。"""
@@ -400,7 +400,7 @@ def make_gap(source, scope, reason):
     return {"source": source, "scope": scope, "reason": reason, "at": now_iso()}
 ```
 
-- [ ] **Step 4: 写失败测试 `tests/test_rates.py`**
+- [x] **Step 4: 写失败测试 `tests/test_rates.py`**
 
 ```python
 import json
@@ -487,12 +487,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 5: 跑测试确认失败**
+- [x] **Step 5: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_rates -v`
 Expected: FAIL/ERROR(`rates` 无 `collect`)
 
-- [ ] **Step 6: 写 `scripts/collect/rates.py`**
+- [x] **Step 6: 写 `scripts/collect/rates.py`**
 
 ```python
 """汇率双源采集:Frankfurter 主源 + exchange-api 交叉校验。"""
@@ -566,12 +566,12 @@ def _prev_primary(cfg):
     return out
 ```
 
-- [ ] **Step 7: 跑测试确认通过**
+- [x] **Step 7: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_rates -v`
 Expected: 6 tests, `OK`
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add config/endpoints.json scripts/collect/util.py scripts/collect/rates.py tests/test_rates.py
