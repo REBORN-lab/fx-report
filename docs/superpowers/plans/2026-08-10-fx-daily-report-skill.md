@@ -201,7 +201,7 @@ git commit -m "feat(fx): 五央行 2026 静态议息年历(tasks 1.2)"
 
 **验收标准:** 本地 fixture HTTP 服务器可按路径前缀返回定制响应(静态元组或可调用),支撑后续全部故障注入测试(Design"Testing:本地 fixture + 注入")。
 
-- [ ] **Step 1: 写 `tests/helpers.py`**
+- [x] **Step 1: 写 `tests/helpers.py`**
 
 ```python
 """测试基建:本地 fixture HTTP 服务器与测试配置构造。零第三方依赖。"""
@@ -289,7 +289,7 @@ def make_test_root(tmp, endpoints, indicators=None, calendar=None):
     return tmp
 ```
 
-- [ ] **Step 2: 写自测 `tests/test_helpers.py`**
+- [x] **Step 2: 写自测 `tests/test_helpers.py`**
 
 ```python
 import json
@@ -322,12 +322,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑测试**
+- [x] **Step 3: 跑测试**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: 2 tests, `OK`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/helpers.py tests/test_helpers.py

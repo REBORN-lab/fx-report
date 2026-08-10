@@ -7,16 +7,20 @@
 
 ## 当前任务
 
-- Plan task: Task 2: 五央行静态年历(tasks.md 1.2)
-- Plan 勾选目标文本: Task 2 节内 4 个 Step checkbox(行区间约 149-195)
-- OpenSpec task 文本: "1.2 制作五央行(Fed/ECB/BSP/BOT/BCB)议息静态年历数据文件,含\"有效期至\"字段与维护说明"
+- Plan task: Task 3: 测试基建 FixtureServer(tasks.md 2.5 前置)
+- Plan 勾选目标文本: Task 3 节内 4 个 Step checkbox(行区间约 197-335)
+- OpenSpec task 文本: 无直接映射(tasks.md 2.5 在 Task 9 完成后勾选)
 - 阶段: quality-review 修复中(第 1 轮)
-- 实现提交: d8194e4(state/calendar-2026.json,15 events,五行各 3 条)
-- RED/GREEN 证据: RED=N/A(数据文件);GREEN=json.tool OK + 结构核验
-- 已过审查: spec ✅(15 日期五行独立网查一致,BCB 顾虑被质量审查独立复核解决)
-- 未解决反馈: quality Important×1 — maintenance 字段文案自相矛盾("原地编辑"vs"每年新建文件"两读法互斥),reviewer 建议改为"每年 12 月创建新文件 calendar-<次年>.json(不修改本文件)…";Minor×3 不阻塞(bank→currency 映射、updated_at 用途说明、events 二级排序,留给 Task 16/后续)
+- 实现提交: 648a4be
+- RED/GREEN 证据: RED=ModuleNotFoundError(记录在案);GREEN=2 tests OK
+- 已过审查: spec ✅(字节级一致;更正入档:make_test_cfg 键数=12 非 13,系协调者笔误)
+- 未解决反馈: quality Important×1 — FixtureServer serve_forever 默认 poll_interval=0.5s 致每次 teardown ~0.5s(22 处调用放大;修复=lambda poll_interval=0.05,审查员实测 25 倍提速零回归);顺带 Minor:路由顺序语义写进 docstring、query string 透传显式断言。此为计划级缺陷,修复=偏离计划字节一致,理由入 commit。其余 Minor(ensure_ascii 风格、静态非 200 元组覆盖、DEAD_URL 环境假设注释)接受不阻塞
 - 修复轮次: 1(修复 agent 已派发)
-- 备忘: Task 16 README 年历维护章节必须采用修正后文案,不得照抄 plan L173 原文
+
+## 全局备忘
+
+- Task 16 README 年历维护章节必须采用修正后文案("每年 12 月创建新文件 state/calendar-<次年>.json(不修改本文件)…旧文件保留存档",且把"五行 events"说清为"五家央行各自的全年 events"),不得照抄 plan L2717-2719 原文
+- Task 2 已接受 Minor(不阻塞): bank→currency 映射、updated_at 用途说明、events 二级排序
 
 ## 已完成任务
 
