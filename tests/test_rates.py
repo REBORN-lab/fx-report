@@ -266,6 +266,58 @@ class RatesTest(unittest.TestCase):
             self.assertIsNone(out[c]["primary_source"])
             self.assertIsNone(out[c]["primary"])
 
+    def test_frankfurter_rates_scalar_degrades_to_secondary(self):
+        # 第 3 轮复审终局反馈 Critical:{"rates": 1}(真值标量,非 falsy)时
+        # `or {}` 惯用法不生效(1 为真值,or 短路保留原值),got 仍是 int 1,
+        # 行 50 `if c not in got` 对 int 做成员判断 → 未捕获 TypeError,
+        # collect() 整体崩溃。真值标量应视同异常形态,四币种降级到 exchange-api。
+        frank_scalar = dict(FRANK, rates=1)
+        with FixtureServer({"/frank": (200, json.dumps(frank_scalar)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertEqual(out[c]["primary_source"], "exchange-api")
+            self.assertIsNotNone(out[c]["primary"])
+        self.assertEqual(gaps, [])
+
+    def test_exchange_api_usd_scalar_secondary_all_none(self):
+        # 对称回归:{"usd": 1} 同样触发 `or {}` 对真值标量放行失效,原实现在
+        # 行 86 `key not in usd` 处对 int 做成员判断 → 未捕获 TypeError。
+        # 真值标量应视同异常形态,secondary 全 None,primary(frankfurter)不受影响。
+        exch_scalar = dict(EXCH, usd=1)
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(exch_scalar))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertIsNone(out[c]["secondary"])
+            self.assertIsNotNone(out[c]["primary"])
+            self.assertEqual(out[c]["primary_source"], "frankfurter")
+        exch_gaps = [g for g in gaps if g["source"] == "exchange-api"]
+        self.assertEqual(len(exch_gaps), 1)
+        self.assertEqual(exch_gaps[0]["scope"], "all")
+
+    def test_prev_snapshot_scalar_and_rates_scalar_prev_primary_all_none(self):
+        # 第 3 轮复审终局反馈 Important:prev_snapshot 本身或其 rates 字段为
+        # 真值标量时,`or {}` 同样放行失效。prev_snapshot=5 时对 int 调用
+        # `.get("rates")` → AttributeError;prev_snapshot={"rates":"x"} 时
+        # `snap.get("rates") or {}` 放行字符串 "x",随后对 str 调用 `.items()`
+        # → AttributeError。两种形态均应视同异常,prev_primary 全部为 None。
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            cfg = cfg_with(srv)
+            cfg["prev_snapshot"] = 5
+            out, _ = rates.collect(cfg)
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertIsNone(out[c]["prev_primary"])
+
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            cfg = cfg_with(srv)
+            cfg["prev_snapshot"] = {"rates": "x"}
+            out, _ = rates.collect(cfg)
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertIsNone(out[c]["prev_primary"])
+
 
 if __name__ == "__main__":
     unittest.main()

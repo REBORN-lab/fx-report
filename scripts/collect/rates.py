@@ -44,7 +44,9 @@ def _fetch_primary(cfg, gaps):
         return {}, False
     if not isinstance(doc, dict):
         doc = {}
-    got = doc.get("rates") or {}
+    got = doc.get("rates")
+    if not isinstance(got, dict):
+        got = {}
     out = {}
     for c in CURRENCIES:
         if c not in got:
@@ -79,7 +81,9 @@ def _fetch_secondary(cfg, gaps):
         ok = True
         if not isinstance(doc, dict):
             doc = {}
-        usd = doc.get("usd") or {}
+        usd = doc.get("usd")
+        if not isinstance(usd, dict):
+            usd = {}
         got = {}
         for c in CURRENCIES:
             key = c.lower()
@@ -97,9 +101,14 @@ def _fetch_secondary(cfg, gaps):
 
 
 def _prev_primary(cfg):
-    snap = cfg.get("prev_snapshot") or {}
+    snap = cfg.get("prev_snapshot")
+    if not isinstance(snap, dict):
+        snap = {}
+    snap_rates = snap.get("rates")
+    if not isinstance(snap_rates, dict):
+        snap_rates = {}
     out = {}
-    for c, entry in (snap.get("rates") or {}).items():
+    for c, entry in snap_rates.items():
         if isinstance(entry, dict) and entry.get("primary") is not None:
             out[c] = entry["primary"]
     return out
