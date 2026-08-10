@@ -3,7 +3,7 @@
 ## 1. 仓库骨架与静态数据
 
 - [x] 1.1 建立目录结构(`scripts/`、`skills/`、`data/`、`reports/daily/`、`reports/weekly/`、`state/`)与 `.gitignore`,README 写一段目标概述
-- [ ] 1.2 制作五央行(Fed/ECB/BSP/BOT/BCB)议息静态年历数据文件,含"有效期至"字段与维护说明
+- [x] 1.2 制作五央行(Fed/ECB/BSP/BOT/BCB)议息静态年历数据文件,含"有效期至"字段与维护说明
 
 ## 2. 数据采集层(fx-data-collection)
 

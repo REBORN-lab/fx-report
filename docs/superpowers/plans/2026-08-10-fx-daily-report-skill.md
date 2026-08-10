@@ -155,9 +155,9 @@ git commit -m "chore(fx): 仓库骨架与输出目录(tasks 1.1)"
 
 **数据纪律(硬规则):日程日期禁止凭记忆填写。**必须用 WebSearch/WebFetch 逐家查官方日程页(Fed: federalreserve.gov FOMC calendars;ECB: ecb.europa.eu Governing Council schedule;BSP: bsp.gov.ph Monetary Policy calendar;BOT: bot.or.th MPC schedule;BCB: bcb.gov.br COPOM calendário),把来源 URL 记入 `sources`。任何一家查不到官方 2026 日程 → 该行 events 留空并在 `maintenance` 注明,不得填臆测日期;若执行环境无网络搜索能力,暂停此任务并上报用户。
 
-- [ ] **Step 1: 逐家央行 WebSearch/WebFetch 取 2026 官方议息日程,记录来源 URL**
+- [x] **Step 1: 逐家央行 WebSearch/WebFetch 取 2026 官方议息日程,记录来源 URL**
 
-- [ ] **Step 2: 写 `state/calendar-2026.json`(结构如下,dates 用第 1 步实查结果)**
+- [x] **Step 2: 写 `state/calendar-2026.json`(结构如下,dates 用第 1 步实查结果)**
 
 ```json
 {
@@ -180,12 +180,12 @@ git commit -m "chore(fx): 仓库骨架与输出目录(tasks 1.1)"
 
 (`events` 逐条一行一个会议日;两天会议写两条或写决议公布日,按官网口径,并在 event 文本注明。可顺带加入主要统计发布日,如美国 CPI 发布日,`bank` 字段用 `"US-BLS"` 等标识,非必需。)
 
-- [ ] **Step 3: 校验 JSON 合法**
+- [x] **Step 3: 校验 JSON 合法**
 
 Run: `python3 -m json.tool state/calendar-2026.json > /dev/null && echo OK`
 Expected: `OK`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add state/calendar-2026.json

@@ -7,15 +7,17 @@
 
 ## 当前任务
 
-- Plan task: Task 1: 仓库骨架与目录(tasks.md 1.1)
-- Plan 勾选目标文本: 5 个 Step checkbox(Task 1 节内)
-- OpenSpec task 文本: "1.1 建立目录结构(`scripts/`、`skills/`、`data/`、`reports/daily/`、`reports/weekly/`、`state/`)与 `.gitignore`,README 写一段目标概述"
-- 阶段: quality-review(spec 审查已 ✅,零问题)
-- 实现提交: e486101(13 个新文件)
-- RED/GREEN 证据: RED=N/A(纯脚手架,计划未要求);GREEN=`python3 -m unittest discover -s tests -t . -v` → Ran 0 tests, NO TESTS RAN, exit 5(计划允许)
-- 已过审查: 无
-- 修复轮次: 0
+- Plan task: Task 2: 五央行静态年历(tasks.md 1.2)
+- Plan 勾选目标文本: Task 2 节内 4 个 Step checkbox(行区间约 149-195)
+- OpenSpec task 文本: "1.2 制作五央行(Fed/ECB/BSP/BOT/BCB)议息静态年历数据文件,含\"有效期至\"字段与维护说明"
+- 阶段: quality-review 修复中(第 1 轮)
+- 实现提交: d8194e4(state/calendar-2026.json,15 events,五行各 3 条)
+- RED/GREEN 证据: RED=N/A(数据文件);GREEN=json.tool OK + 结构核验
+- 已过审查: spec ✅(15 日期五行独立网查一致,BCB 顾虑被质量审查独立复核解决)
+- 未解决反馈: quality Important×1 — maintenance 字段文案自相矛盾("原地编辑"vs"每年新建文件"两读法互斥),reviewer 建议改为"每年 12 月创建新文件 calendar-<次年>.json(不修改本文件)…";Minor×3 不阻塞(bank→currency 映射、updated_at 用途说明、events 二级排序,留给 Task 16/后续)
+- 修复轮次: 1(修复 agent 已派发)
+- 备忘: Task 16 README 年历维护章节必须采用修正后文案,不得照抄 plan L173 原文
 
 ## 已完成任务
 
-(无)
+- Task 1(tasks.md 1.1): 提交 e486101;spec ✅ / quality ✅(Ready to merge: Yes,零 issue);勾选提交 aa58bca;审查轮次 0
