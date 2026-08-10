@@ -31,10 +31,18 @@ def build_cfg(date_str, root=ROOT):
         try:
             with open(prev_path, encoding="utf-8") as f:
                 prev_snapshot = json.load(f)
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, RecursionError) as e:
             prev_gap = util.make_gap(
                 "snapshot", "prev",
                 "corrupt prev snapshot %s: %s: %s" % (yesterday, type(e).__name__, e))
+        else:
+            # 合法 JSON 但顶层非 dict:同样属于"prev 退化",必须可见,不得静默
+            if not isinstance(prev_snapshot, dict):
+                prev_gap = util.make_gap(
+                    "snapshot", "prev",
+                    "corrupt prev snapshot %s: top-level %s, expected dict"
+                    % (yesterday, type(prev_snapshot).__name__))
+                prev_snapshot = None
     cals = sorted(glob.glob(os.path.join(root, "state", "calendar-*.json")))
     return {
         "date": date_str,
@@ -93,8 +101,10 @@ def main(argv=None):
     snapshot = run(cfg)
     os.makedirs(cfg["data_dir"], exist_ok=True)
     out_path = os.path.join(cfg["data_dir"], args.date + ".json")
-    with open(out_path, "w", encoding="utf-8") as f:
+    # 原子落盘:先写 .tmp 再 os.replace,避免中途被杀留半个 JSON 给下游
+    with open(out_path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    os.replace(out_path + ".tmp", out_path)
     print("snapshot: %s" % out_path)
     print("gaps: %d" % len(snapshot["gaps"]))
     for g in snapshot["gaps"]:

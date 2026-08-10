@@ -90,6 +90,56 @@ class SnapshotTest(unittest.TestCase):
         self.assertIsNone(snap["rates"]["PHP"]["prev_primary"])
         self.assertEqual(snap["rates"]["PHP"]["primary"], 60.843)
 
+    def test_deeply_nested_prev_snapshot_gap_not_crash(self):
+        """前日快照深嵌套触发 RecursionError:不崩、记 (snapshot, prev) gap、当日快照照常落盘。"""
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            make_test_root(tmp, endpoints(srv), indicators=IND)
+            with open(os.path.join(tmp, "data", "2026-08-09.json"), "w", encoding="utf-8") as f:
+                f.write("[" * 100000)
+            rc = entry.main(["--date", "2026-08-10", "--root", tmp])
+            self.assertEqual(rc, 0)
+            with open(os.path.join(tmp, "data", "2026-08-10.json"), encoding="utf-8") as f:
+                snap = json.load(f)
+        self.assertEqual([(g["source"], g["scope"]) for g in snap["gaps"]],
+                         [("snapshot", "prev")])
+        self.assertTrue(snap["gaps"][0]["reason"])
+        self.assertIsNone(snap["rates"]["PHP"]["prev_primary"])
+        self.assertEqual(snap["rates"]["PHP"]["primary"], 60.843)
+
+    def test_prev_snapshot_top_level_non_dict_gap(self):
+        """前日快照为合法 JSON 但顶层非 dict(list):记 gap、prev_primary 退化 None、当日照常。"""
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            make_test_root(tmp, endpoints(srv), indicators=IND)
+            with open(os.path.join(tmp, "data", "2026-08-09.json"), "w", encoding="utf-8") as f:
+                json.dump([1, 2, 3], f)
+            rc = entry.main(["--date", "2026-08-10", "--root", tmp])
+            self.assertEqual(rc, 0)
+            with open(os.path.join(tmp, "data", "2026-08-10.json"), encoding="utf-8") as f:
+                snap = json.load(f)
+        self.assertEqual([(g["source"], g["scope"]) for g in snap["gaps"]],
+                         [("snapshot", "prev")])
+        self.assertIn("list", snap["gaps"][0]["reason"])   # reason 注明实际形态
+        self.assertIsNone(snap["rates"]["PHP"]["prev_primary"])
+        self.assertEqual(snap["rates"]["PHP"]["primary"], 60.843)
+
+    def test_module_internal_error_fallback_gap(self):
+        """锁定模块级兜底:单模块 collect 抛意外异常转 gap、default 形态入快照、其余源完好。"""
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            make_test_root(tmp, endpoints(srv), indicators=IND)
+            with mock.patch.object(entry.macro, "collect",
+                                   side_effect=RuntimeError("boom")):
+                rc = entry.main(["--date", "2026-08-10", "--root", tmp])
+            self.assertEqual(rc, 0)
+            with open(os.path.join(tmp, "data", "2026-08-10.json"), encoding="utf-8") as f:
+                snap = json.load(f)
+        self.assertEqual(len(snap["gaps"]), 1)
+        self.assertEqual(snap["gaps"][0]["source"], "macro")
+        self.assertIn("internal error", snap["gaps"][0]["reason"])
+        self.assertEqual(snap["macro"], [])                # default 形态入快照
+        self.assertNotIn("us_release_dates", snap)         # default 无该键
+        self.assertEqual(snap["rates"]["EUR"]["primary"], 0.921)
+        self.assertEqual(len(snap["events"]), 5)
+
 
 if __name__ == "__main__":
     unittest.main()
