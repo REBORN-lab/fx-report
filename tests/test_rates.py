@@ -208,6 +208,45 @@ class RatesTest(unittest.TestCase):
             self.assertIsNotNone(out[c]["primary"])
         self.assertEqual(gaps, [])
 
+    def test_frankfurter_top_level_null_degrades_to_secondary(self):
+        # 第 3 轮复审 Critical:整响应体本身就是合法 JSON 字面量 null(而非
+        # {"rates": null}),json.loads 后 doc 本身为 None,`doc.get("rates")`
+        # 在 try 块外对 None 调用 → 未捕获 AttributeError,collect() 整体崩溃。
+        # null 应视同空响应,四币种应降级到 exchange-api。
+        with FixtureServer({"/frank": (200, "null"),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertEqual(out[c]["primary_source"], "exchange-api")
+            self.assertIsNotNone(out[c]["primary"])
+        self.assertEqual(gaps, [])
+
+    def test_exchange_api_top_level_null_secondary_all_none(self):
+        # 对称回归:/exch 整响应体是字面量 null,`doc.get("usd")` 在 try 块外
+        # 对 None 调用 → 未捕获 AttributeError。null 应视同空响应,secondary
+        # 全 None,primary(frankfurter)不受影响。
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, "null")}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertIsNone(out[c]["secondary"])
+            self.assertIsNotNone(out[c]["primary"])
+            self.assertEqual(out[c]["primary_source"], "frankfurter")
+        exch_gaps = [g for g in gaps if g["source"] == "exchange-api"]
+        self.assertEqual(len(exch_gaps), 1)
+        self.assertEqual(exch_gaps[0]["scope"], "all")
+
+    def test_frankfurter_top_level_array_degrades_to_secondary(self):
+        # 非 dict 顶层响应的另一形态(数组):与 null 同一崩溃路径,isinstance
+        # 门应一律防护,不分形态逐个打补丁。
+        with FixtureServer({"/frank": (200, "[1,2]"),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertEqual(out[c]["primary_source"], "exchange-api")
+            self.assertIsNotNone(out[c]["primary"])
+        self.assertEqual(gaps, [])
+
     def test_dual_source_all_fields_empty_gap_count_locked(self):
         # 复审 Minor(b)行为锁定:双源均 HTTP 200,但 rates/usd 字段都是空字典。
         # 实测(本轮探测脚本):共 5 条 gap——1 条 exchange-api/all(空 usd
