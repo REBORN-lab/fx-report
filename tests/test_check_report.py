@@ -225,5 +225,27 @@ class MainLoudFailureTest(unittest.TestCase):
         self.assertTrue(err.strip())
 
 
+class MutationKillTest(unittest.TestCase):
+    """Task 12 质量复审第 1 轮:针对两个存活变异的正向锁定测试。"""
+
+    def test_novel_date_forms_not_flagged_as_untraceable(self):
+        # 击杀变异 A(删 numbers_in 中的 DATE_RE.sub):报告含快照/brief 中
+        # 逐字不存在的日期形态,DATE_RE 剔除是其放行的唯一原因,删 sub 即挂。
+        php_body = ("**昨日发生**:CPI 同比 3.1,前值 3.4,下次发布定于 2025-12-31"
+                    "(2026-W33 周历)。**定价含义**:通胀回落。"
+                    "**情景与触发条件**:若 BSP 释放降息信号,则关注 60.843 上方压力。")
+        v = check_report.check_daily(make_report(php_body=php_body), SNAP_TEXT, BRIEF)
+        self.assertFalse(any("NUMBER_UNTRACEABLE" in x for x in v))
+
+    def test_gap_scope_not_mentioned_triggers_gap_omitted(self):
+        # 击杀变异 C(删 GAP_OMITTED 的 for g in gaps 循环):缺漏节有内容
+        # 但未提及 scope="THB",必须报 GAP_OMITTED——正向断言违规出现。
+        snap = dict(SNAP, gaps=[{"source": "gdelt", "scope": "THB",
+                                 "reason": "rate-limited after retry", "at": "x"}])
+        report = make_report(gap_body="- [gdelt/PHP] 速率受限 — 影响:相关事件面结论缺依据")
+        v = check_report.check_daily(report, json.dumps(snap, ensure_ascii=False), BRIEF)
+        self.assertTrue(any("GAP_OMITTED" in x for x in v))
+
+
 if __name__ == "__main__":
     unittest.main()
