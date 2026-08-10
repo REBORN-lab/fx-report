@@ -42,7 +42,7 @@ def _fetch_primary(cfg, gaps):
     except Exception as e:
         gaps.append(util.make_gap("frankfurter", "all", "%s: %s" % (type(e).__name__, e)))
         return {}, False
-    got = doc.get("rates", {})
+    got = doc.get("rates") or {}
     out = {}
     for c in CURRENCIES:
         if c not in got:
@@ -75,7 +75,7 @@ def _fetch_secondary(cfg, gaps):
             errs.append("%s: %s" % (type(e).__name__, e))
             continue
         ok = True
-        usd = doc.get("usd", {})
+        usd = doc.get("usd") or {}
         got = {}
         for c in CURRENCIES:
             key = c.lower()

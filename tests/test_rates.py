@@ -164,6 +164,69 @@ class RatesTest(unittest.TestCase):
         self.assertEqual(out["PHP"]["deviation_pct"], 0.5)
         self.assertFalse(out["PHP"]["suspect"])
 
+    def test_frankfurter_rates_null_degrades_to_secondary(self):
+        # fd19729 回归(质量复审 Critical):{"rates": null} 时 key 存在但值为
+        # None,doc.get("rates", {}) 的默认值不生效(只在 key 缺失时生效),原实现
+        # 会在 `c not in got` 处对 None 做成员判断抛未捕获 TypeError,collect()
+        # 整体崩溃。null 应视同空响应,四币种应降级到 exchange-api。
+        frank_null = dict(FRANK, rates=None)
+        with FixtureServer({"/frank": (200, json.dumps(frank_null)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertEqual(out[c]["primary_source"], "exchange-api")
+            self.assertIsNotNone(out[c]["primary"])
+        self.assertEqual(gaps, [])
+
+    def test_secondary_usd_null_all_none(self):
+        # 对称回归:{"usd": null} 同样触发 doc.get("usd", {}) 防护失效,原实现在
+        # `key not in usd` 处抛 TypeError。null 应视同空 usd 映射,secondary 全
+        # None,primary(frankfurter)不受影响。
+        exch_null = dict(EXCH, usd=None)
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(exch_null))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertIsNone(out[c]["secondary"])
+            self.assertIsNotNone(out[c]["primary"])
+            self.assertEqual(out[c]["primary_source"], "frankfurter")
+        exch_gaps = [g for g in gaps if g["source"] == "exchange-api"]
+        self.assertEqual(len(exch_gaps), 1)
+        self.assertEqual(exch_gaps[0]["scope"], "all")
+
+    def test_frankfurter_empty_rates_dict_degrades_to_secondary(self):
+        # 复审 Minor(a)行为锁定:HTTP 200 + {"rates": {}}(键存在、值为空字典,
+        # 非 null)本就不触发 fd19729 的 None 回归——空字典可正常参与成员判断,
+        # 现行为已正确。实测(本轮探测脚本):gaps == [],四币种均降级到
+        # exchange-api。这里直接钉死为回归测试,无 RED。
+        frank_empty = dict(FRANK, rates={})
+        with FixtureServer({"/frank": (200, json.dumps(frank_empty)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertEqual(out[c]["primary_source"], "exchange-api")
+            self.assertIsNotNone(out[c]["primary"])
+        self.assertEqual(gaps, [])
+
+    def test_dual_source_all_fields_empty_gap_count_locked(self):
+        # 复审 Minor(b)行为锁定:双源均 HTTP 200,但 rates/usd 字段都是空字典。
+        # 实测(本轮探测脚本):共 5 条 gap——1 条 exchange-api/all(空 usd
+        # map)+ 4 条 rates/<currency>(missing in both sources,双源本轮都
+        # "成功返回"却仍缺该币种字段);四币种 primary_source 均为 None。
+        frank_empty = dict(FRANK, rates={})
+        exch_empty = dict(EXCH, usd={})
+        with FixtureServer({"/frank": (200, json.dumps(frank_empty)),
+                            "/exch": (200, json.dumps(exch_empty))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        self.assertEqual(len(gaps), 5)
+        exch_gaps = [g for g in gaps if g["source"] == "exchange-api" and g["scope"] == "all"]
+        self.assertEqual(len(exch_gaps), 1)
+        missing_both_gaps = [g for g in gaps if g["source"] == "rates"]
+        self.assertEqual({g["scope"] for g in missing_both_gaps}, {"PHP", "THB", "BRL", "EUR"})
+        for c in ["PHP", "THB", "BRL", "EUR"]:
+            self.assertIsNone(out[c]["primary_source"])
+            self.assertIsNone(out[c]["primary"])
+
 
 if __name__ == "__main__":
     unittest.main()
