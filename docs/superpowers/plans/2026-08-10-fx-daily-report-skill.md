@@ -2375,7 +2375,7 @@ git commit -m "feat(fx): 报告校验器 daily 模式,结构+数字逐字溯源(
 
 前置:真实网络可达。GDELT 串行 5s,采集约需 ≥25s,属正常。
 
-- [ ] **Step 1: 真实运行日报 skill**
+- [x] **Step 1: 真实运行日报 skill**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -2384,7 +2384,7 @@ claude -p "/fx-daily-report" --permission-mode acceptEdits
 
 Expected: 依次完成五步;终端可见 `python3 -m scripts.collect` 的 gaps 输出与 `CHECK PASSED`(或自修流程)。若 skill 未被发现("Unknown skill"),按"关键实现决定 2"调整 symlink 方向后重跑。
 
-- [ ] **Step 2: 复跑校验器,独立确认退出码(不信任 skill 转述)**
+- [x] **Step 2: 复跑校验器,独立确认退出码(不信任 skill 转述)**
 
 ```bash
 D=$(date -u +%F)
@@ -2393,7 +2393,7 @@ python3 scripts/check_report.py reports/daily/$D.md data/$D.json --brief briefs/
 
 Expected: `CHECK PASSED` + `exit=0`。若报告头部带"未通过自检"标注,列出违规项交用户决策,不得静默接受。
 
-- [ ] **Step 3: 人工抽查清单(逐项核对,结果写进 commit message)**
+- [x] **Step 3: 人工抽查清单(逐项核对,结果写进 commit message)**
 
 ```bash
 D=$(date -u +%F)
@@ -2411,7 +2411,7 @@ sed -n '/## 复盘/,/## 数据缺漏/p' reports/daily/$D.md
 
 核对项:抽查数字全部逐字命中快照;缺漏节与 gaps 一一对应;日志条数=5(五币种);复盘节符合首次运行/正常日预期;叙事无"无条件方向预测"。任何一项不符 → 加载 systematic-debugging 定位(区分 SKILL.md 措辞问题 vs 校验器漏检),修复后重跑本任务。
 
-- [ ] **Step 4: Commit(产物入库)**
+- [x] **Step 4: Commit(产物入库)**
 
 ```bash
 D=$(date -u +%F)
