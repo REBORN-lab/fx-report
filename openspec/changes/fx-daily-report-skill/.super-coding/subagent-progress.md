@@ -7,7 +7,9 @@
 ## 当前任务
 
 - 17/17 任务全部完成并双审查通过;plan 83 步全勾、tasks.md 14 项全勾
-- 阶段: 终审中(全实现最终代码审查,通过后进入 build 退出流程: 显式全量测试 → guard build --apply → verify)
+- 阶段: 终审 ✅ Ready-to-merge Yes(零 Critical/Important;cfg 13 键生产消费矩阵零孤儿、gap 21 个生成点全经 make_gap、快照/日志 schema 全链一致、无死引用、仓库卫生、PHP 纵切面全链无断点、4 日报+1 周报校验器全部重跑 PASS)
+- 终审 Minor×2 记档: ①tests/helpers.py make_test_cfg 缺 prev_snapshot_gap 键与 build_cfg 不同步(功能无害,后续补齐)②08-09 五条决策日志因回填时序(08-10 快照 run_at 早于回填)将永久"未判定",报表如实展示不误导,归档前可选清账或保留作诚实样本——转 verify 阶段用户知悉
+- 下一步: 显式全量测试 → guard build --apply(输出完整可见)→ verify
 
 ## 全局备忘
 
