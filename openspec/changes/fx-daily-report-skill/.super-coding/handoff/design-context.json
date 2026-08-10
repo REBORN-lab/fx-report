@@ -1,0 +1,16 @@
+{
+  "change": "fx-daily-report-skill",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "super-coding-handoff.sh",
+  "context_hash": "89a9f5148f0e26da484e5dcaf2e938a322cae9104dbe7a98f9cb6999be8658c5",
+  "files": [
+    { "path": "openspec/changes/fx-daily-report-skill/proposal.md", "sha256": "8b1710572c78c10efb75decfd5efffe488415c8ca8a83edea5e3cdd9e5a9ea8c" },
+    { "path": "openspec/changes/fx-daily-report-skill/design.md", "sha256": "5e12a3638704ffda561622b0c26a369db2c5f7616708814b21acc4b73be32c63" },
+    { "path": "openspec/changes/fx-daily-report-skill/tasks.md", "sha256": "e7d3c22d20c5a5b63e0b91f588c04ba6f290a064d0151687c3edf0cec9b56c70" },
+    { "path": "openspec/changes/fx-daily-report-skill/specs/fx-daily-report/spec.md", "sha256": "f07e9bb611d79dc1f03148700b016d4ede20b18552b0803b633d274203c0c668" },
+    { "path": "openspec/changes/fx-daily-report-skill/specs/fx-data-collection/spec.md", "sha256": "b8e35f61d9dba15642d2637caf1d2b430f8c84593c27e1b40d10c5cf8451a71b" },
+    { "path": "openspec/changes/fx-daily-report-skill/specs/fx-weekly-report/spec.md", "sha256": "22b4ebf10cff1b9271277661b91d63d9716d0a97c7073d889938fec5ee360478" }
+  ]
+}

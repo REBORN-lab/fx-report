@@ -18,15 +18,19 @@
 - **THEN** 快照标记该币种"数据可疑"并保留两源数值,日报层可引用该标记
 
 ### Requirement: 宏观数据增量采集
-系统 SHALL 从 DBnomics(五经济体,IMF/BCB 口径)采集关键宏观指标的最新值与前值,并 SHALL 通过 FRED release dates 端点判定"前一日发布了哪些美国数据";FRED API key 未配置时 SHALL 跳过 FRED 并记入缺漏,不中断其余采集。
+系统 SHALL 从 DBnomics(五经济体,IMF/BCB 口径)采集关键宏观指标的最新值与前值。零 key 为默认运行路径:"前一日发布了哪些数据"的判定 SHALL 由静态年历与 GDELT 事件流承担,该路径 MUST NOT 记为缺漏;当环境变量 FRED_API_KEY 存在时,系统 SHALL 额外调用 FRED release dates 端点增强前一日美国数据发布判定,该增强调用失败时记入缺漏但不中断其余采集。
 
 #### Scenario: 有新数据发布
 - **WHEN** 前一日某跟踪指标发布了新值
 - **THEN** 快照列出该指标的名称、最新值、前值与发布日期
 
-#### Scenario: FRED key 缺失降级
-- **WHEN** 环境变量中无 FRED API key
-- **THEN** FRED 采集被跳过,缺漏记录写明"FRED 未配置",DBnomics 采集照常进行
+#### Scenario: 零 key 默认路径
+- **WHEN** 环境变量中无 FRED_API_KEY
+- **THEN** 采集按默认路径完成(静态年历与 GDELT 承担发布判定),gaps 中不出现 FRED 相关条目
+
+#### Scenario: FRED 增强路径失败
+- **WHEN** FRED_API_KEY 存在但 FRED 请求失败
+- **THEN** FRED 失败记入缺漏,DBnomics 与其余采集照常进行
 
 ### Requirement: 前一日事件采集(GDELT)
 系统 SHALL 按五币种关键词组串行查询 GDELT DOC 2.0 API(请求间隔 ≥ 5 秒),采集前一日窗口的 top 文章列表与 tone;系统 MUST 识别"HTTP 200 但正文为限速提示"的软失败形态,退避后重试一次,仍失败则记为缺漏。
