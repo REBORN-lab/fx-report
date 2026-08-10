@@ -2434,7 +2434,7 @@ git commit -m "feat(fx): 首次端到端日报验收通过(tasks 3.3)——抽�
 - Scenario"周内有缺漏日":缺漏汇总列出日期与缺失内容
 - Scenario"观点复盘汇总":命中/未命中/无法判定 计数与明细(计数来自 `log_decision.py stats`,禁止心算)
 
-- [ ] **Step 1: 追加 weekly 失败测试到 `tests/test_check_report.py`**
+- [x] **Step 1: 追加 weekly 失败测试到 `tests/test_check_report.py`**
 
 ```python
 def make_weekly(coverage="覆盖日报:5 份(2026-08-04 至 2026-08-08);缺失日期:无",
@@ -2488,11 +2488,11 @@ class CheckWeeklyTest(unittest.TestCase):
 
 (放在文件末尾、`if __name__` 之前;`make_weekly` 为模块级函数。)
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: weekly 用例 ERROR(NotImplementedError)
 
-- [ ] **Step 3: 在 `scripts/check_report.py` 用以下实现替换 `check_weekly` 占位**
+- [x] **Step 3: 在 `scripts/check_report.py` 用以下实现替换 `check_weekly` 占位**
 
 ```python
 MAX_THEME_ITEMS = 3
@@ -2532,11 +2532,11 @@ def check_weekly(report):
 
 (常量与正则放到文件顶部常量区;删除 `raise NotImplementedError` 版本。)
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: 17 tests, `OK`
 
-- [ ] **Step 5: 写 `skills/fx-weekly-report/SKILL.md`(完整内容)**
+- [x] **Step 5: 写 `skills/fx-weekly-report/SKILL.md`(完整内容)**
 
 ````markdown
 ---
@@ -2601,7 +2601,7 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
   保留落盘,如实结束。
 ````
 
-- [ ] **Step 6: 建 symlink 并 Commit**
+- [x] **Step 6: 建 symlink 并 Commit**
 
 ```bash
 ln -sfn ../../skills/fx-weekly-report .claude/skills/fx-weekly-report
