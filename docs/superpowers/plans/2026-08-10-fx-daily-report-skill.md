@@ -592,7 +592,7 @@ git commit -m "feat(fx): 汇率双源采集与交叉校验(tasks 2.1)"
 - Scenario"FRED 增强路径失败":有 key 但 FRED 失败 → gap 记 `fred`,DBnomics 照常
 - 追加(Design 降级矩阵):DBnomics 单 series 失败 → 该 series 记 gap,其余照常
 
-- [ ] **Step 1: 实测候选 series ID,固化 `config/indicators.json`**
+- [x] **Step 1: 实测候选 series ID,固化 `config/indicators.json`**
 
 跑探针脚本(候选 ID 覆盖 五经济体 × CPI 同比/政策利率/外部账户;**FAIL 的条目必须替换,禁止把未验证 ID 写进 config**):
 
@@ -639,7 +639,7 @@ FAIL/EMPTY 的条目用 DBnomics 搜索 API 找替代(`curl -s "https://api.db.n
 
 (15 条为目标;格式三字段固定:economy/indicator/series_id。)
 
-- [ ] **Step 2: 写失败测试 `tests/test_macro.py`**
+- [x] **Step 2: 写失败测试 `tests/test_macro.py`**
 
 ```python
 import json
@@ -724,12 +724,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_macro -v`
 Expected: ERROR(`macro` 无 `collect`)
 
-- [ ] **Step 4: 写 `scripts/collect/macro.py`**
+- [x] **Step 4: 写 `scripts/collect/macro.py`**
 
 ```python
 """宏观指标采集:DBnomics 主体 + FRED release dates 可选增强(零 key 默认路径)。"""
@@ -793,12 +793,12 @@ def _fred(cfg, gaps):
 
 注意:`_last_two` 依赖 DBnomics 返回 `series.docs[0].period/value` 平行数组——Step 1 探针已实测该形态;若实测形态不同,以实测为准修正解析并同步修 fixture。
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_macro -v`
 Expected: 6 tests, `OK`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add config/indicators.json scripts/collect/macro.py tests/test_macro.py
