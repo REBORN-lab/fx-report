@@ -41,8 +41,11 @@ def _last_two(doc):
     periods, values = d.get("period"), d.get("value")
     if not isinstance(periods, list) or not isinstance(values, list):
         raise ValueError("'period'/'value' are not parallel arrays")
+    if len(periods) != len(values):
+        raise ValueError("'period'/'value' length mismatch: %d vs %d"
+                         % (len(periods), len(values)))
     pairs = [(p, v) for p, v in zip(periods, values)
-             if isinstance(v, (int, float))]
+             if isinstance(v, (int, float)) and not isinstance(v, bool)]
     if not pairs:
         raise ValueError("series has no numeric observations")
     period, value = pairs[-1]
@@ -83,7 +86,10 @@ def _fred(cfg, gaps):
                 raise ValueError("unexpected release entry shape: %s" % type(r).__name__)
             name = r.get("release_name")
             if not isinstance(name, str) or not name:
-                name = str(r.get("release_id"))
+                rid = r.get("release_id")
+                if rid is None:
+                    continue  # name/id 双缺失:无任何可用标识,跳过该条目
+                name = str(rid)
             names.append(name)
         return names
     except Exception as e:
