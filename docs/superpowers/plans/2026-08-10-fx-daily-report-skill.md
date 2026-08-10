@@ -1941,7 +1941,7 @@ git commit -m "feat(fx): 决策日志脚本代笔 + 两日快照方向复盘(tas
 
 **验收标准(spec fx-daily-report 全部 Requirement 的操作化载体):** SKILL.md 完整编排五步管线;内嵌日报模板(执行摘要 ≤6 条 → 五币种节 ≤约 300 字 → 复盘节 → 数据缺漏节)与全部禁令;数字纪律与"生成后必须跑 check_report.py"逐字写入。真实报告质量在 Task 13 端到端验收。
 
-- [ ] **Step 1: 写 `skills/fx-daily-report/SKILL.md`(以下为完整内容)**
+- [x] **Step 1: 写 `skills/fx-daily-report/SKILL.md`(以下为完整内容)**
 
 ````markdown
 ---
@@ -2065,7 +2065,7 @@ verdict 规则:触发条件未发生 → 无法判定;触发发生且方向核�
   `> ⚠ 本报告未通过自动自检:<违规项摘要>`,保留落盘,如实结束。
 ````
 
-- [ ] **Step 2: 建 `.claude/skills` symlink**
+- [x] **Step 2: 建 `.claude/skills` symlink**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -2076,7 +2076,7 @@ ls -l .claude/skills/fx-daily-report/SKILL.md
 
 Expected: 能列出 SKILL.md(symlink 解析成功)。失败则按"关键实现决定 2"反向放置。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add skills/fx-daily-report/SKILL.md .claude/skills/fx-daily-report

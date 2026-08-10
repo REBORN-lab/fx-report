@@ -7,9 +7,8 @@
 
 ## 当前任务
 
-- Plan task: Task 11: 日报 SKILL.md + .claude/skills 接线(tasks.md 3.1)
-- Plan 行区间: 1936-2084
-- OpenSpec task 文本: "3.1 编写 `skills/fx-daily-report/SKILL.md`:先跑采集脚本再生成报告;模板含执行摘要(≤6 条)、五币种节(事件→定价含义→情景与触发条件,≤约 300 字/节)、数据缺漏节、复盘节;数字只准引快照;禁止方向性预测"
+- Plan task: Task 12: check_report.py 日报校验器(tasks.md 3.3 的前置)
+- Plan 行区间: 2088-2363
 - 阶段: implementer 待派发
 
 ## 全局备忘
@@ -19,6 +18,7 @@
 - Task 17 核对时处理 spec 措辞漂移: delta spec"宏观数据增量采集"括号"IMF/BCB 口径"与实测最终 provider 组合 IMF/BIS/ECB 不一致(Task 5 spec 审查员发现,归档同步 main spec 前修正措辞)
 - 端点实测结论(推翻协调者预设,以 implementer 实测为准): Frankfurter v1 仍在线支持历史日期(dict 形态,选用 v1;v2 数组形态已验证存在未采用);exchange-api 直接接受 YYYY-MM-DD 版本号,_secondary_date 保持恒等
 - Task 16 README 年历维护再加一条(Task 7 quality Minor#1): 明确写死 valid_until 必须为带横线 ISO 格式(YYYY-MM-DD)——非 ISO 合法字符串(如 "20260101")会使过期告警静默失效(字典序 "-"<"0"),代码层不校验,由文档约束
+- Task 13 端到端验收重点观察清单(Task 11 quality 审查移交): ①Important: SKILL verdict 四分支漏"触发发生+方向核对=无法判定"组合,USD(watch_direction=null→direction_outcome 恒无法判定)每日必命中该缝隙——观察次日 USD 的 set-review 是否被正确判"无法判定"而非 LLM 自行拿汇率判命中/未命中 ②heredoc "DATE"/"up|down" 占位符照抄(rc=2 自愈完整,观察是否发生)③决策日志在第 5 步校验前写入,校验失败修改报告后 jsonl 与报告措辞可能漂移 ④警告行插入后首行不再是 `# 外汇日报 DATE`(Task 14 周报解析留意)⑤Task 13 必须排在 Task 12 之后(check_report.py 前向引用)
 
 ## 已完成任务
 
@@ -30,3 +30,4 @@
 - Task 8(tasks.md 2.4): 实现 4c5c376;spec ✅ 零缺零多(schema 逐键实测 diff);quality Ready-No(Important×2: prev 捕获缺 RecursionError 与 Task 6 同型、兜底无锁定测试),轮 1 修复 53e69d1(捕获元组+RecursionError、prev 顶层非 dict 门+gap、兜底 mock 锁定测试、原子落盘 temp+os.replace),定向复审 ✅(变异 4/4 被杀含原子落盘变异,攻击重放 7 形态全过,无同类残留:prev 是唯一模块级兜底之外的外部 JSON 读取点已收口);判定接受: data_dir 只读 rc=1、prev 内层形态错模块级容错、CLI 非 0、dump 中途异常 .tmp 残留;测试 test_snapshot 7/7,全量 70/70(先跑后抄);plan 区间 1163-1377 勾 6/6,tasks.md 2.4 task-checkoff PASS
 - Task 9(tasks.md 2.5): 提交 6e39d4a(纯测试任务,首跑 6/6 全绿无 RED 如实记录);spec ✅(3 Scenario 映射完整、真实入口、N=76 无虚报;与模板除末尾 1 空行外逐字一致——"零偏离"自报被比对修正入档);quality ✅ 零轮修复(变异实证 4 组: 降级路径破坏 3/6 挂、兜底删除矩阵不受影响而 test_snapshot 锁定测试挂——分工互补无盲区、gaps 聚合漏 extend 两组各被击杀且为聚合层唯一防线;Minor×3 接受: dbnomics 用例与 test_snapshot 真子集重复、双挂用例集合断言偏松、5/6 用例 rc 未断言——均为 plan 定死模板固有);全量 76/76(先跑后抄);plan 区间 1381-1495 勾 4/4,tasks.md 2.5 task-checkoff PASS
 - Task 10(tasks.md 3.2): 实现 2bf580c(RED 阶段发现纯 rc==2 断言被"python3 找不到文件也返回 2"假通过,自补用例加 stderr 断言,如实入档);spec ✅ 零问题(写路径唯一性 grep、prior_dates/平盘/节头探针实测、模板 11 用例逐字节保留);quality Ready-No(Important×2: stats unhashable verdict 崩溃、add 无值类型校验),轮 1 修复 61a2c53(stats 可哈希门、add 四字段 str 门+fromisoformat、flat() 换行扁平化、isfinite 门、无 pending 不重写;RED 8/8 真实),定向复审 ✅(变异 6/6 被杀,重放 27/27,闰日边界实测;Minor 观察×2 入档: py3.11+ fromisoformat 接受紧凑格式"20260810"可选收紧 strptime、target 未过 flat 属深度防御备注);接受: stats 明细标签、set-review 首条匹配、并发窗口、load/save 重复;测试 33/33,全量 109/109(先跑后抄);plan 区间 1499-1932 勾 7/7,tasks.md 3.2 task-checkoff PASS
+- Task 11(tasks.md 3.1): 实现 4ab58f7(RED/GREEN=N/A 纯内容任务);spec ✅ 零差异(与 plan 围栏 md5 字节级一致,3.1 要素/delta spec 五 Requirement 全映射,CLI 接口逐一吻合);quality ✅ 零轮修复(Ready-Yes;执行 LLM 视角走查: 第 5 步判定链清晰、review.py 缺 brief 报错自纠提示佳、数字纪律是 check_report 白名单严格子集单向包含;Important×1+Minor×9 全部转 Task 13 观察清单,内容 plan 定死无回炉);symlink mode 120000 相对路径 fresh clone 可还原;全量 109/109;plan 区间 1936-2084 勾 3/3,tasks.md 3.1 task-checkoff PASS
