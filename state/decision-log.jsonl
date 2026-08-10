@@ -1,0 +1,5 @@
+{"date": "2026-08-10", "currency": "USD", "scenario": "事件与增量数据双缺,美元昨日无明确驱动", "trigger": "后续采集恢复并显示美联储官员表态或美国数据意外", "watch_direction": null, "review": {"direction_outcome": null, "trigger_judgement": null, "verdict": null}}
+{"date": "2026-08-10", "currency": "EUR", "scenario": "气候与能源冲击主题或压低市场对欧元区增长路径的评估", "trigger": "该主题获得增长下修或通胀上修的数据佐证", "watch_direction": "up", "review": {"direction_outcome": null, "trigger_judgement": null, "verdict": null}}
+{"date": "2026-08-10", "currency": "PHP", "scenario": "比索昨日无明确驱动,信息缺失", "trigger": "事件源恢复并出现菲律宾央行政策信号或通胀意外", "watch_direction": null, "review": {"direction_outcome": null, "trigger_judgement": null, "verdict": null}}
+{"date": "2026-08-10", "currency": "THB", "scenario": "泰铢事件与通胀数据双缺,无明确驱动", "trigger": "泰国 CPI 数据恢复采集且显示通胀意外", "watch_direction": null, "review": {"direction_outcome": null, "trigger_judgement": null, "verdict": null}}
+{"date": "2026-08-10", "currency": "BRL", "scenario": "雷亚尔昨日无明确驱动,信息缺失", "trigger": "事件源恢复并出现巴西财政或央行政策信号", "watch_direction": null, "review": {"direction_outcome": null, "trigger_judgement": null, "verdict": null}}
