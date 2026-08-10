@@ -2746,12 +2746,12 @@ git commit -m "docs(fx): 运行文档与年历维护说明(tasks 5.1)"
 
 **验收标准:** 三份 delta spec 的全部 Scenario 逐条有核对记录(覆盖方式 + 实测证据);核对当场重跑命令取证,**禁止先写结论再补跑**(硬规则)。
 
-- [ ] **Step 1: 重跑全量测试取证**
+- [x] **Step 1: 重跑全量测试取证**
 
 Run: `python3 -m unittest discover -s tests -t . -v 2>&1 | tail -5`
 把实际输出(`Ran N tests ... OK`)原样记录。
 
-- [ ] **Step 2: 写核对表(每行的"证据"必须是实测输出/文件路径,不得留空或写"应该")**
+- [x] **Step 2: 写核对表(每行的"证据"必须是实测输出/文件路径,不得留空或写"应该")**
 
 ```markdown
 # Scenario 覆盖核对 — fx-daily-report-skill
@@ -2788,7 +2788,7 @@ Run: `python3 -m unittest discover -s tests -t . -v 2>&1 | tail -5`
 遗留事项:<如 indicators 清单有剔除、年历某央行日程缺失等,逐条列出>
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add openspec/changes/fx-daily-report-skill/.super-coding/scenario-coverage.md

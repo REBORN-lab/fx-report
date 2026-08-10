@@ -2,15 +2,12 @@
 
 - Plan: docs/superpowers/plans/2026-08-10-fx-daily-report-skill.md(17 任务/83 步)
 - 分支: feature/20260810/fx-daily-report-skill
-- tdd_mode: tdd(每个 implementer/修复 agent 必须加载 test-driven-development 技能并给 RED/GREEN 证据;纯脚手架任务 RED 按计划标 N/A)
-- 审查-修复轮次上限: 每任务 3 轮
+- tdd_mode: tdd
 
 ## 当前任务
 
-- Plan task: Task 17: 场景覆盖核对表(tasks.md 5.2,最后一个任务)
-- Plan 行区间: 2742-2796
-- OpenSpec task 文本: "5.2 对照三份 spec 的全部 Scenario 逐条核对已覆盖,记录核对结果"
-- 阶段: implementer 待派发(带全局备忘 spec 措辞漂移处理项)
+- 17/17 任务全部完成并双审查通过;plan 83 步全勾、tasks.md 14 项全勾
+- 阶段: 终审中(全实现最终代码审查,通过后进入 build 退出流程: 显式全量测试 → guard build --apply → verify)
 
 ## 全局备忘
 
@@ -42,3 +39,4 @@
 - Task 14(tasks.md 4.1): 实现 4ba5c6b(SKILL md5 与围栏一致+check_weekly+7 测试+symlink;RED 7 ERROR 占位穿透);spec ✅ 零问题(四 Scenario 全映射、daily 零改动、CLI 双向冒烟);quality 双向攻击+变异 6/8 击杀,Ready-No(Important×1: M6 CURRENCY_MISSING 无反向断言——plan 测试网缺口),轮 1 修复 a71c1cd(make_weekly 加 currency_body 默认逐字节不变+缺币种用例含前置自检),定向复审 ✅(M6 独立重放唯一击杀、9/9 BYTE-IDENTICAL、零 issue);Minor 记档→Task 15 观察清单(顿号编号绕过、变体日期标题、N=0 校验器不拦、token 子串碰撞、缺漏节蹭覆盖、嵌套子弹误拦安全侧、样本 3token 失真);测试 32/32,全量 141/141(先跑后抄);plan 区间 2424-2612 勾 6/6,tasks.md 4.1 task-checkoff PASS
 - Task 15(tasks.md 4.2): 验收提交 b069801(3 回填日报升序+周报 2026-W33,11 文件全产物;CHECK 全首轮通过);spec ✅ 独立复核 9 项全过(五次校验器重跑、stats 20 条明细逐字顺序一致、缺漏 19 条双向 0 缺 0 冗、复盘链自洽、数字 11 个逐字命中);quality(叙事)✅ Ready-Yes 7/10(主线诚实真主题、归因跨日综合零硬凑、Important×3 模板缺口转 verify 决策;"三日快照冻结"疑点经协调者实测澄清为周末休市);verdict 缝隙第一现场: 内层对"触发发生+方向 null"保守判无法判定——SKILL 缝隙未致误判;观察清单全执行;全量 141/141;plan 区间 2616-2664 勾 4/4,tasks.md 4.2 task-checkoff PASS
 - Task 16(tasks.md 5.1): 实现 d6f6484(README 66 行纯追加);合并审查 ✅(spec 五要素/修正 A-D 全落实,claude 命令与实测纪录逐字一致,事实层逐项对照源码印证——年历排序选取/持续告警/非 ISO 静默失效/FRED 零 key 语义/GDELT 常量全吻合;可用性 Minor×2 不阻塞: 未列"需装 claude CLI"前置、既有行"任务 16"黑话受纯追加约束留后续清理);测试命令实测 141 OK 后写入;plan 区间 2668-2738 勾 3/3,tasks.md 5.1 task-checkoff PASS
+- Task 17(tasks.md 5.2): 实现 c3ace62(23/23 场景逐条取证: 单跑 28 用例、矩阵整跑、双端校验器重跑、stats 实跑、数字 grep 回查;遗留 3 条如实);合并审查 ✅(三份 spec 独立计数 11+8+4=23 无漏无多,23 行证据全部重放一致含退出码与计数,用例名核正抽核 3 处全实,遗留完备性对照全局备忘确认无漏列);plan 区间 2742-2796 勾 3/3,tasks.md 5.2 task-checkoff PASS
