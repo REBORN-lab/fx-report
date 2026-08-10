@@ -7,8 +7,8 @@ SUSPECT_THRESHOLD_PCT = 0.5  # 偏差 = |主-副|/主 ×100,超过即 suspect
 
 def collect(cfg):
     gaps = []
-    primary = _fetch_primary(cfg, gaps)
-    secondary = _fetch_secondary(cfg, gaps)
+    primary, primary_ok = _fetch_primary(cfg, gaps)
+    secondary, secondary_ok = _fetch_secondary(cfg, gaps)
     prev = _prev_primary(cfg)
     out = {}
     for c in CURRENCIES:
@@ -19,9 +19,18 @@ def collect(cfg):
             entry["primary"] = s
             entry["primary_source"] = "exchange-api"
         elif p is not None and s is not None:
-            dev = abs(p - s) / p * 100.0
-            entry["deviation_pct"] = round(dev, 3)
-            entry["suspect"] = dev > SUSPECT_THRESHOLD_PCT
+            if p == 0:
+                gaps.append(util.make_gap("frankfurter", c, "primary=0, deviation skipped"))
+            else:
+                dev = abs(p - s) / p * 100.0
+                entry["deviation_pct"] = round(dev, 3)
+                entry["suspect"] = dev > SUSPECT_THRESHOLD_PCT
+        elif p is None and s is None:
+            entry["primary_source"] = None
+            # 双源整体失败时已各有 scope="all" 的 gap,不再逐币种重复记;
+            # 仅当两源本轮都成功返回、却仍缺该币种字段时才补记。
+            if primary_ok and secondary_ok and not any(g["scope"] == c for g in gaps):
+                gaps.append(util.make_gap("rates", c, "missing in both sources"))
         out[c] = entry
     return out, gaps
 
@@ -30,11 +39,19 @@ def _fetch_primary(cfg, gaps):
     url = cfg["endpoints"]["frankfurter_url"].format(date=cfg["date"])
     try:
         doc = util.fetch_json(url, cfg["timeout_s"])
-        got = doc.get("rates", {})
-        return {c: float(got[c]) for c in CURRENCIES if c in got}
     except Exception as e:
         gaps.append(util.make_gap("frankfurter", "all", "%s: %s" % (type(e).__name__, e)))
-        return {}
+        return {}, False
+    got = doc.get("rates", {})
+    out = {}
+    for c in CURRENCIES:
+        if c not in got:
+            continue
+        try:
+            out[c] = float(got[c])
+        except (TypeError, ValueError) as e:
+            gaps.append(util.make_gap("frankfurter", c, "%s: %s" % (type(e).__name__, e)))
+    return out, True
 
 
 def _secondary_date(date_str):
@@ -48,21 +65,31 @@ def _secondary_date(date_str):
 
 
 def _fetch_secondary(cfg, gaps):
-    last_err = None
+    errs = []
+    ok = False
     for tpl in cfg["endpoints"]["exchange_api_urls"]:
         url = tpl.format(date=_secondary_date(cfg["date"]))
         try:
             doc = util.fetch_json(url, cfg["timeout_s"])
-            usd = doc.get("usd", {})
-            got = {c: float(usd[c.lower()]) for c in CURRENCIES if c.lower() in usd}
-            if got:
-                return got
-            last_err = ValueError("empty usd map")
         except Exception as e:
-            last_err = e
-    gaps.append(util.make_gap("exchange-api", "all",
-                              "%s: %s" % (type(last_err).__name__, last_err)))
-    return {}
+            errs.append("%s: %s" % (type(e).__name__, e))
+            continue
+        ok = True
+        usd = doc.get("usd", {})
+        got = {}
+        for c in CURRENCIES:
+            key = c.lower()
+            if key not in usd:
+                continue
+            try:
+                got[c] = float(usd[key])
+            except (TypeError, ValueError) as e:
+                gaps.append(util.make_gap("exchange-api", c, "%s: %s" % (type(e).__name__, e)))
+        if got:
+            return got, ok
+        errs.append("empty usd map")
+    gaps.append(util.make_gap("exchange-api", "all", "; ".join(errs) if errs else "unknown error"))
+    return {}, ok
 
 
 def _prev_primary(cfg):
