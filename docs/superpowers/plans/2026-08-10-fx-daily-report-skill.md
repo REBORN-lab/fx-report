@@ -2620,7 +2620,7 @@ git commit -m "feat(fx): 周报 skill 主题聚类模板 + 校验器 weekly 模�
 
 **验收标准:** spec"正常周聚合"(≥3 份日报,一级结构为主题非日期)、"周内有缺漏日"(如有)、"观点复盘汇总"在真实产物上成立;校验器 weekly 模式退出码 0。
 
-- [ ] **Step 1: 回填三天快照与日报(利用 `--date` 与 skill 日期参数;GDELT 回填走 datetimerange)**
+- [x] **Step 1: 回填三天快照与日报(利用 `--date` 与 skill 日期参数;GDELT 回填走 datetimerange)**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -2632,7 +2632,7 @@ done
 
 Expected: 三份 `reports/daily/*.md` 生成(加上 Task 13 的当日报告,共 ≥4 份可聚合)。注意每轮含 GDELT 串行 5s 间隔,单轮采集 ≥25s 属正常。若 Task 13 已在今日运行,今日报告直接复用。
 
-- [ ] **Step 2: 真实运行周报 skill**
+- [x] **Step 2: 真实运行周报 skill**
 
 ```bash
 claude -p "/fx-weekly-report" --permission-mode acceptEdits
@@ -2640,7 +2640,7 @@ claude -p "/fx-weekly-report" --permission-mode acceptEdits
 
 Expected: 生成 `reports/weekly/$(date -u +%G-W%V).md` 且校验通过。
 
-- [ ] **Step 3: 独立复核(结果写进 commit message)**
+- [x] **Step 3: 独立复核(结果写进 commit message)**
 
 ```bash
 W=$(date -u +%G-W%V)
@@ -2656,7 +2656,7 @@ grep -A3 '## 数据缺漏' reports/daily/*.md
 
 核对项:`exit=0`;`## ` 标题无日期;计数行与 stats 输出逐字一致;缺漏汇总覆盖各日报非"无"的缺漏节。不符 → systematic-debugging 定位后修复重跑。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add data briefs reports state/decision-log.jsonl
