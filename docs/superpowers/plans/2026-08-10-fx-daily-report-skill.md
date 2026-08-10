@@ -819,7 +819,7 @@ git commit -m "feat(fx): DBnomics 宏观采集 + FRED 可选增强,series 清单
 - Scenario"端点不可用":超时/错误 → 该币种记缺漏(含原因),其余币种继续
 - 约束:生产默认串行间隔常量 ≥5 秒(有测试断言守住)
 
-- [ ] **Step 1: 写 fixture `tests/fixtures/gdelt_artlist_sample.json`(GDELT artlist 真实形态样例)**
+- [x] **Step 1: 写 fixture `tests/fixtures/gdelt_artlist_sample.json`(GDELT artlist 真实形态样例)**
 
 ```json
 {
@@ -848,7 +848,7 @@ git commit -m "feat(fx): DBnomics 宏观采集 + FRED 可选增强,series 清单
 }
 ```
 
-- [ ] **Step 2: 写失败测试 `tests/test_events.py`**
+- [x] **Step 2: 写失败测试 `tests/test_events.py`**
 
 ```python
 import json
@@ -946,12 +946,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_events -v`
 Expected: ERROR(`events` 无 `collect`)
 
-- [ ] **Step 4: 写 `scripts/collect/events.py`**
+- [x] **Step 4: 写 `scripts/collect/events.py`**
 
 ```python
 """GDELT DOC 2.0 事件采集:五币种关键词组串行查询,软限速识别+退避重试一次。"""
@@ -1032,12 +1032,12 @@ def _window(cfg):
     return {"timespan": "48h"}
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_events -v`
 Expected: 7 tests, `OK`(延时注入为 0,应在 1 秒内跑完)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py tests/fixtures/gdelt_artlist_sample.json
