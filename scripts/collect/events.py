@@ -50,13 +50,14 @@ def _query_with_retry(cfg, query):
 
 
 def _window(cfg):
-    """查询时间窗:backfill 用显式 datetime 区间(昨日 00:00 → 当日 00:00),默认 24h。"""
+    """查询时间窗:backfill 用显式 datetime 区间(昨日 00:00 → 当日 00:00);
+    默认 timespan=48h(design:覆盖"前一日"并容忍时区/抓取延迟)。"""
     if cfg["backfill"]:
         return {
             "startdatetime": cfg["yesterday"].replace("-", "") + "000000",
             "enddatetime": cfg["date"].replace("-", "") + "000000",
         }
-    return {"timespan": "24h"}
+    return {"timespan": "48h"}
 
 
 def _fetch(cfg, query):

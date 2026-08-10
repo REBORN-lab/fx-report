@@ -91,7 +91,7 @@ class EventsTest(unittest.TestCase):
     # ---- 以下为仓库约定补充测试:外部数据类型门与 bool 排除 ----
 
     def test_default_window_uses_timespan(self):
-        """非 backfill 默认路径:timespan 窗口,不带 datetime 区间。"""
+        """非 backfill 默认路径:timespan=48h 窗口(design:覆盖前一日并容忍时区/抓取延迟),不带 datetime 区间。"""
         captured = {}
 
         def route(handler):
@@ -100,7 +100,7 @@ class EventsTest(unittest.TestCase):
 
         with FixtureServer({"/doc": route}) as srv:
             events.collect(cfg_with(srv))
-        self.assertIn("timespan", captured["q"])
+        self.assertIn("timespan=48h", captured["q"])
         self.assertNotIn("startdatetime", captured["q"])
         self.assertNotIn("enddatetime", captured["q"])
 
