@@ -1,5 +1,5 @@
 workflow: full
-phase: build
+phase: verify
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -20,3 +20,5 @@ archived: false
 handoff_context: openspec/changes/fx-daily-report-skill/.super-coding/handoff/design-context.json
 handoff_hash: 89a9f5148f0e26da484e5dcaf2e938a322cae9104dbe7a98f9cb6999be8658c5
 bound_branch: feature/20260810/fx-daily-report-skill
+build_command: python3 -m unittest discover -s tests -t .
+verify_command: python3 -m unittest discover -s tests -t .
