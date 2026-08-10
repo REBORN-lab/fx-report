@@ -6,7 +6,7 @@ build_pause: null
 subagent_dispatch: confirmed
 tdd_mode: tdd
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: null
 design_doc: docs/superpowers/specs/2026-08-10-fx-daily-report-skill-design.md
