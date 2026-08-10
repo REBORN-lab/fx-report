@@ -29,12 +29,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
 
 class FixtureServer:
-    """with FixtureServer({"/frank": (200, '{"rates":{}}')}) as srv: srv.base_url"""
+    """with FixtureServer({"/frank": (200, '{"rates":{}}')}) as srv: srv.base_url
+
+    路由按 dict 插入顺序取第一个前缀命中;注册互为前缀的路由时把更具体的放前面。
+    """
 
     def __init__(self, routes):
         self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self.httpd.fixture_routes = routes
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread = threading.Thread(
+            target=lambda: self.httpd.serve_forever(poll_interval=0.05), daemon=True
+        )
 
     @property
     def base_url(self):
