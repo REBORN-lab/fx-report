@@ -3,6 +3,7 @@
 并把复盘材料追加进当日要点表。触发条件是否发生由 LLM 判定(SKILL 第 4 步)。"""
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -61,6 +62,9 @@ def rate_of(snap, currency):
     primary = entry.get("primary")
     if isinstance(primary, bool) or not isinstance(primary, (int, float)):
         return None
+    if not math.isfinite(primary):
+        # NaN/Infinity 穿过数值比较会给出确定性错误结论 → 视为缺失
+        return None
     return primary
 
 
@@ -77,6 +81,12 @@ def review_of(e):
     """e['review'] 的 isinstance 门: 非 dict(缺失/外部损坏为 None)返回 None。"""
     rev = e.get("review")
     return rev if isinstance(rev, dict) else None
+
+
+def flat(v):
+    """材料行单点收口: 字段值中的换行扁平化为空格,防伪造节标题/伪列表行。
+    (LLM 文本含换行属正常输入,add 不拒绝,写入 brief 时扁平化即可。)"""
+    return str(v).replace("\r", " ").replace("\n", " ")
 
 
 def main(argv=None):
@@ -123,9 +133,12 @@ def main(argv=None):
             lines.append(
                 "- %s | 观点日 %s | 情景: %s | 触发条件: %s | 关注方向: %s"
                 " | 汇率 %s→%s | 方向核对: %s"
-                % (e.get("currency"), target, e.get("scenario"), e.get("trigger"),
-                   e.get("watch_direction"), prev_r, today_r, oc))
-        save_log(log_path, entries)
+                % (flat(e.get("currency")), target, flat(e.get("scenario")),
+                   flat(e.get("trigger")), flat(e.get("watch_direction")),
+                   prev_r, today_r, oc))
+        if pending:
+            # 无回填发生时不重写文件: 避免丢弃坏行、放大并发窗口
+            save_log(log_path, entries)
     with open(brief_path, "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     print("review material appended to %s" % brief_path)

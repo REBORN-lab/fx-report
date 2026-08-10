@@ -153,6 +153,39 @@ class LogDecisionTypeGateTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("命中 0 / 未命中 0 / 无法判定 0 / 未判定 1", r.stdout)
 
+    def test_stats_counts_unhashable_verdict_as_unjudged(self):
+        # 复审反馈1: verdict 为 list(不可哈希)时 stats 不得崩溃, 该条计入"未判定"
+        entry = dict(ENTRY)
+        entry["review"] = {"direction_outcome": None, "trigger_judgement": None,
+                           "verdict": [1]}
+        self._write_raw([json.dumps(entry, ensure_ascii=False)])
+        r = run_cmd(["stats", "--root", self.tmp.name,
+                     "--from", "2026-08-04", "--to", "2026-08-10"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("命中 0 / 未命中 0 / 无法判定 0 / 未判定 1", r.stdout)
+
+    def test_add_rejects_int_date(self):
+        # 复审反馈2: date 值须为 str, int 入库会令 set-review 永不匹配 → 报错优于跳过
+        bad = dict(ENTRY, date=20260810)
+        r = run_cmd(["add", "--root", self.tmp.name], json.dumps([bad]))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("date", r.stderr)
+        self.assertFalse(os.path.exists(self.log_path))
+
+    def test_add_rejects_non_iso_date_string(self):
+        # 复审反馈2: date 须过 datetime.date.fromisoformat 格式门
+        bad = dict(ENTRY, date="2026/08/10")
+        r = run_cmd(["add", "--root", self.tmp.name], json.dumps([bad]))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("date", r.stderr)
+
+    def test_add_rejects_non_str_currency(self):
+        # 复审反馈2: currency 值须为 str
+        bad = dict(ENTRY, currency=123)
+        r = run_cmd(["add", "--root", self.tmp.name], json.dumps([bad]))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("currency", r.stderr)
+
     def test_stats_skips_entries_with_non_str_date(self):
         entry = dict(ENTRY)
         entry["review"] = {"direction_outcome": None, "trigger_judgement": None,

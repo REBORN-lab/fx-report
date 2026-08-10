@@ -160,6 +160,50 @@ class ReviewTypeGateTest(unittest.TestCase):
              json.dumps(int_date, ensure_ascii=False)])
         self.assertIn("首次运行,无历史观点可复盘", text)
 
+    def test_trigger_newline_flattened_in_brief(self):
+        # 复审反馈3: trigger 含换行须扁平化为单行, 不得在 brief 注入伪列表行
+        entry = opinion(trigger="t\n- 伪列表")
+        text, _ = self._run_raw(
+            {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)},
+            [json.dumps(entry, ensure_ascii=False)])
+        self.assertIn("伪列表", text)
+        self.assertNotIn("\n- 伪列表", text)
+
+    def test_nan_primary_undecidable(self):
+        # 复审反馈4: primary=NaN 非有限值 → rate_of None → 无法判定(而非"未命中")
+        text, log = self._run_raw(
+            {"2026-08-09": snap(60.0), "2026-08-10": snap(float("nan"))},
+            [json.dumps(opinion(), ensure_ascii=False)])
+        self.assertIn("方向核对: 无法判定", text)
+        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
+
+    def test_infinity_primary_undecidable(self):
+        # 复审反馈4: primary=Infinity 非有限值 → 无法判定(而非"命中")
+        text, log = self._run_raw(
+            {"2026-08-09": snap(60.0), "2026-08-10": snap(float("inf"))},
+            [json.dumps(opinion(), ensure_ascii=False)])
+        self.assertIn("方向核对: 无法判定", text)
+        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
+
+    def test_no_pending_does_not_rewrite_log(self):
+        # 复审反馈5: 无 pending 时不得整文件重写(注入坏行验证其未被清洗)
+        reviewed = opinion()
+        reviewed["review"]["direction_outcome"] = "命中"
+        raw_lines = ["{bad line kept", json.dumps(reviewed, ensure_ascii=False)]
+        root, brief = self._root(
+            {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}, raw_lines)
+        log_path = os.path.join(root, "state", "decision-log.jsonl")
+        with open(log_path, encoding="utf-8") as f:
+            before = f.read()
+        r = run_review(root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(brief, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("无未复盘观点", text)
+        with open(log_path, encoding="utf-8") as f:
+            after = f.read()
+        self.assertEqual(after, before)
+
     def test_missing_brief_fails(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

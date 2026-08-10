@@ -4,6 +4,7 @@ add        : stdin 传 JSON 数组,校验后追加(review 三字段置 null)
 set-review : 回填指定 date+currency 的 trigger_judgement 与 verdict
 stats      : 按日期区间输出 命中/未命中/无法判定/未判定 计数与明细"""
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -72,6 +73,17 @@ def cmd_add(args):
         if missing:
             print("缺字段 %s: %s" % (missing, it), file=sys.stderr)
             return 2
+        for k in ("date", "currency", "scenario", "trigger"):
+            # 输入校验路径: 非 str 值入库会令 set-review 永不匹配(argparse 恒 str)、
+            # stats isinstance 门跳过 → 复盘能力静默丢失。报错优于跳过。
+            if not isinstance(it[k], str):
+                print("%s 须为字符串,收到: %r" % (k, it[k]), file=sys.stderr)
+                return 2
+        try:
+            datetime.date.fromisoformat(it["date"])
+        except ValueError:
+            print("date 须为 ISO 格式(YYYY-MM-DD): %r" % it["date"], file=sys.stderr)
+            return 2
         if it["watch_direction"] not in ("up", "down", None):
             print("watch_direction 须为 up/down/null: %s" % it, file=sys.stderr)
             return 2
@@ -115,7 +127,8 @@ def cmd_stats(args):
         if args.date_from <= d <= args.date_to:
             rev = review_of(e)
             v = rev.get("verdict") if rev is not None else None
-            key = v if v in counts else "未判定"
+            # 可哈希门: dict/list 等 unhashable verdict 做 `in counts` 会 TypeError
+            key = v if isinstance(v, str) and v in counts else "未判定"
             counts[key] += 1
             detail.append("  - %s %s %s" % (d, e.get("currency"), v or "未判定"))
     print("命中 %(命中)d / 未命中 %(未命中)d / 无法判定 %(无法判定)d / 未判定 %(未判定)d"
