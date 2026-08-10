@@ -249,13 +249,15 @@ class MutationKillTest(unittest.TestCase):
 
 def make_weekly(coverage="覆盖日报:5 份(2026-08-04 至 2026-08-08);缺失日期:无",
                 theme_items=3, date_heading=False, drop=None,
-                review_body="- 命中 2 / 未命中 1 / 无法判定 2\n- 2026-08-05 PHP 命中"):
+                review_body="- 命中 2 / 未命中 1 / 无法判定 2\n- 2026-08-05 PHP 命中",
+                currency_body=None):
     lines = ["# 外汇周报 2026-W32", "", "> " + coverage if coverage else "", ""]
     lines += ["## 本周主线"] + ["- 主线 %d" % (i + 1) for i in range(theme_items)]
     if date_heading:
         lines += ["", "## 2026-08-05", "当日流水"]
     body = {
-        "各币种一周归因": "USD 观望;EUR 震荡;PHP 通胀回落主导;THB 出口疲弱;BRL 政策预期反复。",
+        "各币种一周归因": currency_body if currency_body is not None else
+            "USD 观望;EUR 震荡;PHP 通胀回落主导;THB 出口疲弱;BRL 政策预期反复。",
         "复盘汇总": review_body,
         "下周关注": "- 关注五央行表态",
         "缺漏汇总": "- 2026-08-06: [gdelt/THB] rate-limited after retry",
@@ -294,6 +296,16 @@ class CheckWeeklyTest(unittest.TestCase):
     def test_missing_weekly_section(self):
         v = check_report.check_weekly(make_weekly(drop="缺漏汇总"))
         self.assertTrue(any("SECTION_MISSING" in x and "缺漏汇总" in x for x in v))
+
+    def test_missing_currency_reported(self):
+        # 击杀变异 M6(删 check_weekly 的 CURRENCY_MISSING 循环):币种散文
+        # 去掉 USD 后,全文任何位置(标题/覆盖行/复盘汇总/缺漏汇总)均不含
+        # "USD" 字样,必须报 CURRENCY_MISSING: 周报未覆盖 USD。
+        report = make_weekly(
+            currency_body="EUR 震荡;PHP 通胀回落主导;THB 出口疲弱;BRL 政策预期反复。")
+        self.assertNotIn("USD", report)  # 前置自检:样本确实全文无 USD
+        v = check_report.check_weekly(report)
+        self.assertTrue(any("CURRENCY_MISSING" in x and "USD" in x for x in v))
 
 
 if __name__ == "__main__":
