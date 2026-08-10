@@ -16,6 +16,10 @@ NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 CJK_RE = re.compile(r"[一-鿿]")
 ALLOWED_SMALL = {str(i) for i in range(0, 13)}   # 序数/条数/月份类小整数
 LIST_ITEM_RE = re.compile(r"\s*(?:[-*]|\d+[.、])\s+\S")
+MAX_THEME_ITEMS = 3
+WEEKLY_SECTIONS = ["本周主线", "各币种", "复盘汇总", "下周关注", "缺漏汇总"]
+COVERAGE_RE = re.compile(r"覆盖日报[::]\s*(\d+)\s*份")
+DATE_HEADING_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 
 def sections(md):
@@ -177,7 +181,32 @@ def main(argv=None):
 
 
 def check_weekly(report):
-    raise NotImplementedError("weekly 模式在周报任务实现")
+    v = []
+    secs = sections(report)
+    for key in WEEKLY_SECTIONS:
+        if not find_section(secs, key):
+            v.append("SECTION_MISSING: 缺少 %s 节" % key)
+    ml = find_section(secs, "本周主线")
+    if ml and len(list_items(ml[1])) > MAX_THEME_ITEMS:
+        v.append("THEME_TOO_MANY: 本周主线 %d 条 > %d"
+                 % (len(list_items(ml[1])), MAX_THEME_ITEMS))
+    for h, _ in secs:
+        if DATE_HEADING_RE.match(h):
+            v.append("DATE_STRUCTURE: 一级结构含日期标题 %s(必须按主题组织)" % h)
+    m = COVERAGE_RE.search(report)
+    if not m:
+        v.append("COVERAGE_MISSING: 缺少「覆盖日报:N 份」声明")
+    elif int(m.group(1)) < 3 and "缺失日期" not in report:
+        v.append("COVERAGE_GAP_DATES: 覆盖不足 3 份但未注明缺失日期")
+    for c in CURRENCIES:
+        if c not in report:
+            v.append("CURRENCY_MISSING: 周报未覆盖 %s" % c)
+    rs = find_section(secs, "复盘汇总")
+    if rs:
+        for tok in ("命中", "未命中", "无法判定"):
+            if tok not in rs[1]:
+                v.append("REVIEW_TOKEN_MISSING: 复盘汇总缺少「%s」" % tok)
+    return v
 
 
 if __name__ == "__main__":

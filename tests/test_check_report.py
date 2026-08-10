@@ -247,5 +247,54 @@ class MutationKillTest(unittest.TestCase):
         self.assertTrue(any("GAP_OMITTED" in x for x in v))
 
 
+def make_weekly(coverage="覆盖日报:5 份(2026-08-04 至 2026-08-08);缺失日期:无",
+                theme_items=3, date_heading=False, drop=None,
+                review_body="- 命中 2 / 未命中 1 / 无法判定 2\n- 2026-08-05 PHP 命中"):
+    lines = ["# 外汇周报 2026-W32", "", "> " + coverage if coverage else "", ""]
+    lines += ["## 本周主线"] + ["- 主线 %d" % (i + 1) for i in range(theme_items)]
+    if date_heading:
+        lines += ["", "## 2026-08-05", "当日流水"]
+    body = {
+        "各币种一周归因": "USD 观望;EUR 震荡;PHP 通胀回落主导;THB 出口疲弱;BRL 政策预期反复。",
+        "复盘汇总": review_body,
+        "下周关注": "- 关注五央行表态",
+        "缺漏汇总": "- 2026-08-06: [gdelt/THB] rate-limited after retry",
+    }
+    for name, b in body.items():
+        if name != drop:
+            lines += ["", "## " + name, b]
+    return "\n".join(lines)
+
+
+class CheckWeeklyTest(unittest.TestCase):
+    def test_valid_weekly_passes(self):
+        self.assertEqual(check_report.check_weekly(make_weekly()), [])
+
+    def test_date_heading_forbidden(self):
+        v = check_report.check_weekly(make_weekly(date_heading=True))
+        self.assertTrue(any("DATE_STRUCTURE" in x for x in v))
+
+    def test_coverage_declaration_required(self):
+        v = check_report.check_weekly(make_weekly(coverage=""))
+        self.assertTrue(any("COVERAGE_MISSING" in x for x in v))
+
+    def test_low_coverage_needs_missing_dates(self):
+        v = check_report.check_weekly(
+            make_weekly(coverage="覆盖日报:2 份(2026-08-04、2026-08-05)"))
+        self.assertTrue(any("COVERAGE_GAP_DATES" in x for x in v))
+
+    def test_theme_limit(self):
+        v = check_report.check_weekly(make_weekly(theme_items=4))
+        self.assertTrue(any("THEME_TOO_MANY" in x for x in v))
+
+    def test_review_tokens_required(self):
+        v = check_report.check_weekly(make_weekly(review_body="- 表现不错"))
+        self.assertTrue(any("REVIEW_TOKEN_MISSING" in x for x in v))
+
+    def test_missing_weekly_section(self):
+        v = check_report.check_weekly(make_weekly(drop="缺漏汇总"))
+        self.assertTrue(any("SECTION_MISSING" in x and "缺漏汇总" in x for x in v))
+
+
 if __name__ == "__main__":
     unittest.main()
