@@ -1508,7 +1508,7 @@ git commit -m "test(fx): 聚合层逐源故障注入矩阵(tasks 2.5)——unitt
 - Design 测试要求四用例:方向命中/未命中/昨日无观点/首次运行
 - 日志只由脚本写(add / set-review / review.py 回填),LLM 不直接碰 jsonl
 
-- [ ] **Step 1: 写失败测试 `tests/test_log_decision.py`**
+- [x] **Step 1: 写失败测试 `tests/test_log_decision.py`**
 
 ```python
 import json
@@ -1592,7 +1592,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 写失败测试 `tests/test_review.py`**
+- [x] **Step 2: 写失败测试 `tests/test_review.py`**
 
 ```python
 import json
@@ -1689,11 +1689,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑两个测试文件确认失败**
+- [x] **Step 3: 跑两个测试文件确认失败**
 
 Run: `python3 -m unittest tests.test_log_decision tests.test_review -v` — Expected: 全 ERROR/FAIL(脚本不存在)
 
-- [ ] **Step 4: 写 `scripts/log_decision.py`**
+- [x] **Step 4: 写 `scripts/log_decision.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -1819,7 +1819,7 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 5: 写 `scripts/review.py`**
+- [x] **Step 5: 写 `scripts/review.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -1919,12 +1919,12 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 6: 跑测试确认通过**
+- [x] **Step 6: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_log_decision tests.test_review -v`
 Expected: 11 tests, `OK`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/log_decision.py scripts/review.py tests/test_log_decision.py tests/test_review.py
