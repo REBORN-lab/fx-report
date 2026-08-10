@@ -1,0 +1,29 @@
+{
+  "valid_until": "2026-12-31",
+  "updated_at": "2026-08-10",
+  "sources": [
+    {"bank": "Fed", "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"},
+    {"bank": "ECB", "url": "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"},
+    {"bank": "BSP", "url": "https://www.bsp.gov.ph/Pages/PriceStability/ScheduleOfMeetingsOfTheAdvisoryCommitteeAndMonetaryBoardOnMonetaryPolicy.aspx"},
+    {"bank": "BOT", "url": "https://www.bot.or.th/en/our-roles/monetary-policy/mpc-meeting.html"},
+    {"bank": "BCB", "url": "https://www.bcb.gov.br/htms/copom_normas/copomcalend.asp"}
+  ],
+  "maintenance": "每年 12 月按 sources 官网更新次年日程:新增次年 events、顺延 valid_until;文件名 calendar-<年>.json,采集入口自动取字典序最大的 state/calendar-*.json。",
+  "events": [
+    {"date": "2026-08-26", "bank": "BOT", "event": "MPC 货币政策会议(2026年第4次,决议公布日)"},
+    {"date": "2026-08-27", "bank": "BSP", "event": "Monetary Board 货币政策会议(2026年第4次)"},
+    {"date": "2026-09-10", "bank": "ECB", "event": "Governing Council 货币政策会议(9/9-10 两日会议,决议与新闻发布会为9/10)"},
+    {"date": "2026-09-16", "bank": "Fed", "event": "FOMC 议息会议(9/15-16 两日会议,声明公布日为9/16)"},
+    {"date": "2026-09-16", "bank": "BCB", "event": "COPOM 第281次货币政策会议(9/15-16 两日会议,决议公布日为9/16)"},
+    {"date": "2026-10-22", "bank": "BSP", "event": "Monetary Board 货币政策会议(2026年第5次)"},
+    {"date": "2026-10-28", "bank": "Fed", "event": "FOMC 议息会议(10/27-28 两日会议,声明公布日为10/28)"},
+    {"date": "2026-10-28", "bank": "BOT", "event": "MPC 货币政策会议(2026年第5次,决议公布日)"},
+    {"date": "2026-10-29", "bank": "ECB", "event": "Governing Council 货币政策会议(10/28-29 两日会议,决议与新闻发布会为10/29)"},
+    {"date": "2026-11-04", "bank": "BCB", "event": "COPOM 第282次货币政策会议(11/3-4 两日会议,决议公布日为11/4)"},
+    {"date": "2026-12-09", "bank": "Fed", "event": "FOMC 议息会议(12/8-9 两日会议,声明公布日为12/9)"},
+    {"date": "2026-12-09", "bank": "BCB", "event": "COPOM 第283次货币政策会议(12/8-9 两日会议,决议公布日为12/9)"},
+    {"date": "2026-12-17", "bank": "ECB", "event": "Governing Council 货币政策会议(12/16-17 两日会议,决议与新闻发布会为12/17)"},
+    {"date": "2026-12-17", "bank": "BSP", "event": "Monetary Board 货币政策会议(2026年第6次,年内最后一次)"},
+    {"date": "2026-12-23", "bank": "BOT", "event": "MPC 货币政策会议(2026年第6次,年内最后一次,决议公布日)"}
+  ]
+}
