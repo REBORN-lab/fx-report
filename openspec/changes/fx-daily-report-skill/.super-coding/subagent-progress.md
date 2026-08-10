@@ -7,8 +7,9 @@
 
 ## 当前任务
 
-- Plan task: Task 7: 年历命中模块(tasks.md 2.4 的年历部分;2.4 勾选留到 Task 8 快照聚合完成后)
-- Plan 行区间: 1049-1159
+- Plan task: Task 8: 快照聚合(tasks.md 2.4,勾选在本任务完成后执行)
+- Plan 行区间: 1163-1377
+- OpenSpec task 文本: "2.4 快照聚合:年历对照标注 + 全部采集结果落盘 `data/YYYY-MM-DD.json`(含逐源状态与 gaps 结构),单源失败不中断"
 - 阶段: implementer 待派发
 
 ## 全局备忘
@@ -17,6 +18,7 @@
 - Task 2 已接受 Minor(不阻塞): bank→currency 映射、updated_at 用途说明、events 二级排序
 - Task 17 核对时处理 spec 措辞漂移: delta spec"宏观数据增量采集"括号"IMF/BCB 口径"与实测最终 provider 组合 IMF/BIS/ECB 不一致(Task 5 spec 审查员发现,归档同步 main spec 前修正措辞)
 - 端点实测结论(推翻协调者预设,以 implementer 实测为准): Frankfurter v1 仍在线支持历史日期(dict 形态,选用 v1;v2 数组形态已验证存在未采用);exchange-api 直接接受 YYYY-MM-DD 版本号,_secondary_date 保持恒等
+- Task 16 README 年历维护再加一条(Task 7 quality Minor#1): 明确写死 valid_until 必须为带横线 ISO 格式(YYYY-MM-DD)——非 ISO 合法字符串(如 "20260101")会使过期告警静默失效(字典序 "-"<"0"),代码层不校验,由文档约束
 
 ## 已完成任务
 
@@ -24,3 +26,4 @@
 - Task 4(tasks.md 2.1): 实现 b4e1315;spec ✅;quality 修复 4 轮(轮 1 fd19729 除零/双None/缺币种gap/脏值隔离/errs;轮 2 e016fb5 内层 null;轮 3 2907253 顶层非 dict isinstance 门;轮 4 8288a96 用户授权突破 3 轮上限,3 处 `or {}` 换 isinstance 门 + 3 TDD 用例);终局定向复审 ✅(Ready to merge: Yes,Critical/Important 均无,Minor×1 记录性质:RED 双形态同方法,已单独实证覆盖为实);测试 23/23(rates)+ 全量 25/25(先跑后抄);plan 区间 339-580 勾 8/8,tasks.md 2.1 task-checkoff PASS
 - Task 5(tasks.md 2.2): 实现 1dca240(探针首轮 9 OK/6 FAIL,替换后 15/15 实测 OK:BIS WS_CBPOL_D→WS_CBPOL ×5、EA CPI→ECB/ICP/M.U2.N.000000.4.ANR;无未验证 ID 入 config);spec ✅ 零缺零多;quality 首轮攻击 36 例 0 崩溃、Ready-No(Important×2),轮 1 修复 29807e7(zip 长度门+5 测试+bool 排除+fred 双缺失跳过),定向复审 ✅(基线/修后双向重放 4 缺陷形态全翻转,零 issue);接受不修 Minor#3/#4;测试 test_macro 14/14,全量 39/39(先跑后抄);plan 区间 583-806 勾 6/6,tasks.md 2.2 task-checkoff PASS
 - Task 6(tasks.md 2.3): 实现 3644a43 + f9cbe94(timespan 24h→48h 归位,根因:协调者派发漏贴模板 _window);spec ✅ 零缺零多(nit×2 移交);quality 攻击 20 形态 0 上抛但深探针发现 RecursionError 穿透窄捕获,Ready-No(Important×1),轮 1 修复 4fbc4b6(except 元组加 RecursionError+10 万层深嵌套测试+Thai 计数断言==2),定向复审 ✅(变异 0 次/2 次重试均被击杀,RED 重放实证,零 issue);接受不修 Minor#1(限速文案在合法 JSON 内,GDELT 实测纯文本)、nit#1(cfg["backfill"] 下标 fail-fast);测试 test_events 13/13,全量 52/52(先跑后抄);plan 区间 810-1045 勾 6/6,tasks.md 2.3 task-checkoff PASS
+- Task 7(plan 年历命中,tasks.md 2.4 部分): 实现 4c7160b;spec ✅ 零缺零多(真实年历 08-26/08-27 命中 BOT/BSP 实测正确);quality ✅ 零轮修复(Ready-Yes,攻击 31 形态 0 上抛,RecursionError 被整体 except Exception 接住实测确认;Minor×3 均不阻塞: #1 非 ISO valid_until 告警静默失效→转 Task 16 README 约束,#2 三处 gap 计数断言略松、#3 RecursionError 无锁定测试→接受,后续轮次如有回炉顺带);测试 test_calendar 11/11,全量 63/63(先跑后抄);plan 区间 1049-1159 勾 5/5;tasks.md 2.4 待 Task 8 完成后勾

@@ -1056,7 +1056,7 @@ git commit -m "feat(fx): GDELT 事件采集,软限速退避与串行间隔(tasks
 - Scenario"昨日为议息日":前一日有议息 → `calendar_hits` 标记 央行名/事件/日期
 - 追加(Design):`valid_until` 过期 → gap 提示更新年历(命中判定仍执行);文件缺失/损坏 → gap
 
-- [ ] **Step 1: 写失败测试 `tests/test_calendar.py`**
+- [x] **Step 1: 写失败测试 `tests/test_calendar.py`**
 
 ```python
 import json
@@ -1114,11 +1114,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_calendar -v` — Expected: ERROR
 
-- [ ] **Step 3: 写 `scripts/collect/calendar.py`**
+- [x] **Step 3: 写 `scripts/collect/calendar.py`**
 
 ```python
 """静态央行年历命中判定:标注昨日/今日议息等日历事件,valid_until 过期告警。"""
@@ -1147,11 +1147,11 @@ def collect(cfg):
     return hits, gaps
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_calendar -v` — Expected: 4 tests, `OK`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/collect/calendar.py tests/test_calendar.py
