@@ -1171,7 +1171,7 @@ git commit -m "feat(fx): 年历命中判定与过期告警(tasks 2.4 部分)"
 - 快照 schema 与 Design 第 2 节一致(date/run_at/schema_version/rates/macro/events/calendar_hits/gaps/meta;FRED 增强时另有 us_release_dates)
 - `python3 -m scripts.collect --date D` 写 `data/D.json`,退出码 0(即使有 gaps)
 
-- [ ] **Step 1: 写失败测试 `tests/test_snapshot.py`**
+- [x] **Step 1: 写失败测试 `tests/test_snapshot.py`**
 
 ```python
 import json
@@ -1256,11 +1256,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_snapshot -v` — Expected: ERROR(无 `__main__.main`)
 
-- [ ] **Step 3: 写 `scripts/collect/__main__.py`**
+- [x] **Step 3: 写 `scripts/collect/__main__.py`**
 
 ```python
 """快照聚合主入口:python3 -m scripts.collect --date YYYY-MM-DD(默认今天,UTC)。
@@ -1360,16 +1360,16 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_snapshot -v` — Expected: 3 tests, `OK`
 
-- [ ] **Step 5: 全量回归**
+- [x] **Step 5: 全量回归**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: 此前全部测试 + 本任务 3 个,全 `OK`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/collect/__main__.py tests/test_snapshot.py
