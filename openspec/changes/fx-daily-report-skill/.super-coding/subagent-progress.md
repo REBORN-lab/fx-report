@@ -7,9 +7,10 @@
 
 ## 当前任务
 
-- Plan task: Task 12: check_report.py 日报校验器(tasks.md 3.3 的前置)
-- Plan 行区间: 2088-2363
-- 阶段: implementer 待派发
+- Plan task: Task 13: 日报端到端验收(tasks.md 3.3)
+- Plan 行区间: 2367-2420
+- OpenSpec task 文本: "3.3 端到端验收:真实跑一次 `claude -p` 生成当日日报,抽查全部数字与快照逐字一致、缺漏节如实、篇幅合规"
+- 阶段: implementer 待派发(带全局备忘观察清单)
 
 ## 全局备忘
 
@@ -31,3 +32,4 @@
 - Task 9(tasks.md 2.5): 提交 6e39d4a(纯测试任务,首跑 6/6 全绿无 RED 如实记录);spec ✅(3 Scenario 映射完整、真实入口、N=76 无虚报;与模板除末尾 1 空行外逐字一致——"零偏离"自报被比对修正入档);quality ✅ 零轮修复(变异实证 4 组: 降级路径破坏 3/6 挂、兜底删除矩阵不受影响而 test_snapshot 锁定测试挂——分工互补无盲区、gaps 聚合漏 extend 两组各被击杀且为聚合层唯一防线;Minor×3 接受: dbnomics 用例与 test_snapshot 真子集重复、双挂用例集合断言偏松、5/6 用例 rc 未断言——均为 plan 定死模板固有);全量 76/76(先跑后抄);plan 区间 1381-1495 勾 4/4,tasks.md 2.5 task-checkoff PASS
 - Task 10(tasks.md 3.2): 实现 2bf580c(RED 阶段发现纯 rc==2 断言被"python3 找不到文件也返回 2"假通过,自补用例加 stderr 断言,如实入档);spec ✅ 零问题(写路径唯一性 grep、prior_dates/平盘/节头探针实测、模板 11 用例逐字节保留);quality Ready-No(Important×2: stats unhashable verdict 崩溃、add 无值类型校验),轮 1 修复 61a2c53(stats 可哈希门、add 四字段 str 门+fromisoformat、flat() 换行扁平化、isfinite 门、无 pending 不重写;RED 8/8 真实),定向复审 ✅(变异 6/6 被杀,重放 27/27,闰日边界实测;Minor 观察×2 入档: py3.11+ fromisoformat 接受紧凑格式"20260810"可选收紧 strptime、target 未过 flat 属深度防御备注);接受: stats 明细标签、set-review 首条匹配、并发窗口、load/save 重复;测试 33/33,全量 109/109(先跑后抄);plan 区间 1499-1932 勾 7/7,tasks.md 3.2 task-checkoff PASS
 - Task 11(tasks.md 3.1): 实现 4ab58f7(RED/GREEN=N/A 纯内容任务);spec ✅ 零差异(与 plan 围栏 md5 字节级一致,3.1 要素/delta spec 五 Requirement 全映射,CLI 接口逐一吻合);quality ✅ 零轮修复(Ready-Yes;执行 LLM 视角走查: 第 5 步判定链清晰、review.py 缺 brief 报错自纠提示佳、数字纪律是 check_report 白名单严格子集单向包含;Important×1+Minor×9 全部转 Task 13 观察清单,内容 plan 定死无回炉);symlink mode 120000 相对路径 fresh clone 可还原;全量 109/109;plan 区间 1936-2084 勾 3/3,tasks.md 3.1 task-checkoff PASS
+- Task 12(plan 校验器 daily,tasks.md 3.1/3.3 支撑): 实现 91c7bab;spec ✅(模板 10 用例三段 IDENTICAL、CLI 按 SKILL 逐字形态实测;观察: 注释引号琐碎差异、偏离①commit 理由失实但结论已获准);quality 双向攻击全部行为正确(无子串巧合放行/无崩溃逃逸/CJK 语义准确)但变异 A(DATE_RE)与 C(GAP_OMITTED)存活——模板测试 test_dates_are_not_flagged 目的性空转,Ready-No(Important×2 均测试网缺口),轮 1 修复 960f27c(仅补 MutationKillTest 两例,变异副本 RED 实证互不误杀),定向复审 ✅(变异矩阵独立复现,模板用例逐行未动);Minor 记录: 08-09/W33 短日期误拦、gap 时间戳时分秒入白名单、weekly 裸抛占位、单标点复盘节/杂节顶替;plan 既定粒度: 张冠李戴提及、编造 gap 条目放行;测试 24/24,全量 133/133(先跑后抄);plan 区间 2088-2363 勾 5/5;tasks.md 无独立条目(3.3 待 Task 13)

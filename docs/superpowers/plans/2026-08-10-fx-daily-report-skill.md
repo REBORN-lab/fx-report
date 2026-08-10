@@ -2097,7 +2097,7 @@ git commit -m "feat(fx): 日报 skill 五步编排,模板+禁令+数字纪律(ta
 - Scenario"篇幅合规":摘要 ≤6 条;币种节 CJK ≤330(约 300+容差)
 - 结构:五币种节 + 执行摘要 + 复盘 + 数据缺漏 齐全;违规退出码 1、逐条打印;合规退出码 0
 
-- [ ] **Step 1: 写失败测试 `tests/test_check_report.py`(daily 部分)**
+- [x] **Step 1: 写失败测试 `tests/test_check_report.py`(daily 部分)**
 
 ```python
 import json
@@ -2211,11 +2211,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: ERROR(模块不存在)
 
-- [ ] **Step 3: 写 `scripts/check_report.py`(daily 模式;weekly 在 Task 14 扩展)**
+- [x] **Step 3: 写 `scripts/check_report.py`(daily 模式;weekly 在 Task 14 扩展)**
 
 ```python
 #!/usr/bin/env python3
@@ -2351,11 +2351,11 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: 10 tests, `OK`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/check_report.py tests/test_check_report.py
