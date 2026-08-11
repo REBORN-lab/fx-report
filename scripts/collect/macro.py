@@ -93,10 +93,11 @@ def _latest_and_prev_distinct(obs):
 
 # BIS 用 XM 表示欧元区,仓库内部用 EA。写死映射,不做字符串启发式。
 BIS_AREA = {"US": "US", "EA": "XM", "PH": "PH", "TH": "TH", "BR": "BR"}
-# (指标名, 端点配置键, dataflow 名, 前值口径)
+# (指标名, 端点配置键, dataflow 名, 频率)。频率同时决定两件事:前值口径,
+# 以及"什么算新发布"——见 _latest_and_prev_* 与 _is_new_level。
 BIS_DATAFLOWS = (
-    ("政策利率", "bis_cbpol_url", "WS_CBPOL", "distinct"),
-    ("CPI 同比", "bis_cpi_url", "WS_LONG_CPI", "observation"),
+    ("政策利率", "bis_cbpol_url", "WS_CBPOL", "D"),
+    ("CPI 同比", "bis_cpi_url", "WS_LONG_CPI", "M"),
 )
 
 
@@ -104,15 +105,26 @@ def _bis_table(cfg, gaps):
     """返回 {(economy, indicator): row}。
 
     批量取数(两次 GET 覆盖五经济体)但**逐指标**可缺席:某经济体没进表,
-    调用方查不到就自然回落 DBnomics。三种降级路径(整体失败 / 缺必需列 /
-    缺某经济体)因此共用同一条代码路径,不需要额外分支。
+    调用方查不到就自然回落 DBnomics。
+
+    三条降级路径(整体失败 / 缺必需列 / 缺某经济体)都必须**记 gap**:回落
+    拿到的是 DBnomics 陈值(实测滞后 8–17 个月),在快照里与正常取数完全同形;
+    上一日若也是 dbnomics 则连 source_changed_from 都没有,不记缺漏就没有任何
+    字段能让报告层察觉降级,禁令 3(缺漏节列出的数据正文禁止引用)永不触发。
+
+    只为**被跟踪的**(经济体, 指标)取数与记 gap:没人跟踪的指标缺席不是缺漏,
+    与 BLS「没跟踪就别打这一枪」同约定,否则缺漏节会被无人关心的条目淹没。
 
     任何失败都记 gap 并让受影响指标缺席,绝不上抛(采集层硬契约)。
     """
     endpoints = cfg.get("endpoints")
     endpoints = endpoints if isinstance(endpoints, dict) else {}
+    tracked = {(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]}
     out = {}
-    for indicator, key, dataflow, prev_mode in BIS_DATAFLOWS:
+    for indicator, key, dataflow, freq in BIS_DATAFLOWS:
+        wanted = [(e, a) for e, a in BIS_AREA.items() if (e, indicator) in tracked]
+        if not wanted:
+            continue        # 该指标一个经济体都没跟踪 → 不发这次 GET,也不记 gap
         url = endpoints.get(key)
         if not isinstance(url, str) or not url:
             continue        # 未配置 = 有意停用(与 feeds.py 同约定),删 URL 即回滚
@@ -122,16 +134,25 @@ def _bis_table(cfg, gaps):
             gaps.append(util.make_gap("bis", dataflow,
                                       "%s: %s" % (type(e).__name__, e)))
             continue
-        pick = (_latest_and_prev_distinct if prev_mode == "distinct"
-                else _latest_and_prev_observation)
-        for economy, area in BIS_AREA.items():
+        pick = _latest_and_prev_distinct if freq == "D" else _latest_and_prev_observation
+        for economy, area in wanted:
             value, period, prev, prev_period = pick(by_area.get(area) or [])
-            if value is None:
-                continue    # 该经济体缺席或全 NaN → 只有它回落
+            if value is None:   # 该经济体缺席或全 NaN → 只有它回落,但要说出来
+                gaps.append(util.make_gap(
+                    "bis", "%s/%s" % (economy, indicator),
+                    "BIS %s 响应中 REF_AREA=%s 无可用观测,该指标回落 DBnomics"
+                    % (dataflow, area)))
+                continue
+            series_id = "BIS/%s/%s" % (dataflow, area)
             out[(economy, indicator)] = {
                 "value": value, "prev": prev, "period": period,
                 "prev_period": prev_period, "source": "bis",
-                "series_id": "BIS/%s/%s" % (dataflow, area),
+                "series_id": series_id,
+                # 判据随频率变:日频序列每天追加一行,期号推进说明的是管道刷新,
+                # 只有水平变了才是央行发布。判定留在这里而不是 collect(),
+                # 是为了让"哪个频率用哪条规则"与频率声明待在同一处。
+                "is_new_release": (_is_new_level(cfg, series_id, value) if freq == "D"
+                                   else _is_new(cfg, series_id, period)),
             }
     return out
 
@@ -159,8 +180,9 @@ def collect(cfg):
             continue
         bis = bis_table.get((ind["economy"], ind["indicator"]))
         if bis is not None:
+            # is_new_release 已由 _bis_table 按频率判好(日频比水平、月频比期号),
+            # 这里不得覆写成统一的期号比对。
             row = dict(bis, economy=ind["economy"], indicator=ind["indicator"],
-                       is_new_release=_is_new(cfg, bis["series_id"], bis["period"]),
                        lag_months=lag_months(bis["period"], cfg["date"]))
             indicators.append(_mark_source_change(cfg, ind, row))
             continue
@@ -348,6 +370,33 @@ def _last_two(doc):
     period, value = pairs[-1]
     prev = pairs[-2][1] if len(pairs) >= 2 else None
     return value, prev, period
+
+
+def _is_new_level(cfg, series_id, value):
+    """日频序列的「新发布」= **水平变了**,不是「序列多了一行」。
+
+    BIS WS_CBPOL 每个日历日追加一行(实测 400 个观测跨 399 天),利率纹丝不动
+    的日子期号照样推进。沿用 _is_new(只比 period)会让五个经济体在每个 BIS
+    刷新日全部 is_new_release 为 true,日报据此打出"数据发布:政策利率 …"行
+    ——又一次把管道状态说成市场事实(本仓库反复出现的同型缺陷)。
+
+    取不到可比数值(首次落地、上一份快照无此 series、旧值不是数或是 bool)
+    → False:漏列一次真实变动只是少说,凭不可比的输入打出发布行是编造。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    snap = cfg.get("prev_snapshot")
+    rows = snap.get("macro") if isinstance(snap, dict) else None
+    if not isinstance(rows, list):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or row.get("series_id") != series_id:
+            continue
+        old = row.get("value")
+        if isinstance(old, bool) or not isinstance(old, (int, float)):
+            return False
+        return old != value
+    return False
 
 
 def _is_new(cfg, series_id, period):

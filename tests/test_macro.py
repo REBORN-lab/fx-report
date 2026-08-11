@@ -595,17 +595,61 @@ class BisTableTest(unittest.TestCase):
     def test_economy_absent_from_response_only_that_key_missing(self):
         """TH 不在 CPI 响应里 → 只有它缺席,BR/EA 照常。"""
         with FixtureServer(dict(BIS_ROUTES)) as srv:
-            table = macro._bis_table(bis_cfg(srv), [])
+            cfg = bis_cfg(srv)
+            cfg["indicators"].append({"economy": "TH", "indicator": "CPI 同比",
+                                      "series_id": "IMF/CPI/M.TH.X"})
+            table = macro._bis_table(cfg, [])
         self.assertNotIn(("TH", "CPI 同比"), table)
         self.assertIn(("BR", "CPI 同比"), table)
+
+    def test_absent_economy_records_gap_so_the_fallback_is_visible(self):
+        """spec 正文与 tasks 3.3:「缺少某经济体时……逐条回落 DBnomics **并记入缺漏**」。
+
+        不记 gap 的话,回落拿到的 DBnomics 陈值(实测滞后 17 个月)在快照里与
+        正常取数完全同形——上一日若也是 dbnomics,连 source_changed_from 都没有,
+        报告层没有任何字段能察觉降级,禁令 3 永远不会触发。
+        """
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            cfg = bis_cfg(srv, indicators=[{"economy": "TH", "indicator": "CPI 同比",
+                                            "series_id": "IMF/CPI/M.TH.X"}])
+            gaps = []
+            table = macro._bis_table(cfg, gaps)
+        self.assertNotIn(("TH", "CPI 同比"), table)
+        self.assertEqual([(g["source"], g["scope"]) for g in gaps],
+                         [("bis", "TH/CPI 同比")])
+
+    def test_untracked_economy_absent_records_no_gap(self):
+        """只跟踪 BR/EA 时,US/PH 不在响应里不是缺漏——没人要它。与 BLS
+        「没跟踪就别打这一枪」同约定;否则缺漏节会被无人关心的条目淹没。"""
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            cfg = bis_cfg(srv, indicators=[{"economy": "BR", "indicator": "CPI 同比",
+                                            "series_id": "IMF/CPI/M.BR.X"}])
+            gaps = []
+            table = macro._bis_table(cfg, gaps)
+        self.assertEqual(gaps, [])
+        self.assertIn(("BR", "CPI 同比"), table)
+
+    def test_untracked_dataflow_is_not_requested(self):
+        """一个 BIS 指标都没跟踪就别发那次 GET(端点指向死地址仍应零 gap)。"""
+        with FixtureServer({"/bis/cpi": (200, CPI_CSV)}) as srv:
+            cfg = bis_cfg(srv, endpoints={"bis_cbpol_url": DEAD_URL + "/x"},
+                          indicators=[{"economy": "BR", "indicator": "CPI 同比",
+                                       "series_id": "IMF/CPI/M.BR.X"}])
+            gaps = []
+            table = macro._bis_table(cfg, gaps)
+        self.assertEqual(gaps, [])
+        self.assertEqual(list(table), [("BR", "CPI 同比")])
 
     def test_all_nan_economy_absent(self):
         allnan = {"/bis/cbpol": (200, "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
                                       "D,BR,2026-06-17,NaN\nD,BR,2026-06-18,NaN\n"),
                   "/bis/cpi": (200, CPI_CSV)}
         with FixtureServer(allnan) as srv:
-            table = macro._bis_table(bis_cfg(srv), [])
+            gaps = []
+            table = macro._bis_table(bis_cfg(srv), gaps)
         self.assertNotIn(("BR", "政策利率"), table)
+        # 全 NaN 与"经济体缺席"同属"无可用观测",同样必须可见
+        self.assertIn(("bis", "BR/政策利率"), [(g["source"], g["scope"]) for g in gaps])
 class PriorityTest(unittest.TestCase):
     """来源优先级 BLS > BIS > DBnomics。"""
 
@@ -668,6 +712,91 @@ class PriorityTest(unittest.TestCase):
                if (r["economy"], r["indicator"]) == ("BR", "政策利率")][0]
         self.assertEqual(row["source_changed_from"], "dbnomics")
         self.assertFalse(row["is_new_release"])
+
+
+CBPOL_FLAT_CSV = (
+    "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+    "D,BR,2026-06-17,14.25\n"
+    "D,BR,2026-06-18,14.25\n"
+    "D,BR,2026-06-19,14.25\n"          # 期号天天推进,利率纹丝不动
+)
+CPI_FLAT_CSV = (
+    "FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\n"
+    "M,BR,771,2026-05,4.6\n"
+    "M,BR,771,2026-06,4.6\n"
+)
+BR_RATE = {"economy": "BR", "indicator": "政策利率", "series_id": "BIS/WS_CBPOL/D.BR"}
+BR_CPI = {"economy": "BR", "indicator": "CPI 同比", "series_id": "IMF/CPI/M.BR.X"}
+
+
+def prev_macro(**over):
+    # series_id 必须是 BIS 分支真实落盘的那一个(BIS/<dataflow>/<area>);
+    # 写成 config 里的 DBnomics 标识 D.BR 会让 _is_new* 查不到行而恒返回
+    # False —— 用例会以"假绿"通过。
+    row = {"economy": "BR", "indicator": "政策利率",
+           "series_id": "BIS/WS_CBPOL/BR", "period": "2026-06-18",
+           "value": 14.25, "source": "bis"}
+    row.update(over)
+    return {"macro": [row]}
+
+
+class DailyReleaseSemanticsTest(unittest.TestCase):
+    """日频序列的「新发布」= 水平变了,不是序列多了一行。
+
+    BIS WS_CBPOL 每个日历日追加一行(实测 400 个观测跨 399 天,无跳日),
+    只比 period 会让五个经济体在每个 BIS 刷新日全部 is_new_release 为 true,
+    日报据此打出「数据发布:政策利率 最新 14.25 …」——把管道刷新说成央行
+    动了利率。这是本仓库反复出现的同型缺陷:管道状态被当成市场事实。
+    """
+
+    def _rate_row(self, body, prev_snapshot):
+        routes = {"/bis/cbpol": (200, body), "/bis/cpi": (200, CPI_CSV)}
+        with FixtureServer(routes) as srv:
+            payload, _ = macro.collect(bis_cfg(srv, indicators=[dict(BR_RATE)],
+                                               prev_snapshot=prev_snapshot))
+        return payload["indicators"][0]
+
+    def test_new_day_same_level_is_not_a_release(self):
+        row = self._rate_row(CBPOL_FLAT_CSV, prev_macro())
+        self.assertEqual((row["period"], row["value"]), ("2026-06-19", 14.25))
+        self.assertNotEqual(row["period"], "2026-06-18")   # 期号确实推进了
+        self.assertFalse(row["is_new_release"])
+
+    def test_level_change_is_a_release(self):
+        row = self._rate_row(CBPOL_CSV, prev_macro(period="2026-06-16", value=14.5))
+        self.assertEqual(row["value"], 14.25)
+        self.assertTrue(row["is_new_release"])
+
+    def test_first_landing_without_prior_row_is_not_a_release(self):
+        row = self._rate_row(CBPOL_FLAT_CSV, {"macro": []})
+        self.assertFalse(row["is_new_release"])
+
+    def test_unusable_prior_value_is_not_a_release(self):
+        """上一份快照的 value 不是可比数值(缺字段 / 字符串 / bool)→ 不下结论。
+        漏列一次真实变动只是少说,凭不可比的输入打出发布行是编造。"""
+        for bad in (None, "14.5", True, [14.5]):
+            row = self._rate_row(CBPOL_CSV, prev_macro(period="2026-06-16", value=bad))
+            self.assertFalse(row["is_new_release"], bad)
+
+    def test_monthly_cpi_still_keyed_on_period_not_level(self):
+        """月频 CPI 相邻月份同值也是两次独立发布,判据仍是期号——
+        把日频的规则一刀切到月频会漏报真实的 CPI 发布。"""
+        routes = {"/bis/cpi": (200, CPI_FLAT_CSV)}
+        prev = {"macro": [{"economy": "BR", "indicator": "CPI 同比",
+                           "series_id": "BIS/WS_LONG_CPI/BR", "period": "2026-05",
+                           "value": 4.6, "source": "bis"}]}
+        with FixtureServer(routes) as srv:
+            cfg = bis_cfg(srv, indicators=[dict(BR_CPI)], prev_snapshot=prev)
+            cfg["endpoints"].pop("bis_cbpol_url")
+            payload, _ = macro.collect(cfg)
+        row = payload["indicators"][0]
+        self.assertEqual((row["period"], row["value"]), ("2026-06", 4.6))
+        self.assertTrue(row["is_new_release"])
+        # 前值口径同样按频率走:月频取上一个观测,相邻同值仍是有效前值。
+        # 把日频的"上一个不同水平"一刀切到月频,这里会退化成 null。
+        self.assertEqual((row["prev"], row["prev_period"]), (4.6, "2026-05"))
+
+
 class BisRobustnessTest(unittest.TestCase):
     """外部网络数据可能任意畸形;采集层不得抛出,只能转 gap。"""
 
@@ -700,7 +829,9 @@ class BisRobustnessTest(unittest.TestCase):
         body = ("\ufeffREF_AREA,TIME_PERIOD,OBS_VALUE,FREQ\r\n"
                 "BR,2026-06-17,14.25,D\r\n")
         payload, gaps = self._collect(body)
-        self.assertEqual([g for g in gaps if g["source"] == "bis"], [])
+        # 钉的是"这份 CSV 没被判成缺列",不是"整轮零缺漏"——该 body 只有 BR,
+        # 被跟踪的 TH 政策利率理应另记一条缺席 gap。
+        self.assertEqual([g for g in gaps if g["scope"] == "WS_CBPOL"], [])
         rows = {(r["economy"], r["indicator"]): r for r in payload["indicators"]}
         self.assertEqual(rows[("BR", "政策利率")]["value"], 14.25)
 
