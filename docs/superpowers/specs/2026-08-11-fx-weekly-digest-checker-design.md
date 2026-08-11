@@ -2,6 +2,8 @@
 super_coding_change: fx-weekly-digest-checker
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-08-11-fx-weekly-digest-checker
+status: final
 ---
 
 # Technical Design: fx-weekly-digest-checker

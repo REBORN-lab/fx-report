@@ -2,6 +2,7 @@
 change: fx-weekly-digest-checker
 design-doc: docs/superpowers/specs/2026-08-11-fx-weekly-digest-checker-design.md
 base-ref: 6161bd9ce767d1dc2ea440175adf4ef2e399a852
+archived-with: 2026-08-11-fx-weekly-digest-checker
 ---
 
 # 实施计划:fx-weekly-digest-checker
