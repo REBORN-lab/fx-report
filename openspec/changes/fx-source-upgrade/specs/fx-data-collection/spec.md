@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: 央行官方公告采集
-系统 SHALL 从央行官方新闻 RSS 采集公告条目,作为 GDELT 之外的高可信事件通道,并按发布方归入对应币种的 `official` 列表;每源至多保留 3 条,条目 SHALL 含标题、链接、发布时间与发布方。任一源失败 MUST 记为缺漏且 MUST NOT 影响其余源与其余采集模块。仅纳入实测可达的官方源;不可达的源 MUST NOT 写入配置(避免每日缺漏噪音),其缺口 SHALL 记录在文档中。
+系统 SHALL 从央行官方新闻 RSS 采集公告条目,作为 GDELT 之外的高可信事件通道,并按发布方归入对应币种的 `official` 列表;每源至多保留 3 条,条目 SHALL 含标题与发布方(必填,缺标题的条目跳过),链接与发布时间尽力而为、缺失记 null。解析成功但未取到任何条目时 SHALL 记为缺漏——健康的源恒有条目,零条目通常意味着源改版(如换成带默认命名空间的 RDF/Atom),静默归零会与"未配置"不可区分。任一源失败 MUST 记为缺漏且 MUST NOT 影响其余源与其余采集模块。仅纳入实测可达的官方源;不可达的源 MUST NOT 写入配置(避免每日缺漏噪音),其缺口 SHALL 记录在文档中。
 
 #### Scenario: 官方源正常
 - **WHEN** Fed 与 ECB 的 RSS 均可访问
@@ -17,6 +17,10 @@
 - **WHEN** 某官方源请求失败或返回非 XML
 - **THEN** 该源记为缺漏,其余官方源与 GDELT 采集照常完成
 
+#### Scenario: 解析成功但无条目
+- **WHEN** 某官方源返回可解析的 XML 但未取到任何条目(如源改版为带默认命名空间的格式)
+- **THEN** 该源记为缺漏,MUST NOT 静默产出空结果
+
 #### Scenario: GDELT 失败时官方通道仍在
 - **WHEN** 某币种 GDELT 采集被限流而其官方源可用
 - **THEN** 该币种仍有 `official` 条目可供报告引用,GDELT 缺漏照常披露
@@ -28,7 +32,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 宏观数据增量采集
-系统 SHALL 从 DBnomics(五经济体;provider 以实测可用为准,当前为 IMF/BIS/ECB 口径)采集关键宏观指标的最新值与前值。美国 CPI SHALL 优先取自 BLS 公共 API(零 key);该 API 返回指数点位时,同比 SHALL 由采集脚本按同月同比确定性计算,MUST NOT 用相邻月份近似替代;BLS 路径失败或同月基期缺失时 SHALL 回落 DBnomics 并记入缺漏。每个宏观条目 SHALL 携带 `lag_months`——期号相对当日快照日期的滞后月数;期号形态无法解析时记为 null。零 key 为默认运行路径:"前一日发布了哪些数据"的判定 SHALL 由静态年历与 GDELT 事件流承担,该路径 MUST NOT 记为缺漏;当环境变量 FRED_API_KEY 存在时,系统 SHALL 额外调用 FRED release dates 端点增强前一日美国数据发布判定,该增强调用失败时记入缺漏但不中断其余采集。
+系统 SHALL 从 DBnomics(五经济体;provider 以实测可用为准,当前为 IMF/BIS/ECB 口径)采集关键宏观指标的最新值与前值。美国 CPI SHALL 优先取自 BLS 公共 API(零 key);该 API 返回指数点位时,同比 SHALL 由采集脚本按同月同比确定性计算,MUST NOT 用相邻月份近似替代;上月同比 SHALL 由同一份响应算出作为 `prev`(基期缺失时记 null),使报告不必自找比较基准;条目的 `series_id` SHALL 指向实际取数的源,MUST NOT 沿用其他 provider 的标识;BLS 路径失败或同月基期缺失时 SHALL 回落 DBnomics 并记入缺漏。每个宏观条目 SHALL 携带 `lag_months`——期号相对当日快照日期的滞后月数;期号形态无法解析时记为 null。零 key 为默认运行路径:"前一日发布了哪些数据"的判定 SHALL 由静态年历与 GDELT 事件流承担,该路径 MUST NOT 记为缺漏;当环境变量 FRED_API_KEY 存在时,系统 SHALL 额外调用 FRED release dates 端点增强前一日美国数据发布判定,该增强调用失败时记入缺漏但不中断其余采集。
 
 #### Scenario: 有新数据发布
 - **WHEN** 前一日某跟踪指标发布了新值
@@ -41,6 +45,10 @@
 #### Scenario: BLS 同月基期缺失
 - **WHEN** BLS 返回的序列不含同月基期
 - **THEN** 记入缺漏并回落 DBnomics 数值,MUST NOT 用相邻月份近似计算同比
+
+#### Scenario: 换源当日标记不可比
+- **WHEN** 某指标当日的数据源与上一份快照不同
+- **THEN** 该条目含 `source_changed_from` 标记且 `is_new_release` 为 false(期号跳变来自换源而非新发布),报告据此禁用比较表述
 
 #### Scenario: 滞后月数披露
 - **WHEN** 某宏观条目的期号可解析

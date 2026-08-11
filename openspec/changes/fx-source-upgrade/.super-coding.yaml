@@ -11,7 +11,7 @@ auto_transition: true
 base_ref: 30a5a314de297394bb01e19a105953f82a15f6c3
 design_doc: docs/superpowers/specs/2026-08-11-fx-source-upgrade-design.md
 plan: docs/superpowers/plans/2026-08-11-fx-source-upgrade.md
-verify_result: pending
+verify_result: fail
 verification_report: null
 branch_status: pending
 created_at: 2026-08-11

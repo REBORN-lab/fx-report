@@ -9,16 +9,26 @@ US_CPI = ("US", "CPI 同比")
 
 def collect(cfg):
     gaps, indicators = [], []
-    bls_row = _bls_us_cpi(cfg, gaps)
+    tracked = [(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]]
+    # 没跟踪美国 CPI 就别打 BLS 这一枪(也就不会为未跟踪指标记 gap)
+    bls_row = _bls_us_cpi(cfg, gaps) if US_CPI in tracked else None
     for ind in cfg["indicators"]:
         if bls_row is not None and (ind["economy"], ind["indicator"]) == US_CPI:
             # BLS 比 DBnomics 镜像新约 11 个月(2026-08-11 实测),优先用它;
-            # 拿到就不再打 DBnomics 这一枪
-            indicators.append(dict(bls_row, series_id=ind["series_id"],
-                                   economy=ind["economy"], indicator=ind["indicator"],
-                                   is_new_release=_is_new(cfg, ind["series_id"],
-                                                          bls_row["period"]),
-                                   lag_months=lag_months(bls_row["period"], cfg["date"])))
+            # 拿到就不再打 DBnomics 这一枪。series_id 写 BLS 的真实出处——
+            # 它是快照里唯一可回溯到源的字段,写成 IMF 的 id 会让复核者拿到
+            # 完全不同的数,反而像脚本算错了。
+            changed_from = _source_changed_from(cfg, ind, bls_row["source"])
+            row = dict(bls_row, economy=ind["economy"], indicator=ind["indicator"],
+                       is_new_release=(False if changed_from
+                                       else _is_new(cfg, bls_row["series_id"],
+                                                    bls_row["period"])),
+                       lag_months=lag_months(bls_row["period"], cfg["date"]))
+            if changed_from is not None:
+                # 换源当日期号会跳变,与前值不可比;不标出来,报告会把口径切换
+                # 叙述成"通胀升高"(2026-08-11 实际发生过)
+                row["source_changed_from"] = changed_from
+            indicators.append(row)
             continue
         try:
             url = cfg["endpoints"]["dbnomics_series_url"].format(series_id=ind["series_id"])
@@ -77,14 +87,16 @@ def _bls_us_cpi(cfg, gaps):
         if latest is None:
             raise ValueError("no numeric observation")
         (year, period), value = latest
-        base = by_key.get((str(int(year) - 1), period))
-        if base is None:
-            raise ValueError("same-month base for %s-%s missing "
-                             "(近似月份会给出可信但错误的同比,拒绝)" % (year, period))
-        if base == 0:
-            raise ValueError("same-month base is zero")
-        return {"value": round((value / base - 1) * 100, 3), "prev": None,
-                "period": "%s-%02d" % (year, int(period[1:])), "source": "bls"}
+        yoy = _yoy(by_key, year, period, value)
+        # 前值(上月同比)在同一份响应里就能算(实测单次返回 3 个日历年);
+        # 留 None 会让报告模板的"前值"空着,诱导 LLM 自找基准
+        prev_key = _prev_month(year, period)
+        prev_value = by_key.get(prev_key) if prev_key else None
+        prev_yoy = (_yoy(by_key, prev_key[0], prev_key[1], prev_value, strict=False)
+                    if prev_key and prev_value is not None else None)
+        return {"value": yoy, "prev": prev_yoy,
+                "period": "%s-%02d" % (year, int(period[1:])),
+                "source": "bls", "series_id": _bls_series_id(url)}
     except Exception as e:
         gaps.append(util.make_gap("bls", "US/CPI 同比", "%s: %s" % (type(e).__name__, e)))
         return None
@@ -106,6 +118,50 @@ def _bls_rows(doc):
     if not isinstance(data, list):
         raise ValueError("unexpected 'data' shape: %s" % type(data).__name__)
     return [r for r in data if isinstance(r, dict)]
+
+
+def _yoy(by_key, year, period, value, strict=True):
+    """同月同比。相邻月份近似会给出可信但错误的同比,故基期缺失即失败/记 None。"""
+    base = by_key.get((str(int(year) - 1), period))
+    if base is None:
+        if strict:
+            raise ValueError("same-month base for %s-%s missing "
+                             "(近似月份会给出可信但错误的同比,拒绝)" % (year, period))
+        return None
+    if base == 0:
+        if strict:
+            raise ValueError("same-month base is zero")
+        return None
+    return round((value / base - 1) * 100, 3)
+
+
+def _prev_month(year, period):
+    month = int(period[1:])
+    if month > 1:
+        return (year, "M%02d" % (month - 1))
+    return (str(int(year) - 1), "M12")
+
+
+def _bls_series_id(url):
+    """从端点 URL 取真实 series id,落盘作可回溯出处(不能沿用 IMF 的 id)。"""
+    tail = url.rstrip("/").rsplit("/", 1)[-1].split("?")[0]
+    return "BLS/%s" % tail if tail else "BLS"
+
+
+def _source_changed_from(cfg, ind, source):
+    """上一份快照同一(经济体, 指标)的 source 与本次不同 → 返回旧 source。"""
+    snap = cfg.get("prev_snapshot")
+    rows = snap.get("macro") if isinstance(snap, dict) else None
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if (row.get("economy"), row.get("indicator")) != (ind["economy"], ind["indicator"]):
+            continue
+        old = row.get("source", "dbnomics")   # 本变更之前的快照无 source 字段
+        return old if old != source else None
+    return None
 
 
 def _bls_latest(by_key):

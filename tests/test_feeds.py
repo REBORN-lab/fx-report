@@ -71,12 +71,13 @@ class FeedsTest(unittest.TestCase):
         self.assertEqual(gaps, [])
         self.assertEqual([i["title"] for i in out["USD"]], ["kept"])
 
-    def test_empty_channel_yields_no_currency_key(self):
+    def test_empty_channel_records_gap_not_silent_zero(self):
+        """健康 feed 恒有条目;零条目是异常,必须记 gap 而非静默写空。"""
         body = '<?xml version="1.0"?><rss><channel></channel></rss>'
         with FixtureServer({"/fed": (200, body), "/ecb": (200, ECB)}) as srv:
             out, gaps = feeds.collect(cfg_with(srv))
-        self.assertEqual(gaps, [])
-        self.assertNotIn("USD", out)       # 无条目 → 不写空列表,避免报告误读为"已采到 0 条"
+        self.assertEqual([g["scope"] for g in gaps], ["USD"])
+        self.assertNotIn("USD", out)
 
     def test_unconfigured_source_is_skipped_silently(self):
         """未配置 = 有意停用(spec:不可达的源不写进配置),不得记 gap ——
@@ -91,6 +92,24 @@ class FeedsTest(unittest.TestCase):
         out, gaps = feeds.collect(cfg)
         self.assertEqual([g["scope"] for g in gaps], ["USD"])
 
+
+
+class NamespacedFeedTest(unittest.TestCase):
+    """源改版成带默认命名空间的 RDF/Atom 时,root.iter("item") 取不到条目 ——
+    必须记 gap,否则与"未配置"的静默归零无法区分(delta spec: 解析成功但无条目)。"""
+
+    RDF = ('<?xml version="1.0"?>'
+           '<rdf:RDF xmlns="http://purl.org/rss/1.0/" '
+           'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+           '<item><title>ns item</title></item></rdf:RDF>')
+
+    def test_zero_items_records_gap(self):
+        with FixtureServer({"/fed": (200, self.RDF), "/ecb": (200, ECB)}) as srv:
+            out, gaps = feeds.collect(cfg_with(srv))
+        self.assertEqual([g["scope"] for g in gaps], ["USD"])
+        self.assertIn("no <item> found", gaps[0]["reason"])
+        self.assertNotIn("USD", out)
+        self.assertIn("EUR", out)      # 其余源不受影响
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 {
   "date": "2026-08-11",
-  "run_at": "2026-08-11T04:55:19+00:00",
+  "run_at": "2026-08-11T05:20:09+00:00",
   "schema_version": 1,
   "rates": {
     "PHP": {
@@ -47,14 +47,15 @@
   "macro": [
     {
       "value": 3.531,
-      "prev": null,
+      "prev": 4.249,
       "period": "2026-06",
       "source": "bls",
-      "series_id": "IMF/CPI/M.US.PCPI_PC_CP_A_PT",
+      "series_id": "BLS/CUUR0000SA0",
       "economy": "US",
       "indicator": "CPI 同比",
-      "is_new_release": true,
-      "lag_months": 2
+      "is_new_release": false,
+      "lag_months": 2,
+      "source_changed_from": "dbnomics"
     },
     {
       "economy": "EA",
@@ -77,6 +78,17 @@
       "source": "dbnomics",
       "is_new_release": false,
       "lag_months": 15
+    },
+    {
+      "economy": "TH",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.TH.PCPI_PC_CP_A_PT",
+      "value": 0.235355011152928,
+      "prev": 0.463228123163358,
+      "period": "2025-03",
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 17
     },
     {
       "economy": "BR",
@@ -156,17 +168,6 @@
       "lag_months": null
     },
     {
-      "economy": "EA",
-      "indicator": "经常账户",
-      "series_id": "IMF/BOP/Q.U2.BCA_BP6_USD",
-      "value": 68149.5680178591,
-      "prev": 107943.668573,
-      "period": "2025-Q1",
-      "source": "dbnomics",
-      "is_new_release": false,
-      "lag_months": null
-    },
-    {
       "economy": "PH",
       "indicator": "经常账户",
       "series_id": "IMF/BOP/Q.PH.BCA_BP6_USD",
@@ -176,17 +177,33 @@
       "source": "dbnomics",
       "is_new_release": false,
       "lag_months": null
+    },
+    {
+      "economy": "TH",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.TH.BCA_BP6_USD",
+      "value": 11081.8905202786,
+      "prev": 4480.78427177536,
+      "period": "2025-Q1",
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": null
+    },
+    {
+      "economy": "BR",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.BR.BCA_BP6_USD",
+      "value": -10522.85858349,
+      "prev": -22285.1435033,
+      "period": "2025-Q2",
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": null
     }
   ],
   "events": {
     "USD": {
       "articles": [
-        {
-          "title": "Ringgit to remain range - bound at 4 . 07 - 4 . 09 against US dollar next week",
-          "url": "https://www.thestar.com.my/business/business-news/2026/08/09/ringgit-to-remain-range-bound-at-407-409-against-us-dollar-next-week",
-          "domain": "thestar.com.my",
-          "seendate": "20260809T050000Z"
-        },
         {
           "title": "Gold , Silver Rally May Extend Next Week , Inflation Data And West Asia Tensions In Focus",
           "url": "https://www.freepressjournal.in/business/gold-silver-rally-may-extend-next-week-inflation-data-and-west-asia-tensions-in-focus",
@@ -228,6 +245,12 @@
           "url": "https://www.dailyforex.com/forex-technical-analysis/2026/08/weekly-market-forecast-10th-to-14th-august-2026/248487",
           "domain": "dailyforex.com",
           "seendate": "20260810T164500Z"
+        },
+        {
+          "title": "Yen steadies as intervention boost fades ahead of US data",
+          "url": "https://www.freemalaysiatoday.com/category/business/2026/08/11/yen-steadies-as-intervention-boost-fades-ahead-of-us-data",
+          "domain": "freemalaysiatoday.com",
+          "seendate": "20260811T043000Z"
         }
       ],
       "official": [
@@ -248,6 +271,78 @@
           "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260709a.htm",
           "published": "Thu, 9 Jul 2026 19:00:00 GMT",
           "issuer": "Fed"
+        }
+      ]
+    },
+    "EUR": {
+      "articles": [
+        {
+          "title": "Energetski šok zatekao evrozonu nespremnu",
+          "url": "https://www.blic.rs/biznis/energetski-sok-zatekao-evrozonu-nespremnu/v0lxzd3",
+          "domain": "blic.rs",
+          "seendate": "20260809T104500Z"
+        },
+        {
+          "title": "BÖRSE ONLINE – Seit 1987 unterstützt BÖRSE ONLINE jede Woche Anleger bei ihren Investment - Entscheidungen . Zentrale Themen der Berichterstattung sind fundamentale Markt - und Aktienanalysen , Charttechnik , Handelsstrategien sowie verschiedene Trad...",
+          "url": "https://www.boerse-online.de/dpa-afx/devisen-euro-im-us-handelsverlauf-nur-wenig-bewegt-544092.html",
+          "domain": "boerse-online.de",
+          "seendate": "20260810T224500Z"
+        },
+        {
+          "title": "Devisen : Euro im US - Handelsverlauf nur wenig bewegt () ",
+          "url": "https://www.aktiencheck.de/analysen/Artikel-Devisen_Euro_US_Handelsverlauf_nur_wenig_bewegt-20008121",
+          "domain": "aktiencheck.de",
+          "seendate": "20260810T191500Z"
+        },
+        {
+          "title": "Devisen : Euro bewegt sich zum US - Dollar kaum",
+          "url": "https://www.finanznachrichten.de/nachrichten-2026-08/69266911-devisen-euro-bewegt-sich-zum-us-dollar-kaum-016.htm",
+          "domain": "finanznachrichten.de",
+          "seendate": "20260810T151500Z"
+        },
+        {
+          "title": "Πλούτος πάνω από 1 τρισ ., αλλά οι Έλληνες τρώνε τις αποταμιεύσεις τους",
+          "url": "https://www.huffingtonpost.gr/ikonomia/ploutos-pano-apo-1-tris-alla-oi-ellines-trone-tis-apotamiefseis-tous/",
+          "domain": "huffingtonpost.gr",
+          "seendate": "20260809T130000Z"
+        },
+        {
+          "title": "Analitičari podigli prognozu privrednog rasta evrozone u 2026 . na 0 , 8 odsto",
+          "url": "https://www.tanjug.rs/ekonomija/svet/272491/analiticari-podigli-prognozu-privrednog-rasta-evrozone-u-2026-na-08-odsto/vest",
+          "domain": "tanjug.rs",
+          "seendate": "20260810T103000Z"
+        },
+        {
+          "title": "控通胀还是稳增长 ： 欧洲央行左右为难 _ 东方财富网",
+          "url": "https://finance.eastmoney.com/a/202608113837006293.html",
+          "domain": "finance.eastmoney.com",
+          "seendate": "20260811T003000Z"
+        },
+        {
+          "title": "FxWirePro : EUR / NZD neutral in the near - term , scope for downward resumption",
+          "url": "http://www.econotimes.com/FxWirePro-EUR-NZD-neutral-in-the-near-term-scope-for-downward-resumption-1749103",
+          "domain": "econotimes.com",
+          "seendate": "20260811T021500Z"
+        }
+      ],
+      "official": [
+        {
+          "title": "ECB publishes consolidated banking data for end-March 2026",
+          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260807~58eb5109ce.en.html",
+          "published": "Fri, 07 Aug 2026 10:00:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "Digital euro app to incorporate highest accessibility standards",
+          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260730~3b3bfbb565.en.html",
+          "published": "Thu, 30 Jul 2026 10:00:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "ECB wage tracker at 2.7% in Q1 2027, indicating stable negotiated wage pressures",
+          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260729~4ad7508d8a.en.html",
+          "published": "Wed, 29 Jul 2026 10:00:00 +0200",
+          "issuer": "ECB"
         }
       ]
     },
@@ -318,12 +413,6 @@
           "seendate": "20260811T021500Z"
         },
         {
-          "title": "Ringgit to remain range - bound at 4 . 07 - 4 . 09 against US dollar next week",
-          "url": "https://www.thestar.com.my/business/business-news/2026/08/09/ringgit-to-remain-range-bound-at-407-409-against-us-dollar-next-week",
-          "domain": "thestar.com.my",
-          "seendate": "20260809T050000Z"
-        },
-        {
           "title": "Market exchange rates in China -- Aug . 10 - Xinhua",
           "url": "https://english.news.cn/20260810/1f5f63e3558943429981161ab769cfeb/c.html",
           "domain": "english.news.cn",
@@ -342,61 +431,21 @@
           "seendate": "20260810T000000Z"
         }
       ]
-    },
-    "EUR": {
-      "official": [
-        {
-          "title": "ECB publishes consolidated banking data for end-March 2026",
-          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260807~58eb5109ce.en.html",
-          "published": "Fri, 07 Aug 2026 10:00:00 +0200",
-          "issuer": "ECB"
-        },
-        {
-          "title": "Digital euro app to incorporate highest accessibility standards",
-          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260730~3b3bfbb565.en.html",
-          "published": "Thu, 30 Jul 2026 10:00:00 +0200",
-          "issuer": "ECB"
-        },
-        {
-          "title": "ECB wage tracker at 2.7% in Q1 2027, indicating stable negotiated wage pressures",
-          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260729~4ad7508d8a.en.html",
-          "published": "Wed, 29 Jul 2026 10:00:00 +0200",
-          "issuer": "ECB"
-        }
-      ]
     }
   },
   "calendar_hits": [],
   "gaps": [
     {
       "source": "dbnomics",
-      "scope": "IMF/CPI/M.TH.PCPI_PC_CP_A_PT",
+      "scope": "IMF/BOP/Q.U2.BCA_BP6_USD",
       "reason": "TimeoutError: The read operation timed out",
-      "at": "2026-08-11T04:49:52+00:00"
-    },
-    {
-      "source": "dbnomics",
-      "scope": "IMF/BOP/Q.TH.BCA_BP6_USD",
-      "reason": "TimeoutError: The read operation timed out",
-      "at": "2026-08-11T04:51:04+00:00"
-    },
-    {
-      "source": "dbnomics",
-      "scope": "IMF/BOP/Q.BR.BCA_BP6_USD",
-      "reason": "TimeoutError: The read operation timed out",
-      "at": "2026-08-11T04:51:24+00:00"
+      "at": "2026-08-11T05:15:36+00:00"
     },
     {
       "source": "gdelt",
       "scope": "BRL",
       "reason": "rate-limited after retry (hard-rate-limited-429, first: hard-rate-limited-429)",
-      "at": "2026-08-11T04:52:16+00:00"
-    },
-    {
-      "source": "gdelt",
-      "scope": "EUR",
-      "reason": "rate-limited after retry (hard-rate-limited-429, first: hard-rate-limited-429)",
-      "at": "2026-08-11T04:54:08+00:00"
+      "at": "2026-08-11T05:16:45+00:00"
     }
   ],
   "meta": {
@@ -441,7 +490,7 @@
         "count_delta": null
       },
       "THB": {
-        "count": 6,
+        "count": 5,
         "count_prev": null,
         "count_delta": null
       },
@@ -451,9 +500,9 @@
         "count_delta": null
       },
       "EUR": {
-        "count": null,
+        "count": 8,
         "count_prev": 8,
-        "count_delta": null
+        "count_delta": 0
       },
       "USD": {
         "count": 8,
@@ -483,19 +532,19 @@
         "cpi": 1.27388535031847,
         "cpi_period": "2025-05"
       },
+      "TH": {
+        "value": 1.515,
+        "policy_rate": 1.75,
+        "policy_period": "2025-07-03",
+        "cpi": 0.235355011152928,
+        "cpi_period": "2025-03"
+      },
       "BR": {
         "value": 9.775,
         "policy_rate": 15.0,
         "policy_period": "2025-07-07",
         "cpi": 5.22525470407828,
         "cpi_period": "2025-07"
-      },
-      "TH": {
-        "value": null,
-        "policy_rate": 1.75,
-        "policy_period": "2025-07-03",
-        "cpi": null,
-        "cpi_period": null
       }
     }
   }

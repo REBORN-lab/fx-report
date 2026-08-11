@@ -197,9 +197,6 @@ class MacroTest(unittest.TestCase):
         self.assertEqual(len(payload["indicators"]), 2)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 SERIES = SERIES_OK
 
@@ -207,7 +204,7 @@ BLS_OK = json.dumps({"status": "REQUEST_SUCCEEDED", "Results": {"series": [{
     "seriesID": "CUUR0000SA0",
     "data": [{"year": "2026", "period": "M06", "value": "333.952"},
              {"year": "2026", "period": "M05", "value": "335.123"},
-             {"year": "2025", "period": "M06", "value": "320.000"},
+             {"year": "2025", "period": "M06", "value": "318.777"},
              {"year": "2025", "period": "M05", "value": "319.000"}]}]}})
 BLS_NO_BASE = json.dumps({"Results": {"series": [{"data": [
     {"year": "2026", "period": "M06", "value": "333.952"},
@@ -217,7 +214,7 @@ BLS_NO_BASE = json.dumps({"Results": {"series": [{"data": [
 class BlsUsCpiTest(unittest.TestCase):
     """美国 CPI 走 BLS 主源(delta spec: 美国 CPI 走 BLS 主源 / BLS 同月基期缺失)。"""
 
-    def _cfg(self, srv, bls_path="/bls"):
+    def _cfg(self, srv, bls_path="/bls/v1/timeseries/data/CUUR0000SA0"):
         return make_test_cfg(
             date="2026-08-11",
             indicators=[{"economy": "US", "indicator": "CPI 同比",
@@ -233,7 +230,99 @@ class BlsUsCpiTest(unittest.TestCase):
         self.assertEqual(gaps, [])
         self.assertEqual(row["source"], "bls")
         self.assertEqual(row["period"], "2026-06")
-        self.assertEqual(row["value"], round((333.952 / 320.000 - 1) * 100, 3))
+        # 字面量期望而非把实现算式抄一遍;fixture 数值选得让四舍五入非空操作
+        # (333.952/318.777 = 4.75978…%,round 到 3 位才是 4.76)
+        self.assertEqual(row["value"], 4.76)
+        self.assertEqual(row["series_id"], "BLS/CUUR0000SA0")
+
+    def test_prev_month_yoy_filled_from_same_response(self):
+        """前值留 None 会诱导 LLM 自找基准;同一份响应里就能算出来。"""
+        with FixtureServer({"/bls": (200, BLS_OK),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            out, _ = macro.collect(self._cfg(srv))
+        # 335.123/319.0 = 5.05423…% → 5.054
+        self.assertEqual(out["indicators"][0]["prev"], 5.054)
+
+    def test_prev_null_when_prior_month_base_missing(self):
+        body = json.dumps({"Results": {"series": [{"data": [
+            {"year": "2026", "period": "M06", "value": "333.952"},
+            {"year": "2026", "period": "M05", "value": "335.123"},
+            {"year": "2025", "period": "M06", "value": "318.777"}]}]}})
+        with FixtureServer({"/bls": (200, body),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            out, gaps = macro.collect(self._cfg(srv))
+        self.assertEqual(gaps, [])
+        self.assertIsNone(out["indicators"][0]["prev"])   # 缺基期 → null,不近似
+
+    def test_annual_average_row_m13_not_selected(self):
+        """BLS 用 M13 表示年均值。选中它会算出年均值同比并以 period 2026-13 落盘。"""
+        body = json.dumps({"Results": {"series": [{"data": [
+            {"year": "2026", "period": "M13", "value": "340.000"},
+            {"year": "2026", "period": "M12", "value": "339.000"},
+            {"year": "2025", "period": "M13", "value": "330.000"},
+            {"year": "2025", "period": "M12", "value": "325.000"}]}]}})
+        with FixtureServer({"/bls": (200, body),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            out, _ = macro.collect(self._cfg(srv))
+        self.assertEqual(out["indicators"][0]["period"], "2026-12")
+
+    def test_latest_selection_prefers_newer_year(self):
+        """年份必须优先于月份:2026-M01 比 2025-M12 新。"""
+        body = json.dumps({"Results": {"series": [{"data": [
+            {"year": "2026", "period": "M01", "value": "336.000"},
+            {"year": "2025", "period": "M12", "value": "334.000"},
+            {"year": "2025", "period": "M01", "value": "320.000"},
+            {"year": "2024", "period": "M12", "value": "318.000"}]}]}})
+        with FixtureServer({"/bls": (200, body),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            out, _ = macro.collect(self._cfg(srv))
+        self.assertEqual(out["indicators"][0]["period"], "2026-01")
+
+    def test_zero_base_reason_is_specific(self):
+        bad = json.dumps({"Results": {"series": [{"data": [
+            {"year": "2026", "period": "M06", "value": "333.952"},
+            {"year": "2025", "period": "M06", "value": "0"}]}]}})
+        with FixtureServer({"/bls": (200, bad),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            _, gaps = macro.collect(self._cfg(srv))
+        self.assertIn("zero", gaps[0]["reason"])
+
+    def test_source_change_marked_and_not_new_release(self):
+        """换源当日期号跳变,与前值不可比;不标出来报告会叙述成通胀升高。"""
+        prev = {"macro": [{"economy": "US", "indicator": "CPI 同比",
+                           "source": "dbnomics", "period": "2025-07",
+                           "series_id": "IMF/CPI/M.US.PCPI_PC_CP_A_PT"}]}
+        with FixtureServer({"/bls": (200, BLS_OK),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = self._cfg(srv)
+            cfg["prev_snapshot"] = prev
+            out, _ = macro.collect(cfg)
+        row = out["indicators"][0]
+        self.assertEqual(row["source_changed_from"], "dbnomics")
+        self.assertFalse(row["is_new_release"])          # 期号跳变不是"昨日发布"
+
+    def test_no_source_change_marker_when_stable(self):
+        prev = {"macro": [{"economy": "US", "indicator": "CPI 同比",
+                           "source": "bls", "period": "2026-05",
+                           "series_id": "BLS/CUUR0000SA0"}]}
+        with FixtureServer({"/bls": (200, BLS_OK),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = self._cfg(srv)
+            cfg["prev_snapshot"] = prev
+            out, _ = macro.collect(cfg)
+        row = out["indicators"][0]
+        self.assertNotIn("source_changed_from", row)
+        self.assertTrue(row["is_new_release"])           # 同源期号推进 → 真新发布
+
+    def test_bls_not_called_when_us_cpi_untracked(self):
+        """未跟踪美国 CPI 就不该打 BLS,也不该为未跟踪指标记 gap。"""
+        with FixtureServer({"/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = self._cfg(srv)
+            cfg["indicators"] = [{"economy": "PH", "indicator": "CPI 同比",
+                                  "series_id": "X"}]
+            cfg["endpoints"]["bls_timeseries_url"] = DEAD_URL + "/bls"
+            out, gaps = macro.collect(cfg)
+        self.assertEqual(gaps, [])
 
     def test_missing_same_month_base_falls_back_with_gap(self):
         """不得用相邻月份近似:同月基期缺失 → 记 gap 并回落 DBnomics。"""
@@ -305,3 +394,6 @@ class LagMonthsTest(unittest.TestCase):
                 endpoints={"dbnomics_series_url": srv.base_url + "/db/{series_id}"})
             out, _ = macro.collect(cfg)
         self.assertIn("lag_months", out["indicators"][0])
+
+if __name__ == "__main__":
+    unittest.main()

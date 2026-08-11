@@ -29,8 +29,14 @@ def collect(cfg):
         if err is not None:
             gaps.append(util.make_gap("feeds", f["currency"], err))
             continue
-        if items:   # 无条目不写空列表:空列表会被报告读成"已采到 0 条公告"
-            out[f["currency"]] = items
+        if not items:
+            # 健康 feed 恒有条目;零条目通常意味着源改版(如换成带默认命名空间
+            # 的 RDF/Atom,root.iter("item") 就取不到)。不记 gap 会与"未配置"
+            # 的静默归零无法区分,静默劣化。
+            gaps.append(util.make_gap("feeds", f["currency"],
+                                      "parsed ok but no <item> found (源可能已改版)"))
+            continue
+        out[f["currency"]] = items
     return out, gaps
 
 
@@ -43,8 +49,8 @@ def _configured(cfg, f):
 
 
 def _fetch_feed(cfg, f):
-    url = cfg["endpoints"][f["endpoint"]]
     try:
+        url = cfg["endpoints"][f["endpoint"]]
         text = util.fetch_text(url, cfg["timeout_s"])
     except Exception as e:
         return None, "%s: %s" % (type(e).__name__, e)
