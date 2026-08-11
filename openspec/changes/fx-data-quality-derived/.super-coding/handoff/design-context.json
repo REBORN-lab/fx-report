@@ -1,0 +1,15 @@
+{
+  "change": "fx-data-quality-derived",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "super-coding-handoff.sh",
+  "context_hash": "3b7bb68a838656e9bb4c80fd62bb62c1014426c5cd50e0d885363ad92f17efec",
+  "files": [
+    { "path": "openspec/changes/fx-data-quality-derived/proposal.md", "sha256": "d704085f53c06573afd149364b7bed38992071d07965d37edb66c0ab97de953e" },
+    { "path": "openspec/changes/fx-data-quality-derived/design.md", "sha256": "6c3a3ad85a3b43c5210323b02592e9c3974e564c693edc99c1842504dcab3835" },
+    { "path": "openspec/changes/fx-data-quality-derived/tasks.md", "sha256": "e9329d7644fdf6f5de51886d11164ce03ecd16936babd48cea8cff09ee22fb06" },
+    { "path": "openspec/changes/fx-data-quality-derived/specs/fx-daily-report/spec.md", "sha256": "930929921903717edf1dfb0a7999c00919a9f8730bca264e1f79e8b1ff5f3f35" },
+    { "path": "openspec/changes/fx-data-quality-derived/specs/fx-data-collection/spec.md", "sha256": "94dceddcacbd645bb6b0d1af3d1eb70c5bb11c911cb0ecb188209972b3b3441a" }
+  ]
+}
