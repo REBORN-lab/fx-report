@@ -1,10 +1,25 @@
-"""宏观指标采集:DBnomics 主体 + FRED release dates 可选增强(零 key 默认路径)。"""
+"""宏观指标采集:DBnomics 主体 + BLS 美国 CPI 主源 + FRED 可选增强(零 key)。"""
+import re
+
 from . import util
+
+PERIOD_RE = re.compile(r"^(\d{4})-(\d{2})")
+US_CPI = ("US", "CPI 同比")
 
 
 def collect(cfg):
     gaps, indicators = [], []
+    bls_row = _bls_us_cpi(cfg, gaps)
     for ind in cfg["indicators"]:
+        if bls_row is not None and (ind["economy"], ind["indicator"]) == US_CPI:
+            # BLS 比 DBnomics 镜像新约 11 个月(2026-08-11 实测),优先用它;
+            # 拿到就不再打 DBnomics 这一枪
+            indicators.append(dict(bls_row, series_id=ind["series_id"],
+                                   economy=ind["economy"], indicator=ind["indicator"],
+                                   is_new_release=_is_new(cfg, ind["series_id"],
+                                                          bls_row["period"]),
+                                   lag_months=lag_months(bls_row["period"], cfg["date"])))
+            continue
         try:
             url = cfg["endpoints"]["dbnomics_series_url"].format(series_id=ind["series_id"])
             doc = util.fetch_json(url, cfg["timeout_s"])
@@ -12,13 +27,94 @@ def collect(cfg):
             indicators.append({
                 "economy": ind["economy"], "indicator": ind["indicator"],
                 "series_id": ind["series_id"], "value": value, "prev": prev,
-                "period": period,
+                "period": period, "source": "dbnomics",
                 "is_new_release": _is_new(cfg, ind["series_id"], period),
+                "lag_months": lag_months(period, cfg["date"]),
             })
         except Exception as e:
             gaps.append(util.make_gap("dbnomics", ind["series_id"],
                                       "%s: %s" % (type(e).__name__, e)))
     return {"indicators": indicators, "us_release_dates": _fred(cfg, gaps)}, gaps
+
+
+def lag_months(period, date_str):
+    """期号相对快照日期的滞后月数。滞后不披露就等于隐形——DBnomics 镜像实测
+    滞后 219–498 天,报告却把它当"最新值"引用。无法解析(如季度期号)→ None,不猜。"""
+    m = PERIOD_RE.match(period) if isinstance(period, str) else None
+    d = PERIOD_RE.match(date_str) if isinstance(date_str, str) else None
+    if m is None or d is None:
+        return None
+    py, pm = int(m.group(1)), int(m.group(2))
+    dy, dm = int(d.group(1)), int(d.group(2))
+    if not (1 <= pm <= 12 and 1 <= dm <= 12):
+        return None
+    return (dy - py) * 12 + (dm - pm)
+
+
+def _bls_us_cpi(cfg, gaps):
+    """美国 CPI 走 BLS 公共 API(零 key)。返回的是指数点位,同比由本函数
+    按**同月同比**确定性计算——相邻月份近似会得出可信但错误的同比,禁用。
+
+    未配置端点 → 静默走 DBnomics(有意停用,非缺漏);配置了但失败 → 记 gap 后回落。
+    """
+    endpoints = cfg.get("endpoints")
+    url = endpoints.get("bls_timeseries_url") if isinstance(endpoints, dict) else None
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        doc = util.fetch_json(url, cfg["timeout_s"])
+        rows = _bls_rows(doc)
+        by_key = {}
+        for r in rows:
+            year, period, value = r.get("year"), r.get("period"), r.get("value")
+            if not (isinstance(year, str) and isinstance(period, str)):
+                continue
+            try:
+                by_key[(year, period)] = float(value)
+            except (TypeError, ValueError):
+                continue
+        latest = _bls_latest(by_key)
+        if latest is None:
+            raise ValueError("no numeric observation")
+        (year, period), value = latest
+        base = by_key.get((str(int(year) - 1), period))
+        if base is None:
+            raise ValueError("same-month base for %s-%s missing "
+                             "(近似月份会给出可信但错误的同比,拒绝)" % (year, period))
+        if base == 0:
+            raise ValueError("same-month base is zero")
+        return {"value": round((value / base - 1) * 100, 3), "prev": None,
+                "period": "%s-%02d" % (year, int(period[1:])), "source": "bls"}
+    except Exception as e:
+        gaps.append(util.make_gap("bls", "US/CPI 同比", "%s: %s" % (type(e).__name__, e)))
+        return None
+
+
+def _bls_rows(doc):
+    if not isinstance(doc, dict):
+        raise ValueError("unexpected response shape: %s" % type(doc).__name__)
+    results = doc.get("Results")
+    if not isinstance(results, dict):
+        raise ValueError("unexpected 'Results' shape: %s" % type(results).__name__)
+    series = results.get("series")
+    if not isinstance(series, list) or not series:
+        raise ValueError("'Results.series' missing or empty")
+    first = series[0]
+    if not isinstance(first, dict):
+        raise ValueError("unexpected series shape: %s" % type(first).__name__)
+    data = first.get("data")
+    if not isinstance(data, list):
+        raise ValueError("unexpected 'data' shape: %s" % type(data).__name__)
+    return [r for r in data if isinstance(r, dict)]
+
+
+def _bls_latest(by_key):
+    monthly = [(k, v) for k, v in by_key.items()
+               if len(k[1]) == 3 and k[1].startswith("M") and k[1][1:].isdigit()
+               and 1 <= int(k[1][1:]) <= 12]
+    if not monthly:
+        return None
+    return max(monthly, key=lambda kv: (kv[0][0], kv[0][1]))
 
 
 def _last_two(doc):

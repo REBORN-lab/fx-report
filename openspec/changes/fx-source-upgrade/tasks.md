@@ -7,8 +7,8 @@
 
 ## 2. 宏观源升级与滞后披露
 
-- [ ] 2.1 `macro.py` 美国 CPI 走 BLS v1:解析指数序列,按同月同比计算同比(round 3 位),记 `source: "bls"`;同月缺失或请求失败 → 记 gap 并回落 DBnomics。测试:正常同比计算、同月缺失、BLS 失败回落、bool/非数值输入
-- [ ] 2.2 全部宏观条目加 `lag_months`(期号相对快照日期的滞后月数,支持 `YYYY-MM` 与 `YYYY-MM-DD`,不可解析记 null)。测试:两种期号形态、跨年、不可解析
+- [x] 2.1 `macro.py` 美国 CPI 走 BLS v1:解析指数序列,按同月同比计算同比(round 3 位),记 `source: "bls"`;同月缺失或请求失败 → 记 gap 并回落 DBnomics。测试:正常同比计算、同月缺失、BLS 失败回落、bool/非数值输入
+- [x] 2.2 全部宏观条目加 `lag_months`(期号相对快照日期的滞后月数,支持 `YYYY-MM` 与 `YYYY-MM-DD`,不可解析记 null)。测试:两种期号形态、跨年、不可解析
 
 ## 3. 报告侧与回归
 

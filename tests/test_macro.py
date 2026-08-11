@@ -199,3 +199,109 @@ class MacroTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+SERIES = SERIES_OK
+
+BLS_OK = json.dumps({"status": "REQUEST_SUCCEEDED", "Results": {"series": [{
+    "seriesID": "CUUR0000SA0",
+    "data": [{"year": "2026", "period": "M06", "value": "333.952"},
+             {"year": "2026", "period": "M05", "value": "335.123"},
+             {"year": "2025", "period": "M06", "value": "320.000"},
+             {"year": "2025", "period": "M05", "value": "319.000"}]}]}})
+BLS_NO_BASE = json.dumps({"Results": {"series": [{"data": [
+    {"year": "2026", "period": "M06", "value": "333.952"},
+    {"year": "2026", "period": "M05", "value": "335.123"}]}]}})
+
+
+class BlsUsCpiTest(unittest.TestCase):
+    """美国 CPI 走 BLS 主源(delta spec: 美国 CPI 走 BLS 主源 / BLS 同月基期缺失)。"""
+
+    def _cfg(self, srv, bls_path="/bls"):
+        return make_test_cfg(
+            date="2026-08-11",
+            indicators=[{"economy": "US", "indicator": "CPI 同比",
+                         "series_id": "IMF/CPI/M.US.PCPI_PC_CP_A_PT"}],
+            endpoints={"dbnomics_series_url": srv.base_url + "/db/{series_id}",
+                       "bls_timeseries_url": srv.base_url + bls_path})
+
+    def test_yoy_computed_from_index_by_script(self):
+        with FixtureServer({"/bls": (200, BLS_OK),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            out, gaps = macro.collect(self._cfg(srv))
+        row = out["indicators"][0]
+        self.assertEqual(gaps, [])
+        self.assertEqual(row["source"], "bls")
+        self.assertEqual(row["period"], "2026-06")
+        self.assertEqual(row["value"], round((333.952 / 320.000 - 1) * 100, 3))
+
+    def test_missing_same_month_base_falls_back_with_gap(self):
+        """不得用相邻月份近似:同月基期缺失 → 记 gap 并回落 DBnomics。"""
+        with FixtureServer({"/bls": (200, BLS_NO_BASE),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            out, gaps = macro.collect(self._cfg(srv))
+        row = out["indicators"][0]
+        self.assertEqual([g["source"] for g in gaps], ["bls"])
+        self.assertEqual(row["source"], "dbnomics")
+        self.assertEqual(row["value"], 3.1)          # DBnomics 回落值
+
+    def test_request_failure_falls_back_with_gap(self):
+        with FixtureServer({"/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = self._cfg(srv)
+            cfg["endpoints"]["bls_timeseries_url"] = DEAD_URL + "/bls"
+            out, gaps = macro.collect(cfg)
+        self.assertEqual([g["source"] for g in gaps], ["bls"])
+        self.assertEqual(out["indicators"][0]["source"], "dbnomics")
+
+    def test_nonnumeric_and_bool_index_values_rejected(self):
+        bad = json.dumps({"Results": {"series": [{"data": [
+            {"year": "2026", "period": "M06", "value": "n/a"},
+            {"year": "2025", "period": "M06", "value": "320.000"}]}]}})
+        with FixtureServer({"/bls": (200, bad),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            out, gaps = macro.collect(self._cfg(srv))
+        self.assertEqual([g["source"] for g in gaps], ["bls"])
+        self.assertEqual(out["indicators"][0]["source"], "dbnomics")
+
+    def test_zero_base_rejected(self):
+        bad = json.dumps({"Results": {"series": [{"data": [
+            {"year": "2026", "period": "M06", "value": "333.952"},
+            {"year": "2025", "period": "M06", "value": "0"}]}]}})
+        with FixtureServer({"/bls": (200, bad),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            _, gaps = macro.collect(self._cfg(srv))
+        self.assertEqual([g["source"] for g in gaps], ["bls"])
+
+    def test_bls_not_configured_uses_dbnomics_silently(self):
+        with FixtureServer({"/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = self._cfg(srv)
+            del cfg["endpoints"]["bls_timeseries_url"]
+            out, gaps = macro.collect(cfg)
+        self.assertEqual(gaps, [])
+        self.assertEqual(out["indicators"][0]["source"], "dbnomics")
+
+
+class LagMonthsTest(unittest.TestCase):
+    """滞后月数披露(delta spec: 滞后月数披露 / 期号不可解析)。"""
+
+    def test_month_period(self):
+        self.assertEqual(macro.lag_months("2025-07", "2026-08-11"), 13)
+
+    def test_day_period(self):
+        self.assertEqual(macro.lag_months("2025-07-08", "2026-08-11"), 13)
+
+    def test_same_month_is_zero(self):
+        self.assertEqual(macro.lag_months("2026-08", "2026-08-11"), 0)
+
+    def test_quarter_and_garbage_periods_are_null(self):
+        for bad in ("2025-Q1", "", None, 202507, "not-a-date", "2025-13"):
+            self.assertIsNone(macro.lag_months(bad, "2026-08-11"), bad)
+
+    def test_attached_to_every_indicator(self):
+        with FixtureServer({"/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = make_test_cfg(
+                date="2026-08-11",
+                indicators=[{"economy": "PH", "indicator": "CPI 同比", "series_id": "X"}],
+                endpoints={"dbnomics_series_url": srv.base_url + "/db/{series_id}"})
+            out, _ = macro.collect(cfg)
+        self.assertIn("lag_months", out["indicators"][0])

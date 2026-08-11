@@ -8,5 +8,6 @@
   "gdelt_doc_url": "https://api.gdeltproject.org/api/v2/doc/doc",
   "fred_release_dates_url": "https://api.stlouisfed.org/fred/releases/dates",
   "fed_press_rss": "https://www.federalreserve.gov/feeds/press_monetary.xml",
-  "ecb_press_rss": "https://www.ecb.europa.eu/rss/press.html"
+  "ecb_press_rss": "https://www.ecb.europa.eu/rss/press.html",
+  "bls_timeseries_url": "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0"
 }
