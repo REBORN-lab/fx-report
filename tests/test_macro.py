@@ -276,7 +276,15 @@ class BlsUsCpiTest(unittest.TestCase):
         with FixtureServer({"/bls": (200, body),
                             "/db/": (200, json.dumps(SERIES))}) as srv:
             out, _ = macro.collect(self._cfg(srv))
-        self.assertEqual(out["indicators"][0]["period"], "2026-01")
+        row = out["indicators"][0]
+        self.assertEqual(row["period"], "2026-01")
+        # 前值取上月 = 跨年到 2025-M12,基期 2024-M12:334/318 = 5.0314…%
+        self.assertEqual(row["prev"], 5.031)
+
+    def test_series_id_survives_query_string_with_slash(self):
+        self.assertEqual(
+            macro._bls_series_id("https://x/data/CUUR0000SA0?key=aa/bb"),
+            "BLS/CUUR0000SA0")
 
     def test_zero_base_reason_is_specific(self):
         bad = json.dumps({"Results": {"series": [{"data": [
@@ -300,6 +308,35 @@ class BlsUsCpiTest(unittest.TestCase):
         row = out["indicators"][0]
         self.assertEqual(row["source_changed_from"], "dbnomics")
         self.assertFalse(row["is_new_release"])          # 期号跳变不是"昨日发布"
+
+    def test_fallback_direction_also_marked(self):
+        """bls → dbnomics 回落当日同样跳变,必须标记 —— 这个方向比换到 BLS
+        更常发生(BLS 是单一端点,实测两次采集各有超时)。"""
+        prev = {"macro": [{"economy": "US", "indicator": "CPI 同比",
+                           "source": "bls", "period": "2026-06",
+                           "series_id": "BLS/CUUR0000SA0"}]}
+        with FixtureServer({"/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = self._cfg(srv)
+            cfg["endpoints"]["bls_timeseries_url"] = DEAD_URL + "/bls"
+            cfg["prev_snapshot"] = prev
+            out, _ = macro.collect(cfg)
+        row = out["indicators"][0]
+        self.assertEqual(row["source"], "dbnomics")
+        self.assertEqual(row["source_changed_from"], "bls")
+        self.assertFalse(row["is_new_release"])
+
+    def test_legacy_prev_row_without_source_key_marks_change(self):
+        """本变更之前的快照没有 source 字段 —— 缺省视为 dbnomics 才能识别出
+        换源。这一行正是 2026-08-11 真实产出换源标记的原因,必须有测试守住。"""
+        prev = {"macro": [{"economy": "US", "indicator": "CPI 同比",
+                           "period": "2025-07",
+                           "series_id": "IMF/CPI/M.US.PCPI_PC_CP_A_PT"}]}  # 无 source 键
+        with FixtureServer({"/bls": (200, BLS_OK),
+                            "/db/": (200, json.dumps(SERIES))}) as srv:
+            cfg = self._cfg(srv)
+            cfg["prev_snapshot"] = prev
+            out, _ = macro.collect(cfg)
+        self.assertEqual(out["indicators"][0]["source_changed_from"], "dbnomics")
 
     def test_no_source_change_marker_when_stable(self):
         prev = {"macro": [{"economy": "US", "indicator": "CPI 同比",

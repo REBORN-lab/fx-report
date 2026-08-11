@@ -18,29 +18,23 @@ def collect(cfg):
             # 拿到就不再打 DBnomics 这一枪。series_id 写 BLS 的真实出处——
             # 它是快照里唯一可回溯到源的字段,写成 IMF 的 id 会让复核者拿到
             # 完全不同的数,反而像脚本算错了。
-            changed_from = _source_changed_from(cfg, ind, bls_row["source"])
             row = dict(bls_row, economy=ind["economy"], indicator=ind["indicator"],
-                       is_new_release=(False if changed_from
-                                       else _is_new(cfg, bls_row["series_id"],
-                                                    bls_row["period"])),
+                       is_new_release=_is_new(cfg, bls_row["series_id"],
+                                              bls_row["period"]),
                        lag_months=lag_months(bls_row["period"], cfg["date"]))
-            if changed_from is not None:
-                # 换源当日期号会跳变,与前值不可比;不标出来,报告会把口径切换
-                # 叙述成"通胀升高"(2026-08-11 实际发生过)
-                row["source_changed_from"] = changed_from
-            indicators.append(row)
+            indicators.append(_mark_source_change(cfg, ind, row))
             continue
         try:
             url = cfg["endpoints"]["dbnomics_series_url"].format(series_id=ind["series_id"])
             doc = util.fetch_json(url, cfg["timeout_s"])
             value, prev, period = _last_two(doc)
-            indicators.append({
+            indicators.append(_mark_source_change(cfg, ind, {
                 "economy": ind["economy"], "indicator": ind["indicator"],
                 "series_id": ind["series_id"], "value": value, "prev": prev,
                 "period": period, "source": "dbnomics",
                 "is_new_release": _is_new(cfg, ind["series_id"], period),
                 "lag_months": lag_months(period, cfg["date"]),
-            })
+            }))
         except Exception as e:
             gaps.append(util.make_gap("dbnomics", ind["series_id"],
                                       "%s: %s" % (type(e).__name__, e)))
@@ -144,8 +138,19 @@ def _prev_month(year, period):
 
 def _bls_series_id(url):
     """从端点 URL 取真实 series id,落盘作可回溯出处(不能沿用 IMF 的 id)。"""
-    tail = url.rstrip("/").rsplit("/", 1)[-1].split("?")[0]
+    tail = url.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
     return "BLS/%s" % tail if tail else "BLS"
+
+
+def _mark_source_change(cfg, ind, row):
+    """换源当日期号会跳变,与前值不可比;不标出来,报告会把口径切换叙述成
+    "通胀升高"(2026-08-11 实际发生过)。两个方向都要标——BLS 挂掉回落
+    DBnomics 是更常见的那个方向,漏标即同型事故。"""
+    changed_from = _source_changed_from(cfg, ind, row.get("source"))
+    if changed_from is not None:
+        row["source_changed_from"] = changed_from
+        row["is_new_release"] = False   # 期号跳变来自换源,不是新发布
+    return row
 
 
 def _source_changed_from(cfg, ind, source):

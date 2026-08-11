@@ -33,8 +33,10 @@ def collect(cfg):
             # 健康 feed 恒有条目;零条目通常意味着源改版(如换成带默认命名空间
             # 的 RDF/Atom,root.iter("item") 就取不到)。不记 gap 会与"未配置"
             # 的静默归零无法区分,静默劣化。
-            gaps.append(util.make_gap("feeds", f["currency"],
-                                      "parsed ok but no <item> found (源可能已改版)"))
+            gaps.append(util.make_gap(
+                "feeds", f["currency"],
+                "parsed ok but no usable <item> (无 item 节点,或条目均缺 title;"
+                "源可能已改版)"))
             continue
         out[f["currency"]] = items
     return out, gaps

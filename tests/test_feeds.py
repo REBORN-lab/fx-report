@@ -107,7 +107,7 @@ class NamespacedFeedTest(unittest.TestCase):
         with FixtureServer({"/fed": (200, self.RDF), "/ecb": (200, ECB)}) as srv:
             out, gaps = feeds.collect(cfg_with(srv))
         self.assertEqual([g["scope"] for g in gaps], ["USD"])
-        self.assertIn("no <item> found", gaps[0]["reason"])
+        self.assertIn("no usable <item>", gaps[0]["reason"])
         self.assertNotIn("USD", out)
         self.assertIn("EUR", out)      # 其余源不受影响
 
