@@ -45,17 +45,43 @@ skill 会按"无快照不生成报告"前置约束正确终止(零产物)——`
 | 汇率副源 | exchange-api(jsDelivr / Cloudflare) | ✅ |
 | 事件 | GDELT DOC 2.0 | ✅ 但本机 IP 长期 429,覆盖不稳定 |
 | 官方公告 | Fed press RSS、ECB press RSS | ✅ 零 key |
-| 美国 CPI | BLS 公共 API v1(零 key) | ✅ 最新观测比 DBnomics 镜像新约 11 个月;同比由脚本按同月计算 |
-| 其余宏观 | DBnomics(IMF/BIS/ECB 口径) | ⚠ 滞后 219–498 天,快照 `lag_months` 显式披露 |
+| 美国 CPI | BLS 公共 API v1(零 key) | ✅ 滞后 2 个月;同比由脚本按同月计算 |
+| CPI 同比 ×5、政策利率 ×5 | BIS Stats API 直连(零 key,`text/csv`) | ✅ CPI 滞后 2 个月、政策利率 7–12 天 |
+| 经常账户 ×5 | DBnomics(IMF 口径) | ⚠ BIS 不覆盖,仍滞后;快照 `lag_months` 显式披露 |
 
-**探针失败、故意未接入的源**(不写进 `config/endpoints.json`,避免每日缺漏噪音):
+**宏观来源优先级:BLS > BIS > DBnomics。** 三者逐指标独立命中——BIS 整体不可达、
+缺必需列、或缺某经济体时,只有受影响的指标回落 DBnomics,其余保持 BIS。
+删掉 `endpoints.json` 里两个 `bis_*_url` 即整体回滚(未配置 = 有意停用)。
 
-- BCB(巴西央行)SGS API 与新闻 feed:全域 HTTP 502,两轮重试一致
-- BSP(菲律宾央行)RSS / 媒体发布页:404
-- BOT(泰国央行):无 feed,仅 HTML 页
-- ECB Data Portal HICP:可达,但最新观测与 DBnomics 同为 2025-12 —— 滞后来自源本身,换源无收益
+BIS 两个 dataflow:
 
-这四条若日后可达,补进 `endpoints.json` 与 `collect/feeds.py` 的 `FEEDS` 表即可,无需改其余代码。
+| dataflow | 内容 | 参数 |
+|---|---|---|
+| `WS_CBPOL` | 五经济体政策利率(日频) | `detail=dataonly&lastNObservations=400` |
+| `WS_LONG_CPI` | 五经济体 CPI 同比(月频,`UNIT_MEASURE=771`) | `detail=dataonly&lastNObservations=4` |
+
+`detail=dataonly` 是必需的:实测同一查询 891 KB → 40 KB(22 倍)。`lastNObservations=400`
+约 19 个月,覆盖实测最深的回溯需求(美国上次利率变动 2025-12-10,约需 170 个观测)——
+政策利率的"前值"取的是**上一次变动之前的水平**,不是上一个观测。
+BIS 用 `XM` 表示欧元区,采集层映射到仓库内部的 `EA`。
+
+**为什么直连**:DBnomics 是 IMF/BIS 的镜像,2026-08-11 实测滞后 8–17 个月,
+且五经济体政策利率**全部给出过期值**(如巴西 15.0 vs 实际 14.25)。
+`config/indicators.json` 里政策利率的 `series_id` 本来就是 `BIS/WS_CBPOL/D.XX` ——
+上游一直是 BIS,直连只是去掉中间商。
+
+**探针失败或有意未接入的源**(不写进 `config/endpoints.json`,避免每日缺漏噪音):
+
+- BSP(菲律宾央行):SharePoint REST 实测可达,但 `robots.txt` 对非搜索引擎 UA
+  写的是 `Disallow: /` —— **出于合规有意不接入**,非技术障碍
+- BOT(泰国央行)`apigw1.bot.or.th`:DNS 无 A 记录,且本就需要 client key
+- PSA(菲律宾统计局):Cloudflare JS 挑战,标准库不可达
+- 泰国 MOC:`price.moc.go.th` 403 / CPI 文件 500 / `dataapi.moc.go.th` 全路径 404
+- IMF `dataservices.imf.org`:DNS 已下线
+- ECB Data Portal 旧 `ICP` dataflow:上游 2026-02-04 自行停更,停在 2025-12
+
+完整探针记录(99 个候选源、52 可用)见
+`super-research/2026-08-11-数据源扩展探针/`。
 
 只跑采集(不生成报告):
 
