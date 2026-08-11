@@ -1,0 +1,488 @@
+{
+  "date": "2026-08-11",
+  "run_at": "2026-08-11T04:19:56+00:00",
+  "schema_version": 1,
+  "rates": {
+    "PHP": {
+      "primary": 60.75,
+      "secondary": 60.9819156,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.382,
+      "suspect": false,
+      "prev_primary": 60.75,
+      "ref_date": "2026-08-10",
+      "prev_ref_date": null
+    },
+    "THB": {
+      "primary": 33.013,
+      "secondary": 32.99234949,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.063,
+      "suspect": false,
+      "prev_primary": 33.013,
+      "ref_date": "2026-08-10",
+      "prev_ref_date": null
+    },
+    "BRL": {
+      "primary": 5.0856,
+      "secondary": 5.10785465,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.438,
+      "suspect": false,
+      "prev_primary": 5.0856,
+      "ref_date": "2026-08-10",
+      "prev_ref_date": null
+    },
+    "EUR": {
+      "primary": 0.86543,
+      "secondary": 0.86613021,
+      "primary_source": "frankfurter",
+      "deviation_pct": 0.081,
+      "suspect": false,
+      "prev_primary": 0.86543,
+      "ref_date": "2026-08-10",
+      "prev_ref_date": null
+    }
+  },
+  "macro": [
+    {
+      "economy": "US",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.US.PCPI_PC_CP_A_PT",
+      "value": 2.70490239715136,
+      "prev": 2.66921301822231,
+      "period": "2025-07",
+      "is_new_release": false
+    },
+    {
+      "economy": "EA",
+      "indicator": "CPI 同比",
+      "series_id": "ECB/ICP/M.U2.N.000000.4.ANR",
+      "value": 1.9,
+      "prev": 2.1,
+      "period": "2025-12",
+      "is_new_release": false
+    },
+    {
+      "economy": "PH",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.PH.PCPI_PC_CP_A_PT",
+      "value": 1.27388535031847,
+      "prev": 1.43426294820717,
+      "period": "2025-05",
+      "is_new_release": false
+    },
+    {
+      "economy": "TH",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.TH.PCPI_PC_CP_A_PT",
+      "value": 0.235355011152928,
+      "prev": 0.463228123163358,
+      "period": "2025-03",
+      "is_new_release": false
+    },
+    {
+      "economy": "BR",
+      "indicator": "CPI 同比",
+      "series_id": "IMF/CPI/M.BR.PCPI_PC_CP_A_PT",
+      "value": 5.22525470407828,
+      "prev": 5.35128523909063,
+      "period": "2025-07",
+      "is_new_release": false
+    },
+    {
+      "economy": "US",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.US",
+      "value": 4.375,
+      "prev": 4.375,
+      "period": "2025-07-08",
+      "is_new_release": false
+    },
+    {
+      "economy": "EA",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.XM",
+      "value": 2.0,
+      "prev": 2.0,
+      "period": "2025-07-08",
+      "is_new_release": false
+    },
+    {
+      "economy": "PH",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.PH",
+      "value": 5.25,
+      "prev": 5.25,
+      "period": "2025-07-04",
+      "is_new_release": false
+    },
+    {
+      "economy": "TH",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.TH",
+      "value": 1.75,
+      "prev": 1.75,
+      "period": "2025-07-03",
+      "is_new_release": false
+    },
+    {
+      "economy": "US",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.US.BCA_BP6_USD",
+      "value": -410248.0,
+      "prev": -306510.0,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "EA",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.U2.BCA_BP6_USD",
+      "value": 68149.5680178591,
+      "prev": 107943.668573,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "PH",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.PH.BCA_BP6_USD",
+      "value": -4247.6822065757,
+      "prev": -4572.33498631775,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "TH",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.TH.BCA_BP6_USD",
+      "value": 11081.8905202786,
+      "prev": 4480.78427177536,
+      "period": "2025-Q1",
+      "is_new_release": false
+    },
+    {
+      "economy": "BR",
+      "indicator": "经常账户",
+      "series_id": "IMF/BOP/Q.BR.BCA_BP6_USD",
+      "value": -10522.85858349,
+      "prev": -22285.1435033,
+      "period": "2025-Q2",
+      "is_new_release": false
+    }
+  ],
+  "events": {
+    "BRL": {
+      "articles": [
+        {
+          "title": "Banco Central detalha hoje corte da Selic para 14 % em ata do Copom",
+          "url": "https://oglobo.globo.com/economia/financas/noticia/2026/08/11/banco-central-detalha-hoje-corte-da-selic-para-14percent-em-ata-do-copom.ghtml",
+          "domain": "oglobo.globo.com",
+          "seendate": "20260811T033000Z"
+        },
+        {
+          "title": " ¿ Qué puede pasar con las tasas en el próximo Copom ? ",
+          "url": "https://www.ambito.com/uruguay/que-puede-pasar-las-tasas-el-proximo-copom-n6309037",
+          "domain": "ambito.com",
+          "seendate": "20260810T164500Z"
+        },
+        {
+          "title": "Dupla é presa após ameaçar pedestre com faca durante roubo em PG",
+          "url": "https://arede.info/ponta-grossa/665705/dupla-e-presa-apos-ameacar-pedestre-com-faca-durante-roubo-em-pg",
+          "domain": "arede.info",
+          "seendate": "20260810T151500Z"
+        },
+        {
+          "title": "Expectativa do mercado para inflao de 2026 cai para 5 , 02 % ",
+          "url": "https://www.hojeemdia.com.br/economiaefinancas/expectativa-do-mercado-para-inflac-o-de-2026-cai-para-5-02-1.1128485",
+          "domain": "hojeemdia.com.br",
+          "seendate": "20260810T141500Z"
+        },
+        {
+          "title": "Calendário econômico semanal : Ata do Copom , IPCA e inflao nos EUA no foco da agenda",
+          "url": "https://www.infomoney.com.br/mercados/calendario-economico-semanal-ata-do-copom-ipca-e-inflacao-nos-eua-no-foco-da-agenda/",
+          "domain": "infomoney.com.br",
+          "seendate": "20260809T230000Z"
+        },
+        {
+          "title": "Furto em Arapiraca : Imóvel É Invadido e Tem itens Furtados",
+          "url": "https://www.alagoas24horas.com.br/1755017/ladrao-invade-imovel-furta-fios-de-cobre-e-bomba-dagua-e-foge-em-arapiraca/",
+          "domain": "alagoas24horas.com.br",
+          "seendate": "20260809T174500Z"
+        },
+        {
+          "title": "Expectativa do mercado para inflao de 2026 cai para 5 , 02 % - O que é notícia em Sergipe",
+          "url": "https://infonet.com.br/noticias/economia/expectativa-do-mercado-para-inflacao-de-2026-cai-para-502/",
+          "domain": "infonet.com.br",
+          "seendate": "20260810T164500Z"
+        },
+        {
+          "title": "Homem É Preso por Ameaça e Violência Doméstica em Arapiraca",
+          "url": "https://www.alagoas24horas.com.br/1754991/homem-e-preso-apos-agredir-e-ameacar-esposa-de-morte-filho-do-casal-acionou-a-pm/",
+          "domain": "alagoas24horas.com.br",
+          "seendate": "20260809T131500Z"
+        }
+      ]
+    },
+    "EUR": {
+      "articles": [
+        {
+          "title": "Energetski šok zatekao evrozonu nespremnu",
+          "url": "https://www.blic.rs/biznis/energetski-sok-zatekao-evrozonu-nespremnu/v0lxzd3",
+          "domain": "blic.rs",
+          "seendate": "20260809T104500Z"
+        },
+        {
+          "title": "BÖRSE ONLINE – Seit 1987 unterstützt BÖRSE ONLINE jede Woche Anleger bei ihren Investment - Entscheidungen . Zentrale Themen der Berichterstattung sind fundamentale Markt - und Aktienanalysen , Charttechnik , Handelsstrategien sowie verschiedene Trad...",
+          "url": "https://www.boerse-online.de/dpa-afx/devisen-euro-im-us-handelsverlauf-nur-wenig-bewegt-544092.html",
+          "domain": "boerse-online.de",
+          "seendate": "20260810T224500Z"
+        },
+        {
+          "title": "Devisen : Euro im US - Handelsverlauf nur wenig bewegt () ",
+          "url": "https://www.aktiencheck.de/analysen/Artikel-Devisen_Euro_US_Handelsverlauf_nur_wenig_bewegt-20008121",
+          "domain": "aktiencheck.de",
+          "seendate": "20260810T191500Z"
+        },
+        {
+          "title": "Devisen : Euro bewegt sich zum US - Dollar kaum",
+          "url": "https://www.finanznachrichten.de/nachrichten-2026-08/69266911-devisen-euro-bewegt-sich-zum-us-dollar-kaum-016.htm",
+          "domain": "finanznachrichten.de",
+          "seendate": "20260810T151500Z"
+        },
+        {
+          "title": "Πλούτος πάνω από 1 τρισ ., αλλά οι Έλληνες τρώνε τις αποταμιεύσεις τους",
+          "url": "https://www.huffingtonpost.gr/ikonomia/ploutos-pano-apo-1-tris-alla-oi-ellines-trone-tis-apotamiefseis-tous/",
+          "domain": "huffingtonpost.gr",
+          "seendate": "20260809T130000Z"
+        },
+        {
+          "title": "Analitičari podigli prognozu privrednog rasta evrozone u 2026 . na 0 , 8 odsto",
+          "url": "https://www.tanjug.rs/ekonomija/svet/272491/analiticari-podigli-prognozu-privrednog-rasta-evrozone-u-2026-na-08-odsto/vest",
+          "domain": "tanjug.rs",
+          "seendate": "20260810T103000Z"
+        },
+        {
+          "title": "控通胀还是稳增长 ： 欧洲央行左右为难 _ 东方财富网",
+          "url": "https://finance.eastmoney.com/a/202608113837006293.html",
+          "domain": "finance.eastmoney.com",
+          "seendate": "20260811T003000Z"
+        },
+        {
+          "title": "FxWirePro : EUR / NZD neutral in the near - term , scope for downward resumption",
+          "url": "http://www.econotimes.com/FxWirePro-EUR-NZD-neutral-in-the-near-term-scope-for-downward-resumption-1749103",
+          "domain": "econotimes.com",
+          "seendate": "20260811T021500Z"
+        }
+      ]
+    },
+    "PHP": {
+      "articles": [
+        {
+          "title": "Philippine FDI plunges to 11 - year low in May",
+          "url": "http://www.bignewsnetwork.com/news/279228983/philippine-fdi-plunges-to-11-year-low-in-may",
+          "domain": "bignewsnetwork.com",
+          "seendate": "20260810T093000Z"
+        },
+        {
+          "title": "Philippine FDI plunges to 11 - year low in May - Xinhua",
+          "url": "https://english.news.cn/20260810/46929af79f834a5b8fafc1dcd0e4936c/c.html",
+          "domain": "english.news.cn",
+          "seendate": "20260810T101500Z"
+        },
+        {
+          "title": "Philippine foreign reserves decline in July",
+          "url": "http://www.philippinetimes.com/news/279226466/philippine-foreign-reserves-decline-in-july",
+          "domain": "philippinetimes.com",
+          "seendate": "20260809T184500Z"
+        },
+        {
+          "title": "Financial consumer complaints up 72 . 6 % in 2025",
+          "url": "https://www.manilatimes.net/2026/08/10/business/top-business/financial-consumer-complaints-up-726-in-2025/2401619",
+          "domain": "manilatimes.net",
+          "seendate": "20260809T173000Z"
+        },
+        {
+          "title": "  Govt reforms led to completion of infra projects  ",
+          "url": "https://www.manilatimes.net/2026/08/09/news/govt-reforms-led-to-completion-of-infra-projects/2401568",
+          "domain": "manilatimes.net",
+          "seendate": "20260809T124500Z"
+        },
+        {
+          "title": "LandBank eyeing loan growth to offset fee loss",
+          "url": "https://www.manilatimes.net/2026/08/11/business/top-business/landbank-eyeing-loan-growth-to-offset-fee-loss/2402275",
+          "domain": "manilatimes.net",
+          "seendate": "20260810T164500Z"
+        },
+        {
+          "title": "Manila Bulletin - Former finance chief Cesar Purisima receives prestigious imperial award from Japan",
+          "url": "https://mb.com.ph/2026/08/11/former-finance-chief-cesar-purisima-receives-prestigious-imperial-award-from-japan",
+          "domain": "mb.com.ph",
+          "seendate": "20260811T003000Z"
+        },
+        {
+          "title": "Stocks on edge as GDP slows",
+          "url": "https://www.philstar.com/business/2026/08/10/2548147/stocks-edge-gdp-slows",
+          "domain": "philstar.com",
+          "seendate": "20260809T203000Z"
+        }
+      ]
+    },
+    "THB": {
+      "articles": [
+        {
+          "title": "Ringgit opens mixes against major currencies as US$ gains",
+          "url": "https://www.thestar.com.my/business/2026/08/11/ringgit-opens-mixes-against-major-currencies-as-us-gains",
+          "domain": "thestar.com.my",
+          "seendate": "20260811T024500Z"
+        },
+        {
+          "title": "Ringgit opens mixed against major currencies as US dollar gains",
+          "url": "https://www.freemalaysiatoday.com/category/business/2026/08/11/ringgit-opens-mixed-against-major-currencies-as-us-dollar-gains",
+          "domain": "freemalaysiatoday.com",
+          "seendate": "20260811T021500Z"
+        },
+        {
+          "title": "Ringgit to remain range - bound at 4 . 07 - 4 . 09 against US dollar next week",
+          "url": "https://www.thestar.com.my/business/business-news/2026/08/09/ringgit-to-remain-range-bound-at-407-409-against-us-dollar-next-week",
+          "domain": "thestar.com.my",
+          "seendate": "20260809T050000Z"
+        },
+        {
+          "title": "Market exchange rates in China -- Aug . 10 - Xinhua",
+          "url": "https://english.news.cn/20260810/1f5f63e3558943429981161ab769cfeb/c.html",
+          "domain": "english.news.cn",
+          "seendate": "20260810T023000Z"
+        },
+        {
+          "title": "Bangkok Post - BoT targets cash buyers of property",
+          "url": "https://www.bangkokpost.com/business/general/3299723/bot-targets-cash-buyers-of-property",
+          "domain": "bangkokpost.com",
+          "seendate": "20260810T233000Z"
+        },
+        {
+          "title": "เมก้า888 Gaming Studio – Professional Online Casino",
+          "url": "https://business1110ktek.com/understanding-jai-jing-financial-transactions-thailand/",
+          "domain": "business1110ktek.com",
+          "seendate": "20260810T000000Z"
+        }
+      ]
+    }
+  },
+  "calendar_hits": [],
+  "gaps": [
+    {
+      "source": "dbnomics",
+      "scope": "BIS/WS_CBPOL/D.BR",
+      "reason": "URLError: <urlopen error [Errno 101] Network is unreachable>",
+      "at": "2026-08-11T04:14:45+00:00"
+    },
+    {
+      "source": "gdelt",
+      "scope": "USD",
+      "reason": "rate-limited after retry (hard-rate-limited-429, first: hard-rate-limited-429)",
+      "at": "2026-08-11T04:17:21+00:00"
+    }
+  ],
+  "meta": {
+    "collector_version": "0.1.0"
+  },
+  "derived": {
+    "schema_version": 1,
+    "rates": {
+      "PHP": {
+        "chg_pct_1d": null,
+        "range_5d_low": 60.75,
+        "range_5d_high": 60.867,
+        "range_5d_days": 3,
+        "deviation_pct_prev": 0.078
+      },
+      "THB": {
+        "chg_pct_1d": null,
+        "range_5d_low": 33.013,
+        "range_5d_high": 33.055,
+        "range_5d_days": 3,
+        "deviation_pct_prev": 0.017
+      },
+      "BRL": {
+        "chg_pct_1d": null,
+        "range_5d_low": 5.0856,
+        "range_5d_high": 5.0998,
+        "range_5d_days": 3,
+        "deviation_pct_prev": 0.038
+      },
+      "EUR": {
+        "chg_pct_1d": null,
+        "range_5d_low": 0.86543,
+        "range_5d_high": 0.86693,
+        "range_5d_days": 3,
+        "deviation_pct_prev": 0.013
+      }
+    },
+    "events": {
+      "PHP": {
+        "count": 8,
+        "count_prev": null,
+        "count_delta": null
+      },
+      "THB": {
+        "count": 6,
+        "count_prev": null,
+        "count_delta": null
+      },
+      "BRL": {
+        "count": 8,
+        "count_prev": null,
+        "count_delta": null
+      },
+      "EUR": {
+        "count": 8,
+        "count_prev": 8,
+        "count_delta": 0
+      },
+      "USD": {
+        "count": null,
+        "count_prev": null,
+        "count_delta": null
+      }
+    },
+    "real_rate": {
+      "US": {
+        "value": 1.67,
+        "policy_rate": 4.375,
+        "policy_period": "2025-07-08",
+        "cpi": 2.70490239715136,
+        "cpi_period": "2025-07"
+      },
+      "EA": {
+        "value": 0.1,
+        "policy_rate": 2.0,
+        "policy_period": "2025-07-08",
+        "cpi": 1.9,
+        "cpi_period": "2025-12"
+      },
+      "PH": {
+        "value": 3.976,
+        "policy_rate": 5.25,
+        "policy_period": "2025-07-04",
+        "cpi": 1.27388535031847,
+        "cpi_period": "2025-05"
+      },
+      "TH": {
+        "value": 1.515,
+        "policy_rate": 1.75,
+        "policy_period": "2025-07-03",
+        "cpi": 0.235355011152928,
+        "cpi_period": "2025-03"
+      },
+      "BR": {
+        "value": null,
+        "policy_rate": null,
+        "policy_period": null,
+        "cpi": 5.22525470407828,
+        "cpi_period": "2025-07"
+      }
+    }
+  }
+}
