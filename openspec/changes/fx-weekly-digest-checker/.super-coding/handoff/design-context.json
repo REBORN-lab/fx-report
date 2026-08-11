@@ -1,0 +1,15 @@
+{
+  "change": "fx-weekly-digest-checker",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "super-coding-handoff.sh",
+  "context_hash": "514aa149d0c9b90106cc3883ca080200624334a9eccbde5f4a889804aa917dba",
+  "files": [
+    { "path": "openspec/changes/fx-weekly-digest-checker/proposal.md", "sha256": "7aa82ee75c66bdffdf1a85e06033585fe7eb0f0b94e199a005bfaae546e8669a" },
+    { "path": "openspec/changes/fx-weekly-digest-checker/design.md", "sha256": "e47dae4c4a01871fc50a404bcef75a6f1550c7520526fddc1c8bdad36d3a143e" },
+    { "path": "openspec/changes/fx-weekly-digest-checker/tasks.md", "sha256": "7230b7146a4e54105118450e3c8d6ac53e8c034b9573d9f32d10554cacaf7c7c" },
+    { "path": "openspec/changes/fx-weekly-digest-checker/specs/fx-daily-report/spec.md", "sha256": "22f1d451e306554fd1f1cd20540c33bf832666f5a2a288eeb204b21247136907" },
+    { "path": "openspec/changes/fx-weekly-digest-checker/specs/fx-weekly-report/spec.md", "sha256": "c60be3f2fc0a4e998eb545830849d3fad0fc3b7a4b6e4cac3a5f2804fc336019" }
+  ]
+}
