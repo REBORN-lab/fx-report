@@ -7,7 +7,10 @@
 ## 当前任务
 
 - 17/17 任务全部完成并双审查通过;plan 83 步全勾、tasks.md 14 项全勾
-- 阶段: 终审 ✅ Ready-to-merge Yes(零 Critical/Important;cfg 13 键生产消费矩阵零孤儿、gap 21 个生成点全经 make_gap、快照/日志 schema 全链一致、无死引用、仓库卫生、PHP 纵切面全链无断点、4 日报+1 周报校验器全部重跑 PASS)
+- 阶段: verify 暂停在分支处理(用户 2026-08-11 明确选择「保持分支稍后处理」)
+- verify 已完成部分: 入口 PASS;scale=full;full 验证 7/7 全 PASS(报告 docs/superpowers/reports/2026-08-10-fx-daily-report-skill-verify.md,19 个 sc-evidence 签哈希证据块;SUGGESTION×2 文档措辞级);verification_report 已写入 .super-coding.yaml(verified_code_hash 因 symlink 目录未锚定,脚本 WARNING 如实记录);finishing-a-development-branch 已走到分支决策点,测试新鲜实测 141/141 OK
+- 未完成部分(恢复时继续): 分支处理(用户改选合并时必须走 scripts/sc-finish.sh)→ branch_status=handled → guard verify --apply(输出完整可见)→ archive(归档前最终确认+spec 措辞漂移顺修+08-09 日志清账决策)
+- 终审纪录: Ready-to-merge Yes(零 Critical/Important;cfg 13 键生产消费矩阵零孤儿、gap 21 个生成点全经 make_gap、快照/日志 schema 全链一致、无死引用、仓库卫生、PHP 纵切面全链无断点)
 - 终审 Minor×2 记档: ①tests/helpers.py make_test_cfg 缺 prev_snapshot_gap 键与 build_cfg 不同步(功能无害,后续补齐)②08-09 五条决策日志因回填时序(08-10 快照 run_at 早于回填)将永久"未判定",报表如实展示不误导,归档前可选清账或保留作诚实样本——转 verify 阶段用户知悉
 - 下一步: 显式全量测试 → guard build --apply(输出完整可见)→ verify
 
