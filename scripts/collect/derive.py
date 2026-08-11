@@ -1,0 +1,225 @@
+"""派生指标:脚本确定性计算,LLM 只准逐字引用。
+
+存在理由:数字纪律禁止 LLM 计算任何数(防编造),代价是报告连"跌了多少"
+都写不出来。派生量在这里算好落进快照,报告层引用即合法——防编造纪律不放松,
+分析密度回来。每一项都必须能由快照原始值复算。
+"""
+import math
+
+from . import events as events_mod
+from . import util
+
+SCHEMA_VERSION = 1
+RANGE_DAYS = 5
+# 历史窗口要比 RANGE_DAYS 宽:周末与假日让相邻快照共享同一次定盘,
+# 只读 5 份会让 range_5d 永远凑不满 5 个不同定盘日。
+HISTORY_SPAN = RANGE_DAYS + 4
+POLICY_INDICATOR = "政策利率"
+CPI_INDICATOR = "CPI 同比"
+EMPTY_RATE_DERIVED = {
+    "chg_pct_1d": None,
+    "range_%dd_low" % RANGE_DAYS: None,
+    "range_%dd_high" % RANGE_DAYS: None,
+    "range_%dd_days" % RANGE_DAYS: 0,
+    "deviation_pct_prev": None,
+}
+EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
+                   "cpi": None, "cpi_period": None}
+EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None}
+# 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
+# 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
+
+
+def _num(v):
+    """数值门:bool 不是数(约定 2),NaN/Inf 穿过比较会给出确定性错误结论。"""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return v if math.isfinite(v) else None
+
+
+def _entry_of(snap, currency):
+    if not isinstance(snap, dict):
+        return None
+    rates = snap.get("rates")
+    if not isinstance(rates, dict):
+        return None
+    entry = rates.get(currency)
+    return entry if isinstance(entry, dict) else None
+
+
+def _fixing_key(ref, value):
+    """一次定盘的身份。定盘日已知时用它;未知(存量快照)时退回按值去重——
+    同值极大概率是同一次定盘被读了两遍(回填,或早于定盘时点的重复运行)。
+
+    两族 key 刻意不互通:已知定盘日走 ref 分支,保证"真实两次定盘恰好同价"
+    不被误合并。代价是过渡期(一侧已知、一侧是存量快照)可能把同一次定盘
+    多算一次,随存量快照滚出历史窗口自愈。
+    """
+    return ("ref", ref) if isinstance(ref, str) else ("val", value)
+
+
+def _chg_pct_1d(entry):
+    # 参考价未更新 → 两值必然相等,但那不是价格变动(非工作日),不得算 0%
+    ref, prev_ref = entry.get("ref_date"), entry.get("prev_ref_date")
+    if isinstance(ref, str) and ref == prev_ref:
+        return None
+    today, prev = _num(entry.get("primary")), _num(entry.get("prev_primary"))
+    if today is None or prev is None or prev == 0:
+        return None
+    if not isinstance(prev_ref, str) and today == prev:
+        # 定盘日未知(存量快照)且两值 bit 级相等:无法区分"真持平"与"没定盘"。
+        # 0.0% 会被读成方向结论,null 只是信息缺失——错误代价不对称,取 null。
+        return None
+    return round((today - prev) / prev * 100, 3)
+
+
+def _range_nd(entry, history, currency):
+    """近 N 次不同定盘的高低区间。同一次定盘的多份快照只算一次
+    (回填会产生同值多份,不去重会把"一天"重复计入)。"""
+    values, seen = [], set()
+    today = _num(entry.get("primary"))
+    if today is not None:
+        values.append(today)
+        seen.add(_fixing_key(entry.get("ref_date"), today))
+    for snap in history:
+        if len(values) >= RANGE_DAYS:
+            break
+        h = _entry_of(snap, currency)
+        if h is None:
+            continue
+        v = _num(h.get("primary"))
+        if v is None:
+            continue
+        key = _fixing_key(h.get("ref_date"), v)
+        if key in seen:
+            continue
+        values.append(v)
+        seen.add(key)
+    if not values:
+        return None, None, 0
+    return min(values), max(values), len(values)
+
+
+def _deviation_prev(history, currency):
+    for snap in history:
+        h = _entry_of(snap, currency)
+        if h is not None and _num(h.get("deviation_pct")) is not None:
+            return h["deviation_pct"]
+    return None
+
+
+def _article_count(snap, currency):
+    if not isinstance(snap, dict):
+        return None
+    events = snap.get("events")
+    if not isinstance(events, dict):
+        return None
+    entry = events.get(currency)
+    if not isinstance(entry, dict):
+        return None
+    arts = entry.get("articles")
+    return len(arts) if isinstance(arts, list) else None
+
+
+def _rates_derived(payload, history, gaps):
+    out = {}
+    rates = payload.get("rates")
+    if not isinstance(rates, dict):
+        return out
+    for currency, entry in rates.items():
+        if not isinstance(entry, dict):
+            continue
+        try:
+            low, high, days = _range_nd(entry, history, currency)
+            out[currency] = {
+                "chg_pct_1d": _chg_pct_1d(entry),
+                "range_%dd_low" % RANGE_DAYS: low,
+                "range_%dd_high" % RANGE_DAYS: high,
+                "range_%dd_days" % RANGE_DAYS: days,
+                "deviation_pct_prev": _deviation_prev(history, currency),
+            }
+        except Exception as e:   # 单币种失败不牵连其余;绝不向上抛(采集层硬契约)
+            out[currency] = dict(EMPTY_RATE_DERIVED)   # 缺输入写 null,不省略键
+            gaps.append(util.make_gap("derive", currency,
+                                      "%s: %s" % (type(e).__name__, e)))
+    return out
+
+
+def _events_derived(payload, history, gaps):
+    """count 为 null 表示"没采到"(该币种事件采集失败),0 表示"确实 0 篇"——
+    两者绝不可合并:把采集失败写成 0 就是在报"没发生",属编造。"""
+    out = {}
+    rates = payload.get("rates")
+    currencies = list(rates) if isinstance(rates, dict) else []
+    # 事件覆盖的币种由 events 模块的关键词表定义(含基准货币 USD,它不在 rates 里)
+    currencies += [c for c in events_mod.KEYWORDS if c not in currencies]
+    for currency in currencies:
+        try:
+            count = _article_count(payload, currency)
+            prev = _article_count(history[0], currency) if history else None
+            out[currency] = {
+                "count": count,
+                "count_prev": prev,
+                "count_delta": (count - prev)
+                               if (count is not None and prev is not None) else None,
+            }
+        except Exception as e:
+            out[currency] = dict(EMPTY_EVENTS_DERIVED)
+            gaps.append(util.make_gap("derive", currency,
+                                      "%s: %s" % (type(e).__name__, e)))
+    return out
+
+
+def _real_rate(payload, gaps):
+    """政策利率 − CPI 同比。双期号原文强制携带:期错配是编造风险最大处,
+    让引用方无法隐藏"用一年前的 CPI 配今天的利率"。"""
+    out = {}
+    macro = payload.get("macro")
+    if not isinstance(macro, list):
+        return out
+    by_economy = {}
+    for item in macro:
+        if not isinstance(item, dict):
+            continue
+        economy, indicator = item.get("economy"), item.get("indicator")
+        if not isinstance(economy, str) or indicator not in (POLICY_INDICATOR, CPI_INDICATOR):
+            continue
+        by_economy.setdefault(economy, {})[indicator] = item
+    for economy, pair in by_economy.items():
+        try:
+            policy = pair.get(POLICY_INDICATOR) or {}
+            cpi = pair.get(CPI_INDICATOR) or {}
+            pv, cv = _num(policy.get("value")), _num(cpi.get("value"))
+            pp, cp = policy.get("period"), cpi.get("period")
+            pp = pp if isinstance(pp, str) else None
+            cp = cp if isinstance(cp, str) else None
+            # 任一缺失 → value 为 null(不给半截算式),但期号/单值照常暴露,
+            # 便于报告说明"缺的是哪一半";键始终存在(spec: 记为 null 而非省略)
+            complete = None not in (pv, cv, pp, cp)
+            out[economy] = {"value": round(pv - cv, 3) if complete else None,
+                            "policy_rate": pv, "policy_period": pp,
+                            "cpi": cv, "cpi_period": cp}
+        except Exception as e:
+            out[economy] = dict(EMPTY_REAL_RATE)
+            gaps.append(util.make_gap("derive", economy,
+                                      "%s: %s" % (type(e).__name__, e)))
+    return out
+
+
+def derive(payload, history):
+    """payload: 已组装的当日快照 dict;history: 按日期倒序的近若干份历史快照。
+
+    注意"前值"的口径:`count_prev` / `deviation_pct_prev` 取自 history 里最近
+    一份**存在**的快照,缺天时它不是昨天(与 rates 的 prev_primary 口径不同,
+    后者严格取昨日文件)。
+    """
+    gaps = []
+    if not isinstance(payload, dict):
+        payload = {}
+    history = [s for s in history if isinstance(s, dict)] if isinstance(history, list) else []
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "rates": _rates_derived(payload, history, gaps),
+        "events": _events_derived(payload, history, gaps),
+        "real_rate": _real_rate(payload, gaps),
+    }, gaps

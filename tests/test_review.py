@@ -214,3 +214,43 @@ class ReviewTypeGateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def snap_ref(php_primary, ref_date):
+    return {"rates": {"PHP": {"primary": php_primary, "ref_date": ref_date}}}
+
+
+class RefDateBranchTest(ReviewTest):
+    """参考价定盘日期三分支(delta spec: 参考价未更新 / 参考日期缺失退回旧行为)。"""
+
+    def test_ref_date_unchanged_reports_no_fixing(self):
+        text, log = self._run(
+            [opinion()],
+            {"2026-08-09": snap_ref(60.75, "2026-08-07"),
+             "2026-08-10": snap_ref(60.75, "2026-08-07")})
+        self.assertIn("参考价未更新(非工作日)", text)
+        # 不得表述为价格持平的市场观察
+        self.assertNotIn("方向核对: 命中", text)
+        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
+
+    def test_ref_date_changed_uses_normal_comparison(self):
+        text, log = self._run(
+            [opinion()],
+            {"2026-08-09": snap_ref(60.0, "2026-08-07"),
+             "2026-08-10": snap_ref(60.5, "2026-08-10")})
+        self.assertNotIn("参考价未更新", text)
+        self.assertIn("方向核对: 命中", text)
+        self.assertEqual(log[0]["review"]["direction_outcome"], "命中")
+
+    def test_legacy_snapshot_without_ref_date_keeps_old_behaviour(self):
+        text, log = self._run([opinion()],
+                              {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
+        self.assertNotIn("参考价未更新", text)
+        self.assertIn("方向核对: 命中", text)
+
+    def test_one_side_missing_ref_date_keeps_old_behaviour(self):
+        text, _ = self._run(
+            [opinion()],
+            {"2026-08-09": snap(60.75), "2026-08-10": snap_ref(60.75, "2026-08-10")})
+        self.assertNotIn("参考价未更新", text)
+        self.assertIn("方向核对: 无法判定", text)   # 数值相等 → 旧逻辑给无法判定

@@ -68,6 +68,28 @@ def rate_of(snap, currency):
     return primary
 
 
+def ref_date_of(snap, currency):
+    """该币种的参考价定盘日期;存量快照(无此字段)或类型不符 → None。"""
+    if not isinstance(snap, dict) or not isinstance(currency, str):
+        return None
+    rates = snap.get("rates")
+    if not isinstance(rates, dict):
+        return None
+    entry = rates.get(currency)
+    if not isinstance(entry, dict):
+        return None
+    ref = entry.get("ref_date")
+    return ref if isinstance(ref, str) else None
+
+
+def fixing_unchanged(prev_snap, today_snap, currency):
+    """两侧参考价定盘日期都在且相同 → 参考价未更新(非工作日),不是价格持平。
+    任一侧缺失(存量快照)→ False,退回按数值比较的旧行为。"""
+    prev_ref = ref_date_of(prev_snap, currency)
+    today_ref = ref_date_of(today_snap, currency)
+    return prev_ref is not None and prev_ref == today_ref
+
+
 def direction_outcome(prev_rate, today_rate, watch_direction):
     if prev_rate is None or today_rate is None or watch_direction not in ("up", "down"):
         return "无法判定"
@@ -122,20 +144,26 @@ def main(argv=None):
         if not pending:
             lines.append("- 上一运行日(%s)无未复盘观点" % target)
         for e in pending:
-            prev_r = rate_of(prev_snap, e.get("currency"))
-            today_r = rate_of(today_snap, e.get("currency"))
+            currency = e.get("currency")
+            prev_r = rate_of(prev_snap, currency)
+            today_r = rate_of(today_snap, currency)
             oc = direction_outcome(prev_r, today_r, e.get("watch_direction"))
             rev = review_of(e)
             if rev is None:
                 rev = dict(EMPTY_REVIEW)
                 e["review"] = rev
             rev["direction_outcome"] = oc
+            # 参考价未更新时,两值相等是"没有新定盘"而非"市场持平"——必须区分,
+            # 否则 LLM 会把休市日写成价格观察(诊断实测:12/12 汇率对连平全属此类)
+            rate_desc = ("参考价未更新(非工作日)"
+                         if fixing_unchanged(prev_snap, today_snap, currency)
+                         else "汇率 %s→%s" % (prev_r, today_r))
             lines.append(
                 "- %s | 观点日 %s | 情景: %s | 触发条件: %s | 关注方向: %s"
-                " | 汇率 %s→%s | 方向核对: %s"
-                % (flat(e.get("currency")), target, flat(e.get("scenario")),
+                " | %s | 方向核对: %s"
+                % (flat(currency), target, flat(e.get("scenario")),
                    flat(e.get("trigger")), flat(e.get("watch_direction")),
-                   prev_r, today_r, oc))
+                   rate_desc, oc))
         if pending:
             # 无回填发生时不重写文件: 避免丢弃坏行、放大并发窗口
             save_log(log_path, entries)

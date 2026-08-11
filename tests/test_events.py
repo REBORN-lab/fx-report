@@ -19,6 +19,7 @@ def cfg_with(srv):
 class EventsTest(unittest.TestCase):
     def test_default_delay_meets_spec(self):
         self.assertGreaterEqual(events.DEFAULT_DELAY_S, 5)   # spec: 串行 ≥5s
+        self.assertEqual(events.DEFAULT_DELAY_S, 20)         # spec: 默认 20s(429 缓解)
         self.assertGreaterEqual(events.DEFAULT_BACKOFF_S, 1)
 
     def test_normal_collection_all_currencies(self):
@@ -29,7 +30,8 @@ class EventsTest(unittest.TestCase):
         art = out["PHP"]["articles"][0]
         self.assertEqual(art["title"], "BSP signals possible rate cut in September")
         self.assertEqual(art["domain"], "reuters.com")
-        self.assertIn("tone_avg", out["PHP"])   # tone 字段容错,可为 None
+        self.assertNotIn("tone", art)           # artlist 端点不返回 tone,快照不得含该字段
+        self.assertNotIn("tone_avg", out["PHP"])
 
     def test_soft_rate_limit_retry_succeeds(self):
         state = {"n": 0}
@@ -137,7 +139,6 @@ class EventsTest(unittest.TestCase):
         self.assertEqual(gaps, [])
         self.assertEqual(len(out), 5)
         self.assertEqual(out["PHP"]["articles"], [])
-        self.assertIsNone(out["PHP"]["tone_avg"])
 
     def test_non_dict_article_elements_skipped(self):
         """articles 元素非 dict(标量/None)→ 跳过,仅保留 dict 元素。"""
@@ -152,20 +153,115 @@ class EventsTest(unittest.TestCase):
         self.assertEqual(len(out["PHP"]["articles"]), 1)
         self.assertEqual(out["PHP"]["articles"][0]["title"], "ok")
 
-    def test_bool_tone_excluded_from_tone_avg(self):
-        """JSON true 是 bool(int 子类),不得混入 tone 均值;仅 bool 时 tone_avg 为 None。"""
-        mixed = json.dumps({"articles": [
-            {"title": "a", "tone": True},
-            {"title": "b", "tone": 4.0},
-        ]})
-        with FixtureServer({"/doc": (200, mixed)}) as srv:
+    def test_tone_fields_absent(self):
+        """artlist 端点不返回 tone(实测 40/40 为 null):字段整体删除,不留死字段。"""
+        body = json.dumps({"articles": [
+            {"title": "a", "url": "u", "domain": "d", "seendate": "s", "tone": 4.0}]})
+        with FixtureServer({"/doc": (200, body)}) as srv:
             out, _ = events.collect(cfg_with(srv))
-        self.assertEqual(out["PHP"]["tone_avg"], 4.0)
+        self.assertNotIn("tone", out["PHP"]["articles"][0])
+        self.assertNotIn("tone_avg", out["PHP"])
 
-        only_bool = json.dumps({"articles": [{"title": "a", "tone": True}]})
-        with FixtureServer({"/doc": (200, only_bool)}) as srv:
+
+class HardRateLimitTest(unittest.TestCase):
+    """HTTP 429 硬限流退避(delta spec: 硬限流退避)。"""
+
+    def test_hard_429_retry_succeeds(self):
+        state = {"n": 0}
+
+        def route(handler):
+            q = urllib.parse.unquote_plus(handler.path)
+            if "Thai" not in q:
+                return (200, SAMPLE)
+            state["n"] += 1
+            return (429, "Too Many Requests") if state["n"] == 1 else (200, SAMPLE)
+
+        with FixtureServer({"/doc": route}) as srv:
+            out, gaps = events.collect(cfg_with(srv))
+        self.assertEqual(gaps, [])
+        self.assertEqual(state["n"], 2)          # 初次 429 + 一次重试
+        self.assertIn("THB", out)
+
+    def test_hard_429_persistent_becomes_gap(self):
+        calls = {"n": 0}
+
+        def route(handler):
+            q = urllib.parse.unquote_plus(handler.path)
+            if "Thai" not in q:
+                return (200, SAMPLE)
+            calls["n"] += 1
+            return (429, "Too Many Requests")
+
+        with FixtureServer({"/doc": route}) as srv:
+            out, gaps = events.collect(cfg_with(srv))
+        self.assertEqual(calls["n"], 2)          # 初次 + 恰一次重试,锁定重试上界
+        self.assertEqual([g["scope"] for g in gaps], ["THB"])
+        self.assertIn("429", gaps[0]["reason"])
+        self.assertNotIn("THB", out)
+
+
+class QueryOrderTest(unittest.TestCase):
+    """查询顺序按日期确定性轮转(delta spec: 查询顺序轮转)。"""
+
+    def test_same_date_gives_same_order(self):
+        self.assertEqual(events.query_order("2026-08-11"), events.query_order("2026-08-11"))
+
+    def test_order_is_a_rotation_of_all_currencies(self):
+        order = events.query_order("2026-08-11")
+        self.assertEqual(sorted(order), sorted(events.KEYWORDS))
+        self.assertEqual(len(order), 5)
+
+    def test_different_dates_can_give_different_orders(self):
+        orders = {tuple(events.query_order("2026-08-%02d" % d)) for d in range(1, 15)}
+        self.assertGreater(len(orders), 1)
+
+    def test_order_matches_hardcoded_expectation(self):
+        """预期值硬编码,不拿被测函数自己当预期(否则轮转被删也测不出)。"""
+        self.assertEqual(events.query_order("2026-08-11"),
+                         ["BRL", "USD", "EUR", "PHP", "THB"])
+        self.assertEqual(events.query_order("2026-08-12"),
+                         ["USD", "EUR", "PHP", "THB", "BRL"])
+
+    def test_collect_follows_rotated_order(self):
+        seen = []
+
+        def route(handler):
+            seen.append(urllib.parse.unquote_plus(handler.path))
+            return (200, SAMPLE)
+
+        with FixtureServer({"/doc": route}) as srv:
+            cfg = cfg_with(srv)
+            cfg["date"] = "2026-08-11"
+            events.collect(cfg)
+        # 全部 5 个位置逐一核对,不只看首位
+        expected = ["BRL", "USD", "EUR", "PHP", "THB"]
+        actual = [next(c for c in events.KEYWORDS
+                       if events.KEYWORDS[c].split('"')[1] in q) for q in seen]
+        self.assertEqual(actual, expected)
+
+
+class DedupeTest(unittest.TestCase):
+    """同币种内标题去重(delta spec: 标题去重)。"""
+
+    def test_duplicate_titles_collapsed(self):
+        body = json.dumps({"articles": [
+            {"title": "same", "url": "u1", "domain": "d1", "seendate": "s1"},
+            {"title": "same", "url": "u2", "domain": "d2", "seendate": "s2"},
+            {"title": "other", "url": "u3", "domain": "d3", "seendate": "s3"},
+        ]})
+        with FixtureServer({"/doc": (200, body)}) as srv:
             out, _ = events.collect(cfg_with(srv))
-        self.assertIsNone(out["PHP"]["tone_avg"])
+        titles = [a["title"] for a in out["PHP"]["articles"]]
+        self.assertEqual(titles, ["same", "other"])      # 保留首条
+
+    def test_none_titles_not_collapsed(self):
+        """标题缺失(None)不构成"重复",不得把不同文章折叠成一条。"""
+        body = json.dumps({"articles": [
+            {"url": "u1", "domain": "d1"}, {"url": "u2", "domain": "d2"},
+        ]})
+        with FixtureServer({"/doc": (200, body)}) as srv:
+            out, _ = events.collect(cfg_with(srv))
+        self.assertEqual(len(out["PHP"]["articles"]), 2)
 
 
 if __name__ == "__main__":

@@ -321,3 +321,62 @@ class RatesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RefDateTest(unittest.TestCase):
+    """参考价定盘日期落盘(delta spec: 参考价定盘日期落盘 / 存量快照无参考日期)。"""
+
+    def test_ref_date_from_primary_response(self):
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            out, gaps = rates.collect(cfg_with(srv))
+        self.assertEqual(out["PHP"]["ref_date"], "2026-08-10")
+        self.assertEqual(out["EUR"]["ref_date"], "2026-08-10")
+
+    def test_ref_date_null_when_response_lacks_date(self):
+        doc = {"base": "USD", "rates": FRANK["rates"]}
+        with FixtureServer({"/frank": (200, json.dumps(doc)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            out, _ = rates.collect(cfg_with(srv))
+        self.assertIsNone(out["PHP"]["ref_date"])
+
+    def test_prev_ref_date_from_prev_snapshot(self):
+        prev = {"rates": {"PHP": {"primary": 60.9, "ref_date": "2026-08-07"}}}
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            cfg = cfg_with(srv)
+            cfg["prev_snapshot"] = prev
+            out, _ = rates.collect(cfg)
+        self.assertEqual(out["PHP"]["prev_ref_date"], "2026-08-07")
+
+    def test_prev_ref_date_is_per_currency(self):
+        """上一份快照中降级过的币种 ref_date 为 None,不得被全快照共用值顶替——
+        否则 derive 与 review.py 会对同一币种给出相反的"参考价未更新"结论。"""
+        prev = {"rates": {"PHP": {"primary": 60.9},                       # 当时降级到副源
+                          "EUR": {"primary": 0.92, "ref_date": "2026-08-07"}}}
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            cfg = cfg_with(srv)
+            cfg["prev_snapshot"] = prev
+            out, _ = rates.collect(cfg)
+        self.assertIsNone(out["PHP"]["prev_ref_date"])
+        self.assertEqual(out["EUR"]["prev_ref_date"], "2026-08-07")
+
+    def test_prev_ref_date_null_for_legacy_snapshot(self):
+        prev = {"rates": {"PHP": {"primary": 60.9}}}   # 本变更之前生成,无 rates_ref_date
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            cfg = cfg_with(srv)
+            cfg["prev_snapshot"] = prev
+            out, _ = rates.collect(cfg)
+        self.assertIsNone(out["PHP"]["prev_ref_date"])
+        self.assertEqual(out["PHP"]["prev_primary"], 60.9)   # 旧行为不回归
+
+    def test_ref_date_null_when_degraded_to_secondary(self):
+        """降级到副源的币种:主源定盘日期对它不成立,ref_date 必须为 None。"""
+        with FixtureServer({"/exch": (200, json.dumps(EXCH))}) as srv:
+            cfg = cfg_with(srv)
+            cfg["endpoints"]["frankfurter_url"] = DEAD_URL + "/frank?date={date}"
+            out, _ = rates.collect(cfg)
+        self.assertEqual(out["PHP"]["primary_source"], "exchange-api")
+        self.assertIsNone(out["PHP"]["ref_date"])

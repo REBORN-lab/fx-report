@@ -4,14 +4,44 @@ import argparse
 import glob
 import json
 import os
+import re
 import sys
 from datetime import date, timedelta
 
 from . import calendar as calendar_mod
+from . import derive as derive_mod
 from . import events, macro, rates, util
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 COLLECTOR_VERSION = "0.1.0"
+
+
+SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _load_history(data_dir, date_str, limit=derive_mod.HISTORY_SPAN):
+    """派生指标要的近若干份历史快照,按日期倒序。坏文件跳过——历史缺失只让
+    派生量降级(区间变窄),不值得为此中断当日采集。
+
+    `name >= date_str` 同时排除当日自身:重跑当天时 data/<date>.json 已存在,
+    放进来会让"前值"变成今早自己的产物(count_delta 恒 0)。"""
+    out = []
+    for path in sorted(glob.glob(os.path.join(data_dir, "*.json")), reverse=True):
+        if len(out) >= limit:
+            break
+        name = os.path.basename(path)[:-len(".json")]
+        if not SNAPSHOT_NAME_RE.fullmatch(name):
+            continue    # 误放的非快照文件不得占用历史窗口
+        if name >= date_str:
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                snap = json.load(f)
+        except (OSError, ValueError, RecursionError):
+            continue
+        if isinstance(snap, dict):
+            out.append(snap)
+    return out
 
 
 def build_cfg(date_str, root=ROOT):
@@ -54,6 +84,7 @@ def build_cfg(date_str, root=ROOT):
         "calendar_path": cals[-1] if cals else os.path.join(root, "state", "calendar-2026.json"),
         "prev_snapshot": prev_snapshot,
         "prev_snapshot_gap": prev_gap,
+        "history": _load_history(data_dir, date_str),
         "fred_api_key": os.environ.get("FRED_API_KEY"),
         # FX_GDELT_*_S 仅测试提速用;生产不设,落在 spec 要求的默认值上
         "gdelt_delay_s": float(os.environ.get("FX_GDELT_DELAY_S", events.DEFAULT_DELAY_S)),
@@ -89,6 +120,14 @@ def run(cfg):
     }
     if macro_p.get("us_release_dates") is not None:
         snapshot["us_release_dates"] = macro_p["us_release_dates"]
+    # 派生在快照成型后算(输入是已落定的 rates/macro/events);同样绝不中断落盘
+    try:
+        derived, derive_gaps = derive_mod.derive(snapshot, cfg.get("history") or [])
+        gaps.extend(derive_gaps)
+        snapshot["derived"] = derived
+    except Exception as e:
+        gaps.append(util.make_gap("derive", "all",
+                                  "internal error %s: %s" % (type(e).__name__, e)))
     return snapshot
 
 

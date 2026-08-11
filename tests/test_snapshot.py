@@ -143,3 +143,60 @@ class SnapshotTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@mock.patch.dict(os.environ, {"FX_GDELT_DELAY_S": "0", "FX_GDELT_BACKOFF_S": "0"})
+class DerivedSectionTest(unittest.TestCase):
+    """derived 落盘与异常不阻断(delta spec: 派生指标落盘 / 派生计算异常不阻断)。"""
+
+    def _run(self, tmp, srv, history=None):
+        make_test_root(tmp, endpoints(srv), indicators=IND)
+        for d, snap in (history or {}).items():
+            with open(os.path.join(tmp, "data", d + ".json"), "w", encoding="utf-8") as f:
+                json.dump(snap, f)
+        rc = entry.main(["--date", "2026-08-10", "--root", tmp])
+        self.assertEqual(rc, 0)
+        with open(os.path.join(tmp, "data", "2026-08-10.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_derived_section_present(self):
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv)
+        self.assertIn("derived", snap)
+        self.assertEqual(snap["derived"]["schema_version"], 1)
+        self.assertIn("PHP", snap["derived"]["rates"])
+        self.assertIn("PHP", snap["derived"]["events"])
+
+    def test_derived_uses_multi_day_history(self):
+        hist = {"2026-08-%02d" % d: {
+            "rates": {"PHP": {"primary": 60.0 + d, "ref_date": "2026-08-%02d" % d}},
+            "events": {"PHP": {"articles": []}}} for d in (6, 7, 8, 9)}
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, hist)
+        r = snap["derived"]["rates"]["PHP"]
+        self.assertEqual(r["range_5d_days"], 5)          # 当日 + 最近 4 份
+        self.assertEqual(r["range_5d_low"], 60.843)      # 当日值最低
+        self.assertEqual(r["range_5d_high"], 69.0)       # 08-09 的 60+9
+
+    def test_history_excludes_self_and_non_snapshot_files(self):
+        """重跑当天时 data/<date>.json 已存在,不得把今早自己的产物当历史;
+        误放的非日期文件也不得占用历史窗口。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            data = os.path.join(tmp, "data")
+            os.makedirs(data)
+            for name in ("2026-08-10.json", "2026-08-09.json", "1backup.json", "foo.json"):
+                with open(os.path.join(data, name), "w", encoding="utf-8") as f:
+                    json.dump({"marker": name}, f)
+            hist = entry._load_history(data, "2026-08-10")
+        self.assertEqual([h["marker"] for h in hist], ["2026-08-09.json"])
+
+    def test_derive_failure_becomes_gap_and_snapshot_still_written(self):
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            make_test_root(tmp, endpoints(srv), indicators=IND)
+            with mock.patch("scripts.collect.derive.derive", side_effect=RuntimeError("boom")):
+                rc = entry.main(["--date", "2026-08-10", "--root", tmp])
+            self.assertEqual(rc, 0)
+            with open(os.path.join(tmp, "data", "2026-08-10.json"), encoding="utf-8") as f:
+                snap = json.load(f)
+        self.assertIn("rates", snap)                     # 其余部分照常落盘
+        self.assertTrue(any(g["source"] == "derive" for g in snap["gaps"]))
