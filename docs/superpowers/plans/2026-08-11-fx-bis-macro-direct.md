@@ -6,7 +6,7 @@ base-ref: 7fa78d8941184714caa31853c0d5740f84469449
 
 # BIS 宏观直连 + HTTP 取数封装加固 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 五经济体的 CPI 同比与政策利率改为直连 BIS Stats API,消除 DBnomics 镜像 8–17 个月的滞后与已在发布的方向性错值;同时让 `util.fetch_*` 不再把 gzip 响应静默读成解析失败。
 
@@ -46,7 +46,7 @@ gzip 测试要发原始压缩字节,而现有 `_Handler` 无条件 `body.encode(
 **Files:**
 - Modify: `tests/helpers.py:16`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/test_util.py`:
 
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_util -v 2>&1 | tail -5
@@ -80,7 +80,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_util -v 2>&1 | tail -5
 
 预期:FAIL —— `AttributeError: 'bytes' object has no attribute 'encode'`(服务端)或返回乱码。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `tests/helpers.py` 第 16 行:
 
@@ -88,11 +88,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_util -v 2>&1 | tail -5
                 data = body if isinstance(body, bytes) else body.encode("utf-8")
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 预期仍 FAIL —— 服务端已能发字节,但 `util.fetch_text` 还不会解压(Task 2 修)。确认失败原因已从"服务端崩"变成"内容不对"。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add tests/helpers.py tests/test_util.py
@@ -107,7 +107,7 @@ git commit -m "test(helpers): FixtureServer 支持 bytes 响应体,为 gzip 兜�
 - Modify: `scripts/collect/util.py:11-18`
 - Test: `tests/test_util.py`
 
-- [ ] **Step 1: 补齐失败测试**
+- [x] **Step 1: 补齐失败测试**
 
 在 `tests/test_util.py` 的 `BytesFixtureTest` 之后加:
 
@@ -138,7 +138,7 @@ class GzipFallbackTest(unittest.TestCase):
             self.assertEqual(util.fetch_text(srv.base_url + "/e"), "")
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_util -v 2>&1 | tail -8
@@ -146,7 +146,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_util -v 2>&1 | tail -8
 
 预期:`test_gzip_body_is_decompressed` FAIL(JSON 解析失败),`test_corrupt_gzip_...` FAIL(未抛异常)。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `scripts/collect/util.py` 顶部加 `import gzip`,并替换 `fetch_text`:
 
@@ -166,7 +166,7 @@ def fetch_text(url, timeout_s=20):
     return raw.decode("utf-8", errors="replace")
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_util -v 2>&1 | tail -3
@@ -174,7 +174,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_util -v 2>&1 | tail -3
 
 预期:5 tests OK。再跑全量确认无回归:`Ran 377 tests` / `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/util.py tests/test_util.py
@@ -193,7 +193,7 @@ errors=replace 在解压之前就把压缩体变成乱码,使"压缩没解开"�
 - Modify: `scripts/collect/util.py`
 - Test: `tests/test_util.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class HeadersTest(unittest.TestCase):
@@ -223,11 +223,11 @@ class HeadersTest(unittest.TestCase):
         self.assertEqual(got["ua"], "probe/9")
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 预期:`TypeError: fetch_json() got an unexpected keyword argument 'headers'`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```python
 def fetch_text(url, timeout_s=20, headers=None):
@@ -241,11 +241,11 @@ def fetch_json(url, timeout_s=20, headers=None):
     return json.loads(fetch_text(url, timeout_s, headers))
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 预期:`tests.test_util` 8 tests OK;全量 `Ran 380 tests` / `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/util.py tests/test_util.py
@@ -260,7 +260,7 @@ git commit -m "feat(util): fetch_text/fetch_json 接受可选 headers,默认 UA 
 - Modify: `scripts/collect/macro.py`
 - Test: `tests/test_macro.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_macro.py` 末尾(`if __name__` 之前)加:
 
@@ -310,7 +310,7 @@ class BisParseTest(unittest.TestCase):
         self.assertEqual(macro._bis_parse(text), {})
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_macro.BisParseTest -v 2>&1 | tail -5
@@ -318,7 +318,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_macro.BisParseTest -v 2
 
 预期:`AttributeError: module 'scripts.collect.macro' has no attribute '_bis_parse'`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `macro.py` 顶部加 `import csv`、`import io`、`import math`;然后:
 
@@ -365,11 +365,11 @@ def _bis_parse(text):
     return out
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 预期:`BisParseTest` 6 tests OK;全量 `Ran 386 tests` / `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/macro.py tests/test_macro.py
@@ -386,7 +386,7 @@ git commit -m "feat(macro): BIS CSV 按列名解析,NaN 在转 float 前按字�
 - Modify: `scripts/collect/macro.py`
 - Test: `tests/test_macro.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class PrevSemanticsTest(unittest.TestCase):
@@ -426,11 +426,11 @@ class PrevSemanticsTest(unittest.TestCase):
                          (3.1, "2026-06", 3.1, "2026-05"))
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 预期:两个 `AttributeError`(函数不存在)。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```python
 def _latest_and_prev_observation(obs):
@@ -460,11 +460,11 @@ def _latest_and_prev_distinct(obs):
     return value, period, None, None
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 预期:`PrevSemanticsTest` 6 tests OK;全量 `Ran 392 tests` / `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/macro.py tests/test_macro.py
@@ -482,7 +482,7 @@ git commit -m "feat(macro): 政策利率前值取上一个不同水平,CPI 取�
 - Modify: `scripts/collect/macro.py`、`config/endpoints.json`、`config/indicators.json`
 - Test: `tests/test_macro.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 CPI_CSV = (
@@ -578,11 +578,11 @@ class BisTableTest(unittest.TestCase):
         self.assertNotIn(("BR", "政策利率"), table)
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 预期:`AttributeError: ... has no attribute '_bis_table'`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```python
 # BIS 用 XM 表示欧元区,仓库内部用 EA。写死映射,不做字符串启发式。
@@ -639,11 +639,11 @@ def _bis_table(cfg, gaps):
 
 `config/indicators.json` 不需要改结构——`BIS_AREA` 已由 `economy` 字段驱动,现有 `series_id` 保留作 DBnomics 回落用。
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 预期:`BisTableTest` 7 tests OK;全量 `Ran 399 tests` / `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/macro.py config/endpoints.json tests/test_macro.py
@@ -661,7 +661,7 @@ detail=dataonly 让 CBPOL 从 891KB 降到 40KB(22 倍);lastNObservations=400
 - Modify: `scripts/collect/macro.py:10-41`
 - Test: `tests/test_macro.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class PriorityTest(unittest.TestCase):
@@ -730,11 +730,11 @@ class PriorityTest(unittest.TestCase):
 
 `BLS_OK` 若 `tests/test_macro.py` 中尚不存在,复用文件内已有的 BLS fixture 常量名;若名称不同,按实际名称引用。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 预期:多条 FAIL,`source` 为 `dbnomics` 而非 `bis`。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 在 `collect()` 里,`bls_row` 之后加一行,并在循环内 BLS 分支之后插入 BIS 分支:
 
@@ -756,11 +756,11 @@ class PriorityTest(unittest.TestCase):
             ...  # 既有 DBnomics 分支不动
 ```
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 预期:`PriorityTest` 6 tests OK;全量 `Ran 405 tests` / `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/macro.py tests/test_macro.py
@@ -774,7 +774,7 @@ git commit -m "feat(macro): 三级优先级 BLS > BIS > DBnomics,逐指标回落
 **Files:**
 - Test: `tests/test_macro.py`
 
-- [ ] **Step 1: 写测试(此任务只补测试,实现应已就绪)**
+- [x] **Step 1: 写测试(此任务只补测试,实现应已就绪)**
 
 ```python
 class BisRobustnessTest(unittest.TestCase):
@@ -817,7 +817,7 @@ class BisRobustnessTest(unittest.TestCase):
             self.assertIsInstance(payload["indicators"], list)
 ```
 
-- [ ] **Step 2: 跑测试**
+- [x] **Step 2: 跑测试**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_macro.BisRobustnessTest -v 2>&1 | tail -8
@@ -825,7 +825,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_macro.BisRobustnessTest
 
 失败的用例即真实缺陷,回到 Task 4/6 的实现修复(例如 BOM 需 `csv.DictReader` 前 `text.lstrip("﻿")`)。
 
-- [ ] **Step 3: 按失败项修实现**
+- [x] **Step 3: 按失败项修实现**
 
 若 BOM 用例失败,在 `_bis_parse` 首行加:
 
@@ -833,11 +833,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_macro.BisRobustnessTest
     text = text.lstrip("﻿")
 ```
 
-- [ ] **Step 4: 跑全量**
+- [x] **Step 4: 跑全量**
 
 预期:`Ran 410 tests` / `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/macro.py tests/test_macro.py
@@ -853,7 +853,7 @@ git commit -m "test(macro): BIS 畸形输入不得抛出,只转 gap"
 **Files:**
 - Modify: `skills/fx-daily-report/SKILL.md`(「数据发布」行)
 
-- [ ] **Step 1: 改模板**
+- [x] **Step 1: 改模板**
 
 把「数据发布」行的 `前值 <prev>` 改为:
 
@@ -869,7 +869,7 @@ git commit -m "test(macro): BIS 畸形输入不得抛出,只转 gap"
 MUST NOT 写成与最新值相同的数。
 ```
 
-- [ ] **Step 2: 核对校验器兼容**
+- [x] **Step 2: 核对校验器兼容**
 
 ```bash
 grep -n "数据发布\|prev_period" scripts/check_report.py | head
@@ -877,11 +877,11 @@ grep -n "数据发布\|prev_period" scripts/check_report.py | head
 
 预期:无命中——校验器不解析该行结构,只做数字白名单,故无需同步改动。
 
-- [ ] **Step 3: 跑全量确认无回归**
+- [x] **Step 3: 跑全量确认无回归**
 
 预期:`Ran 410 tests` / `OK`。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add skills/fx-daily-report/SKILL.md
@@ -895,13 +895,13 @@ git commit -m "docs(skill): 数据发布行加 prev_period,日频前值不带日
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: 跑一次真实采集**
+- [x] **Step 1: 跑一次真实采集**
 
 ```bash
 python3 -m scripts.collect --date $(date -u +%F)
 ```
 
-- [ ] **Step 2: 逐条核对与 BIS 直查一致**
+- [x] **Step 2: 逐条核对与 BIS 直查一致**
 
 ```bash
 python3 - <<'PY'
@@ -923,11 +923,11 @@ PY
 
 预期:五经济体 CPI 与政策利率的 `source` 为 `bis`(美国 CPI 为 `bls`),数值与本计划第 1 节的实测表一致;10 个指标带 `source_changed_from: "dbnomics"`。
 
-- [ ] **Step 3: 更新 README 数据源一节**
+- [x] **Step 3: 更新 README 数据源一节**
 
 补:BIS 两个 dataflow 的 URL 与用途、三级优先级 BLS > BIS > DBnomics、`detail=dataonly` 的原因、经常账户仍走 DBnomics(BIS 不覆盖)、BSP 因 `robots.txt` 不接入。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add README.md data/ briefs/ reports/

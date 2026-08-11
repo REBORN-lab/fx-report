@@ -39,9 +39,14 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       过滤,实测 2026-08-11 抓到的三条 Fed 公告全部发布于 7 月。发布日不是
       DATE 或 DATE 前一日的条目,行尾标"(存量背景,非昨日发布)";
       published 缺失或无法辨认的标"(发布日不明)"。
-    - 数据发布:<indicator> 最新 <value> 前值 <prev> 期 <period>(滞后 <lag_months>
-      个月,来源 <source>)——该条目含 `source_changed_from` 时,行尾必须加
-      "(口径已由 <source_changed_from> 切换为 <source>,与前值不可比)"
+    - 数据发布:<indicator> 最新 <value> 期 <period>,前值 <prev>(截至 <prev_period>)
+      (滞后 <lag_months> 个月,来源 <source>)——该条目含 `source_changed_from` 时,
+      行尾必须加"(口径已由 <source_changed_from> 切换为 <source>,与前值不可比)"
+      (`prev_period` 存在时必须写出:政策利率是日频序列,它的"前值"指的是**上一次
+      变动之前的水平**,不带日期就是歧义的。`prev` 为 null 时写
+      "前值 不可得(回溯窗口内未观测到变动)",**MUST NOT** 写成与最新值相同的数
+      ——等值会被读成"持平",而事实是窗口内没看到变动。`prev_period` 不存在的
+      条目照旧只写"前值 <prev>")
       (列出条件:is_new_release 为 true、**或含 `source_changed_from`**、
       或与年历命中相关;没有写"无"。
       ——`source_changed_from` 必须单独作为列出条件:换源时采集层会把

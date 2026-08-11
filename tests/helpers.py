@@ -13,7 +13,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         for prefix, resp in self.server.fixture_routes.items():
             if self.path.startswith(prefix):
                 status, body = resp(self) if callable(resp) else resp
-                data = body.encode("utf-8")
+                # bytes 直通:gzip 兜底测试要发原始压缩字节,不能过 UTF-8 编码
+                data = body if isinstance(body, bytes) else body.encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
