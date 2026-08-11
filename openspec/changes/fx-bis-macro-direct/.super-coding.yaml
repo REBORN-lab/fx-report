@@ -1,5 +1,5 @@
 workflow: full
-phase: verify
+phase: archive
 context_compression: off
 build_mode: executing-plans
 build_pause: null
@@ -11,11 +11,11 @@ auto_transition: true
 base_ref: 3a48a2c1bea3b6468ccf0fa8a6719efba523ebc9
 design_doc: docs/superpowers/specs/2026-08-11-fx-bis-macro-direct-design.md
 plan: docs/superpowers/plans/2026-08-11-fx-bis-macro-direct.md
-verify_result: pending
+verify_result: pass
 verification_report: docs/superpowers/reports/2026-08-11-fx-bis-macro-direct-verify.md
-branch_status: pending
+branch_status: handled
 created_at: 2026-08-11
-verified_at: null
+verified_at: 2026-08-11
 archived: false
 handoff_context: openspec/changes/fx-bis-macro-direct/.super-coding/handoff/design-context.json
 handoff_hash: 8324719df824aa28a11b9d269eab2cc6fcc3beed62c87de71c43a21ddcb262d6
