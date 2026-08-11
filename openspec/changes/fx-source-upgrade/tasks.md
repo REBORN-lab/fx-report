@@ -2,8 +2,8 @@
 
 ## 1. 央行官方公告通道
 
-- [ ] 1.1 新建 `scripts/collect/feeds.py`:用 `xml.etree` 解析 Fed / ECB 官方 RSS,每源至多取 3 条(title/link/pubDate/issuer),Fed→USD、ECB→EUR;单源失败记 gap 不影响其余;非 XML/结构异常/深嵌套一律转 gap 不上抛。`config/endpoints.json` 增两个 feed URL。测试:正常解析、单源 404、非 XML 正文、items 缺字段、条数上限
-- [ ] 1.2 `__main__.py` 接线:feeds 结果并入 `events[<cur>]["official"]`,GDELT 失败的币种也能有 official;`derived.events.count` 语义不变(仍只数 GDELT `articles`)。测试:端到端快照含 official、GDELT 全挂时 official 仍在
+- [x] 1.1 新建 `scripts/collect/feeds.py`:用 `xml.etree` 解析 Fed / ECB 官方 RSS,每源至多取 3 条(title/link/pubDate/issuer),Fed→USD、ECB→EUR;单源失败记 gap 不影响其余;非 XML/结构异常/深嵌套一律转 gap 不上抛。`config/endpoints.json` 增两个 feed URL。测试:正常解析、单源 404、非 XML 正文、items 缺字段、条数上限
+- [x] 1.2 `__main__.py` 接线:feeds 结果并入 `events[<cur>]["official"]`,GDELT 失败的币种也能有 official;`derived.events.count` 语义不变(仍只数 GDELT `articles`)。测试:端到端快照含 official、GDELT 全挂时 official 仍在
 
 ## 2. 宏观源升级与滞后披露
 

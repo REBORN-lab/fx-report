@@ -9,6 +9,10 @@
 - **WHEN** Fed 与 ECB 的 RSS 均可访问
 - **THEN** 快照 `events.USD.official` 与 `events.EUR.official` 各含至多 3 条(标题/链接/时间/发布方)
 
+#### Scenario: 未配置的官方源静默跳过
+- **WHEN** 某官方源未出现在端点配置中
+- **THEN** 该源视为有意停用,静默跳过且 MUST NOT 记为缺漏(否则每份快照都带永久噪音,淹没真正的采集失败)
+
 #### Scenario: 单个官方源失败
 - **WHEN** 某官方源请求失败或返回非 XML
 - **THEN** 该源记为缺漏,其余官方源与 GDELT 采集照常完成

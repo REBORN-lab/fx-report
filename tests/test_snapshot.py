@@ -200,3 +200,50 @@ class DerivedSectionTest(unittest.TestCase):
                 snap = json.load(f)
         self.assertIn("rates", snap)                     # 其余部分照常落盘
         self.assertTrue(any(g["source"] == "derive" for g in snap["gaps"]))
+
+
+@mock.patch.dict(os.environ, {"FX_GDELT_DELAY_S": "0", "FX_GDELT_BACKOFF_S": "0"})
+class OfficialFeedsTest(unittest.TestCase):
+    """官方公告并入 events(delta spec: GDELT 失败时官方通道仍在)。"""
+
+    FEED = ('<?xml version="1.0"?><rss><channel><item>'
+            '<title>FOMC statement</title><link>https://f.gov/1</link>'
+            '<pubDate>Wed, 29 Jul 2026 18:00:00 GMT</pubDate></item></channel></rss>')
+
+    def _endpoints(self, srv):
+        e = endpoints(srv)
+        e["fed_press_rss"] = srv.base_url + "/fed"
+        e["ecb_press_rss"] = srv.base_url + "/ecb"
+        return e
+
+    def _run(self, tmp, srv, routes):
+        make_test_root(tmp, self._endpoints(srv), indicators=IND)
+        srv.httpd.fixture_routes.clear()
+        srv.httpd.fixture_routes.update(routes)
+        self.assertEqual(entry.main(["--date", "2026-08-10", "--root", tmp]), 0)
+        with open(os.path.join(tmp, "data", "2026-08-10.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_official_present_alongside_articles(self):
+        routes = dict(ROUTES); routes["/fed"] = (200, self.FEED); routes["/ecb"] = (200, self.FEED)
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, routes)
+        self.assertEqual(snap["events"]["USD"]["official"][0]["issuer"], "Fed")
+        self.assertTrue(snap["events"]["USD"]["articles"])          # 两个通道并列
+
+    def test_official_survives_gdelt_outage(self):
+        routes = dict(ROUTES); routes.pop("/doc")                   # GDELT 全挂
+        routes["/fed"] = (200, self.FEED); routes["/ecb"] = (200, self.FEED)
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, routes)
+        self.assertTrue(any(g["source"] == "gdelt" for g in snap["gaps"]))
+        self.assertEqual(snap["events"]["USD"]["official"][0]["title"], "FOMC statement")
+        self.assertNotIn("articles", snap["events"]["USD"])          # GDELT 没采到就没有该键
+
+    def test_official_not_counted_in_event_count(self):
+        """derived.events.count 只数 GDELT articles;两通道口径不同,合并会让计数不可比。"""
+        routes = dict(ROUTES); routes.pop("/doc")
+        routes["/fed"] = (200, self.FEED); routes["/ecb"] = (200, self.FEED)
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, routes)
+        self.assertIsNone(snap["derived"]["events"]["USD"]["count"])

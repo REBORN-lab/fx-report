@@ -10,7 +10,7 @@ from datetime import date, timedelta
 
 from . import calendar as calendar_mod
 from . import derive as derive_mod
-from . import events, macro, rates, util
+from . import events, feeds, macro, rates, util
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 COLLECTOR_VERSION = "0.1.0"
@@ -111,6 +111,10 @@ def run(cfg):
     rates_p = call(rates, "rates", {})
     macro_p = call(macro, "macro", {"indicators": [], "us_release_dates": None})
     events_p = call(events, "gdelt", {})
+    # 官方公告并入同一币种命名空间:articles(GDELT)与 official(RSS)并列,
+    # 来源可辨;GDELT 挂掉的币种也能有 official
+    for currency, items in call(feeds, "feeds", {}).items():
+        events_p.setdefault(currency, {})["official"] = items
     hits = call(calendar_mod, "calendar", [])
     snapshot = {
         "date": cfg["date"], "run_at": util.now_iso(), "schema_version": 1,
