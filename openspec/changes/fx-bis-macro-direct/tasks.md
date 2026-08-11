@@ -28,6 +28,6 @@
 
 ## 5. 收尾
 
-- [ ] 5.1 `skills/fx-daily-report/SKILL.md` 的「数据发布」行在 `prev` 后加 `prev_period`,写成「前值 <prev>(截至 <prev_period>)」;`prev` 为 null 时写「前值 不可得(回溯窗口内未观测到变动)」——日频序列的前值不带日期即歧义
+- [x] 5.1 `skills/fx-daily-report/SKILL.md` 的「数据发布」行在 `prev` 后加 `prev_period`,写成「前值 <prev>(截至 <prev_period>)」;`prev` 为 null 时写「前值 不可得(回溯窗口内未观测到变动)」——日频序列的前值不带日期即歧义
 - [ ] 5.2 跑一次真实采集,核对五经济体的 `value` / `period` / `lag_months` / `source` 与 BIS 端点直查结果逐条一致
 - [ ] 5.3 `README.md` 数据源一节补 BIS 两个 dataflow 与三级优先级;注明经常账户仍走 DBnomics、BSP 因 robots.txt 不接入
