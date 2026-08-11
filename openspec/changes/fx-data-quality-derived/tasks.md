@@ -20,4 +20,4 @@
 ## 4. 报告侧与文档
 
 - [x] 4.1 日报 SKILL:要点表加"派生指标"行(逐字抄 derived)、汇率行呈现 ref_date、砍 tone_avg 行;禁算条款改写为"禁止 LLM 计算;快照 derived 节由脚本计算,可逐字引用";README 运行节加 cron ≥17:00 UTC 建议(ECB 参考价定盘后)
-- [ ] 4.2 全量测试通过;真实跑一次当日采集与要点表生成,确认 derived 落盘且 check_report.py 数字溯源不报 NUMBER_UNTRACEABLE
+- [x] 4.2 全量测试通过;真实跑一次当日采集与要点表生成,确认 derived 落盘且 check_report.py 数字溯源不报 NUMBER_UNTRACEABLE
