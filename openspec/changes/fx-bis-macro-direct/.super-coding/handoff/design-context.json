@@ -1,0 +1,14 @@
+{
+  "change": "fx-bis-macro-direct",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "super-coding-handoff.sh",
+  "context_hash": "8324719df824aa28a11b9d269eab2cc6fcc3beed62c87de71c43a21ddcb262d6",
+  "files": [
+    { "path": "openspec/changes/fx-bis-macro-direct/proposal.md", "sha256": "d63958916f8c7bcf2b2225d934034445886ccb7a60cf53187e41bdd4ba0cdf7e" },
+    { "path": "openspec/changes/fx-bis-macro-direct/design.md", "sha256": "d8a6425f65e9909eb7694f405a1de93fa9a77fdaf14afadda1e658d9662c5fd8" },
+    { "path": "openspec/changes/fx-bis-macro-direct/tasks.md", "sha256": "7ac9328f4e101c781053113929168c72e5c04855f80caebf894573f6677d4192" },
+    { "path": "openspec/changes/fx-bis-macro-direct/specs/fx-data-collection/spec.md", "sha256": "d1a2ace7526a98e7107685c66fd3f6fddf487d6dfdfc0d392e428ea6618a6641" }
+  ]
+}
