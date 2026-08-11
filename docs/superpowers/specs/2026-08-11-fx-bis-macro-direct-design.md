@@ -181,16 +181,12 @@ def fetch_text(url, timeout_s=20, headers=None):
 > **verify 阶段更正**:delta spec 最终为 **25** 个场景(build 阶段按审查发现补了 4 个,
 > 见 §9.2);本节写下"16 个"时是设计时的计数,保留原文并在此更正,不静默改。
 
-archived-with: 2026-08-11-fx-bis-macro-direct
-status: final
----
-
-# 9. Implementation Divergence(verify 阶段记录)
+## 9. Implementation Divergence(verify 阶段记录)
 
 本节由 verify 阶段追加,记录实现与本文/`design.md` 的偏差及原因。写在这里而不是回改
 正文,是为了让"设计当时怎么想"与"实现最后怎么做"都能被读到。
 
-## 9.1 两个未经实测就写下的数字(已更正)
+### 9.1 两个未经实测就写下的数字(已更正)
 
 第 1 节原写"400 个交易日约 19 个月""美国约需 170 个观测"。verify 阶段用真实端点实测:
 
@@ -203,7 +199,7 @@ status: final
 参数取值与结论均不变(400 仍然够用),但按仓库数字硬规则,已写下而未验证的数字按错误
 处理、逐字更正入档。README 同处两个数字一并更正。
 
-## 9.2 审查后新增的两条行为(delta spec +4 场景)
+### 9.2 审查后新增的两条行为(delta spec +4 场景)
 
 build 阶段的强制代码审查(20 条发现 / 6 条被推翻 / 2 条 Important 幸存)暴露了本文
 未覆盖的两个判断,均已实现并写入 delta spec:
@@ -222,13 +218,13 @@ build 阶段的强制代码审查(20 条发现 / 6 条被推翻 / 2 条 Importan
 
 变异靶点相应从本文第 6 节的 11 条扩到 21 条(新增 M12–M21),全部 KILLED。
 
-## 9.3 与 `design.md` D4 的参数偏差
+### 9.3 与 `design.md` D4 的参数偏差
 
 D4 写「`lastNObservations` 取 90(约三个月工作日)」。本文第 1 节据实测改为 **400**:
 90 个观测覆盖不到美国上次变动(需 237 个),会让美国的 `prev` 长期退化为 `null`。
 以本文取值为准,D4 的 90 作废。
 
-## 9.4 `config/indicators.json` 未补 `REF_AREA` 维度键
+### 9.4 `config/indicators.json` 未补 `REF_AREA` 维度键
 
 proposal「What Changes」与 tasks 2.1 后半写了「`config/indicators.json` 为五经济体的
 CPI 与政策利率补 BIS 维度键(`REF_AREA`)」,实现**未做**(该文件本次零改动),但 tasks 2.1
@@ -237,13 +233,13 @@ CPI 与政策利率补 BIS 维度键(`REF_AREA`)」,实现**未做**(该文件�
 矛盾的真相源,且 config 里的 `REF_AREA` 拼错会静默停用该经济体的 BIS 分支。
 维持现状,记录为已接受的偏差。
 
-## 9.5 `_bis_parse` 签名
+### 9.5 `_bis_parse` 签名
 
 第 2 节写 `_bis_parse(text, want)`。实现为 `_bis_parse(text)`:按经济体裁剪发生在
 `_bis_table` 的 `wanted` 列表里(§9.2 第 2 点),解析函数保持无状态、只做 CSV → 观测序列,
 更好测。
 
-## 9.6 `tests/test_snapshot.py` 未改
+### 9.6 `tests/test_snapshot.py` 未改
 
 proposal「Impact」列了该文件。实际 BIS 分支的行为全部由 `tests/test_macro.py` 与
 `tests/test_util.py` 覆盖(25/25 验收场景已逐条映射到具体用例),快照层形状未变,
