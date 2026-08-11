@@ -1,0 +1,10 @@
+{
+  "frankfurter_url": "https://api.frankfurter.dev/v1/{date}?base=USD&symbols=PHP,THB,BRL,EUR",
+  "exchange_api_urls": [
+    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{date}/v1/currencies/usd.json",
+    "https://{date}.currency-api.pages.dev/v1/currencies/usd.json"
+  ],
+  "dbnomics_series_url": "https://api.db.nomics.world/v22/series/{series_id}?observations=1&format=json",
+  "gdelt_doc_url": "https://api.gdeltproject.org/api/v2/doc/doc",
+  "fred_release_dates_url": "https://api.stlouisfed.org/fred/releases/dates"
+}

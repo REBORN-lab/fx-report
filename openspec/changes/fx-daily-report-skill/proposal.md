@@ -6,7 +6,7 @@
 
 ## What Changes
 
-- 新增数据采集脚本层:从 Frankfurter(主)+ exchange-api(交叉校验)取五币种汇率,从 DBnomics/FRED/BCB 取宏观增量,从 GDELT DOC 2.0 取前一日事件(串行限速),对照央行议息静态年历;全部落盘为当日数据快照,采集失败记为缺漏而非中断
+- 新增数据采集脚本层:从 Frankfurter(主)+ exchange-api(交叉校验)取五币种汇率,从 DBnomics(IMF/BIS/ECB 口径,series 实测定案)与可选 FRED 取宏观增量,从 GDELT DOC 2.0 取前一日事件(串行限速),对照央行议息静态年历;全部落盘为当日数据快照,采集失败记为缺漏而非中断
 - 新增 `fx-daily-report` skill:读数据快照生成中文日报——五币种分节,每节走"事件→定价含义→情景与触发条件"叙事链条;不做方向性预测;报告含执行摘要与数据缺漏节;所有数字来自快照文件,LLM 只写叙事
 - 新增决策日志机制:每日报告的币种观点追加存档,次日对照实际走势生成一句话复盘写入新日报
 - 新增 `fx-weekly-report` 聚合能力:读最近 7 天日报与决策日志,按主题重聚类(非流水账)生成中文周报
@@ -25,6 +25,6 @@
 ## Impact
 
 - 新增目录:`skills/`(skill 定义)、`scripts/`(数据采集,Python 3 标准库 + 免费无 key API)、`data/`(每日快照)、`reports/`(日报/周报输出)、`state/`(决策日志、静态年历)
-- 外部依赖:Frankfurter、exchange-api(jsDelivr CDN)、DBnomics、FRED(需免费 API key,可选)、BCB、GDELT DOC 2.0——全部免费;无付费依赖,无爬虫
+- 外部依赖:Frankfurter、exchange-api(jsDelivr CDN)、DBnomics(IMF/BIS/ECB provider)、FRED(需免费 API key,可选)、GDELT DOC 2.0——全部免费;无付费依赖,无爬虫
 - 运行环境:目标机器需装 Claude Code + Anthropic API key(用户自备);skill 本体与脚本无其他运行时依赖
 - 无既有代码受影响(全新仓库首个 change)

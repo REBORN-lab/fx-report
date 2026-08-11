@@ -1,0 +1,24 @@
+{
+  "articles": [
+    {
+      "url": "https://example.com/bsp-rate-cut",
+      "url_mobile": "",
+      "title": "BSP signals possible rate cut in September",
+      "seendate": "20260809T120000Z",
+      "socialimage": "",
+      "domain": "reuters.com",
+      "language": "English",
+      "sourcecountry": "Philippines"
+    },
+    {
+      "url": "https://example.com/peso-weakens",
+      "url_mobile": "",
+      "title": "Peso weakens ahead of inflation data",
+      "seendate": "20260809T083000Z",
+      "socialimage": "",
+      "domain": "businessworld.com.ph",
+      "language": "English",
+      "sourcecountry": "Philippines"
+    }
+  ]
+}

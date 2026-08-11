@@ -99,7 +99,7 @@ data/  briefs/  reports/daily/  reports/weekly/   输出目录(.gitkeep 占位)
 
 **验收标准:** 目录树与"文件结构总览"一致;README 有目标概述段;`python3 -m unittest discover -s tests -t .` 可运行(0 个测试也算通过)。
 
-- [ ] **Step 1: 建目录与占位文件**
+- [x] **Step 1: 建目录与占位文件**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -109,7 +109,7 @@ touch data/.gitkeep briefs/.gitkeep reports/daily/.gitkeep reports/weekly/.gitke
       config/.gitkeep state/.gitkeep skills/.gitkeep tests/fixtures/.gitkeep
 ```
 
-- [ ] **Step 2: 写 `.gitignore`**
+- [x] **Step 2: 写 `.gitignore`**
 
 ```
 __pycache__/
@@ -117,7 +117,7 @@ __pycache__/
 .pytest_cache/
 ```
 
-- [ ] **Step 3: 写 `README.md` 目标概述段(运行文档在 Task 16 补全)**
+- [x] **Step 3: 写 `README.md` 目标概述段(运行文档在 Task 16 补全)**
 
 ```markdown
 # macro — 五币种外汇日报/周报管线
@@ -132,12 +132,12 @@ Slack 推送与 cron 调度由使用者自行接线(范围外)。
 (运行文档见下文,由实施任务 16 补全。)
 ```
 
-- [ ] **Step 4: 验证测试骨架可运行**
+- [x] **Step 4: 验证测试骨架可运行**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: `Ran 0 tests` + `OK`(或 `NO TESTS RAN`,退出码 0/5 均可,只要无 import 错误)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .gitignore README.md scripts tests data briefs reports config state skills
@@ -155,9 +155,9 @@ git commit -m "chore(fx): 仓库骨架与输出目录(tasks 1.1)"
 
 **数据纪律(硬规则):日程日期禁止凭记忆填写。**必须用 WebSearch/WebFetch 逐家查官方日程页(Fed: federalreserve.gov FOMC calendars;ECB: ecb.europa.eu Governing Council schedule;BSP: bsp.gov.ph Monetary Policy calendar;BOT: bot.or.th MPC schedule;BCB: bcb.gov.br COPOM calendário),把来源 URL 记入 `sources`。任何一家查不到官方 2026 日程 → 该行 events 留空并在 `maintenance` 注明,不得填臆测日期;若执行环境无网络搜索能力,暂停此任务并上报用户。
 
-- [ ] **Step 1: 逐家央行 WebSearch/WebFetch 取 2026 官方议息日程,记录来源 URL**
+- [x] **Step 1: 逐家央行 WebSearch/WebFetch 取 2026 官方议息日程,记录来源 URL**
 
-- [ ] **Step 2: 写 `state/calendar-2026.json`(结构如下,dates 用第 1 步实查结果)**
+- [x] **Step 2: 写 `state/calendar-2026.json`(结构如下,dates 用第 1 步实查结果)**
 
 ```json
 {
@@ -180,12 +180,12 @@ git commit -m "chore(fx): 仓库骨架与输出目录(tasks 1.1)"
 
 (`events` 逐条一行一个会议日;两天会议写两条或写决议公布日,按官网口径,并在 event 文本注明。可顺带加入主要统计发布日,如美国 CPI 发布日,`bank` 字段用 `"US-BLS"` 等标识,非必需。)
 
-- [ ] **Step 3: 校验 JSON 合法**
+- [x] **Step 3: 校验 JSON 合法**
 
 Run: `python3 -m json.tool state/calendar-2026.json > /dev/null && echo OK`
 Expected: `OK`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add state/calendar-2026.json
@@ -201,7 +201,7 @@ git commit -m "feat(fx): 五央行 2026 静态议息年历(tasks 1.2)"
 
 **验收标准:** 本地 fixture HTTP 服务器可按路径前缀返回定制响应(静态元组或可调用),支撑后续全部故障注入测试(Design"Testing:本地 fixture + 注入")。
 
-- [ ] **Step 1: 写 `tests/helpers.py`**
+- [x] **Step 1: 写 `tests/helpers.py`**
 
 ```python
 """测试基建:本地 fixture HTTP 服务器与测试配置构造。零第三方依赖。"""
@@ -289,7 +289,7 @@ def make_test_root(tmp, endpoints, indicators=None, calendar=None):
     return tmp
 ```
 
-- [ ] **Step 2: 写自测 `tests/test_helpers.py`**
+- [x] **Step 2: 写自测 `tests/test_helpers.py`**
 
 ```python
 import json
@@ -322,12 +322,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑测试**
+- [x] **Step 3: 跑测试**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: 2 tests, `OK`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/helpers.py tests/test_helpers.py
@@ -348,7 +348,7 @@ git commit -m "test(fx): 本地 fixture HTTP 服务器测试基建(tasks 2.5 前
 - Scenario"双源偏差超阈":偏差 >0.5% → `suspect: true` 且保留两源数值
 - 追加(Design 降级矩阵):双源全挂 → 四币种 `primary: null`,gaps 记两条,不抛异常
 
-- [ ] **Step 1: 写 `config/endpoints.json`(一次写全 5 个源的完整 URL 模板;后续任务不再改动)**
+- [x] **Step 1: 写 `config/endpoints.json`(一次写全 5 个源的完整 URL 模板;后续任务不再改动)**
 
 ```json
 {
@@ -363,7 +363,7 @@ git commit -m "test(fx): 本地 fixture HTTP 服务器测试基建(tasks 2.5 前
 }
 ```
 
-- [ ] **Step 2: 实测线上端点形态并按需修正模板(只改 JSON,不改代码)**
+- [x] **Step 2: 实测线上端点形态并按需修正模板(只改 JSON,不改代码)**
 
 ```bash
 curl -s "https://api.frankfurter.dev/v1/2026-08-08?base=USD&symbols=PHP,THB,BRL,EUR" | head -c 300; echo
@@ -373,7 +373,7 @@ curl -s "https://2026-08-08.currency-api.pages.dev/v1/currencies/usd.json" | hea
 
 Expected: 第一条返回 `{"base":"USD",...,"rates":{"PHP":...}}`;后两条返回 `{"date":...,"usd":{...}}`。任何一条形态不符(如 Frankfurter 实为 `/v2/rates?quotes=`)→ 修正 `endpoints.json` 里的模板与(必要时)解析键名,把实测输出粘进 commit message。exchange-api 若日期版本号格式不同(如 `2026.8.8`),在模板里保留 `{date}` 并在 rates.py 的 `_secondary_date()` 做格式转换。
 
-- [ ] **Step 3: 写 `scripts/collect/util.py`**
+- [x] **Step 3: 写 `scripts/collect/util.py`**
 
 ```python
 """采集层共用:urllib 封装 + gap 构造。标准库 only。"""
@@ -400,7 +400,7 @@ def make_gap(source, scope, reason):
     return {"source": source, "scope": scope, "reason": reason, "at": now_iso()}
 ```
 
-- [ ] **Step 4: 写失败测试 `tests/test_rates.py`**
+- [x] **Step 4: 写失败测试 `tests/test_rates.py`**
 
 ```python
 import json
@@ -487,12 +487,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 5: 跑测试确认失败**
+- [x] **Step 5: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_rates -v`
 Expected: FAIL/ERROR(`rates` 无 `collect`)
 
-- [ ] **Step 6: 写 `scripts/collect/rates.py`**
+- [x] **Step 6: 写 `scripts/collect/rates.py`**
 
 ```python
 """汇率双源采集:Frankfurter 主源 + exchange-api 交叉校验。"""
@@ -566,12 +566,12 @@ def _prev_primary(cfg):
     return out
 ```
 
-- [ ] **Step 7: 跑测试确认通过**
+- [x] **Step 7: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_rates -v`
 Expected: 6 tests, `OK`
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add config/endpoints.json scripts/collect/util.py scripts/collect/rates.py tests/test_rates.py
@@ -592,7 +592,7 @@ git commit -m "feat(fx): 汇率双源采集与交叉校验(tasks 2.1)"
 - Scenario"FRED 增强路径失败":有 key 但 FRED 失败 → gap 记 `fred`,DBnomics 照常
 - 追加(Design 降级矩阵):DBnomics 单 series 失败 → 该 series 记 gap,其余照常
 
-- [ ] **Step 1: 实测候选 series ID,固化 `config/indicators.json`**
+- [x] **Step 1: 实测候选 series ID,固化 `config/indicators.json`**
 
 跑探针脚本(候选 ID 覆盖 五经济体 × CPI 同比/政策利率/外部账户;**FAIL 的条目必须替换,禁止把未验证 ID 写进 config**):
 
@@ -639,7 +639,7 @@ FAIL/EMPTY 的条目用 DBnomics 搜索 API 找替代(`curl -s "https://api.db.n
 
 (15 条为目标;格式三字段固定:economy/indicator/series_id。)
 
-- [ ] **Step 2: 写失败测试 `tests/test_macro.py`**
+- [x] **Step 2: 写失败测试 `tests/test_macro.py`**
 
 ```python
 import json
@@ -724,12 +724,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_macro -v`
 Expected: ERROR(`macro` 无 `collect`)
 
-- [ ] **Step 4: 写 `scripts/collect/macro.py`**
+- [x] **Step 4: 写 `scripts/collect/macro.py`**
 
 ```python
 """宏观指标采集:DBnomics 主体 + FRED release dates 可选增强(零 key 默认路径)。"""
@@ -793,12 +793,12 @@ def _fred(cfg, gaps):
 
 注意:`_last_two` 依赖 DBnomics 返回 `series.docs[0].period/value` 平行数组——Step 1 探针已实测该形态;若实测形态不同,以实测为准修正解析并同步修 fixture。
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_macro -v`
 Expected: 6 tests, `OK`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add config/indicators.json scripts/collect/macro.py tests/test_macro.py
@@ -819,7 +819,7 @@ git commit -m "feat(fx): DBnomics 宏观采集 + FRED 可选增强,series 清单
 - Scenario"端点不可用":超时/错误 → 该币种记缺漏(含原因),其余币种继续
 - 约束:生产默认串行间隔常量 ≥5 秒(有测试断言守住)
 
-- [ ] **Step 1: 写 fixture `tests/fixtures/gdelt_artlist_sample.json`(GDELT artlist 真实形态样例)**
+- [x] **Step 1: 写 fixture `tests/fixtures/gdelt_artlist_sample.json`(GDELT artlist 真实形态样例)**
 
 ```json
 {
@@ -848,7 +848,7 @@ git commit -m "feat(fx): DBnomics 宏观采集 + FRED 可选增强,series 清单
 }
 ```
 
-- [ ] **Step 2: 写失败测试 `tests/test_events.py`**
+- [x] **Step 2: 写失败测试 `tests/test_events.py`**
 
 ```python
 import json
@@ -946,12 +946,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_events -v`
 Expected: ERROR(`events` 无 `collect`)
 
-- [ ] **Step 4: 写 `scripts/collect/events.py`**
+- [x] **Step 4: 写 `scripts/collect/events.py`**
 
 ```python
 """GDELT DOC 2.0 事件采集:五币种关键词组串行查询,软限速识别+退避重试一次。"""
@@ -1032,12 +1032,12 @@ def _window(cfg):
     return {"timespan": "48h"}
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_events -v`
 Expected: 7 tests, `OK`(延时注入为 0,应在 1 秒内跑完)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py tests/fixtures/gdelt_artlist_sample.json
@@ -1056,7 +1056,7 @@ git commit -m "feat(fx): GDELT 事件采集,软限速退避与串行间隔(tasks
 - Scenario"昨日为议息日":前一日有议息 → `calendar_hits` 标记 央行名/事件/日期
 - 追加(Design):`valid_until` 过期 → gap 提示更新年历(命中判定仍执行);文件缺失/损坏 → gap
 
-- [ ] **Step 1: 写失败测试 `tests/test_calendar.py`**
+- [x] **Step 1: 写失败测试 `tests/test_calendar.py`**
 
 ```python
 import json
@@ -1114,11 +1114,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_calendar -v` — Expected: ERROR
 
-- [ ] **Step 3: 写 `scripts/collect/calendar.py`**
+- [x] **Step 3: 写 `scripts/collect/calendar.py`**
 
 ```python
 """静态央行年历命中判定:标注昨日/今日议息等日历事件,valid_until 过期告警。"""
@@ -1147,11 +1147,11 @@ def collect(cfg):
     return hits, gaps
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_calendar -v` — Expected: 4 tests, `OK`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/collect/calendar.py tests/test_calendar.py
@@ -1171,7 +1171,7 @@ git commit -m "feat(fx): 年历命中判定与过期告警(tasks 2.4 部分)"
 - 快照 schema 与 Design 第 2 节一致(date/run_at/schema_version/rates/macro/events/calendar_hits/gaps/meta;FRED 增强时另有 us_release_dates)
 - `python3 -m scripts.collect --date D` 写 `data/D.json`,退出码 0(即使有 gaps)
 
-- [ ] **Step 1: 写失败测试 `tests/test_snapshot.py`**
+- [x] **Step 1: 写失败测试 `tests/test_snapshot.py`**
 
 ```python
 import json
@@ -1256,11 +1256,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_snapshot -v` — Expected: ERROR(无 `__main__.main`)
 
-- [ ] **Step 3: 写 `scripts/collect/__main__.py`**
+- [x] **Step 3: 写 `scripts/collect/__main__.py`**
 
 ```python
 """快照聚合主入口:python3 -m scripts.collect --date YYYY-MM-DD(默认今天,UTC)。
@@ -1360,16 +1360,16 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_snapshot -v` — Expected: 3 tests, `OK`
 
-- [ ] **Step 5: 全量回归**
+- [x] **Step 5: 全量回归**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: 此前全部测试 + 本任务 3 个,全 `OK`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/collect/__main__.py tests/test_snapshot.py
@@ -1385,7 +1385,7 @@ git commit -m "feat(fx): 快照聚合主入口,单源失败不中断(tasks 2.4)"
 
 **验收标准:** 逐源故障注入下,其余源照常采集且 gaps 符合 spec 场景(覆盖"主源失败降级""端点不可用""部分源失败时快照完整"的**聚合层**表现;单模块行为已在任务 4–7 覆盖)。本任务全部走 `python3 -m scripts.collect` 真实入口(唯一差别是 endpoints 指向 fixture)。
 
-- [ ] **Step 1: 写测试 `tests/test_fault_injection.py`**
+- [x] **Step 1: 写测试 `tests/test_fault_injection.py`**
 
 ```python
 """聚合层故障注入矩阵:每次打掉一个源,断言其余源完好、gaps 精确。"""
@@ -1478,16 +1478,16 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑本文件测试**
+- [x] **Step 2: 跑本文件测试**
 
 Run: `python3 -m unittest tests.test_fault_injection -v` — Expected: 6 tests, `OK`
 
-- [ ] **Step 3: 全量回归并记录实测数字**
+- [x] **Step 3: 全量回归并记录实测数字**
 
 Run: `python3 -m unittest discover -s tests -t . -v`
 Expected: 全部 `OK`。**把命令输出的实际测试数抄进 commit message(硬规则:先跑后抄,禁止先写预期)。**
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/test_fault_injection.py
@@ -1508,7 +1508,7 @@ git commit -m "test(fx): 聚合层逐源故障注入矩阵(tasks 2.5)——unitt
 - Design 测试要求四用例:方向命中/未命中/昨日无观点/首次运行
 - 日志只由脚本写(add / set-review / review.py 回填),LLM 不直接碰 jsonl
 
-- [ ] **Step 1: 写失败测试 `tests/test_log_decision.py`**
+- [x] **Step 1: 写失败测试 `tests/test_log_decision.py`**
 
 ```python
 import json
@@ -1592,7 +1592,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 写失败测试 `tests/test_review.py`**
+- [x] **Step 2: 写失败测试 `tests/test_review.py`**
 
 ```python
 import json
@@ -1689,11 +1689,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 3: 跑两个测试文件确认失败**
+- [x] **Step 3: 跑两个测试文件确认失败**
 
 Run: `python3 -m unittest tests.test_log_decision tests.test_review -v` — Expected: 全 ERROR/FAIL(脚本不存在)
 
-- [ ] **Step 4: 写 `scripts/log_decision.py`**
+- [x] **Step 4: 写 `scripts/log_decision.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -1819,7 +1819,7 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 5: 写 `scripts/review.py`**
+- [x] **Step 5: 写 `scripts/review.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -1919,12 +1919,12 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 6: 跑测试确认通过**
+- [x] **Step 6: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_log_decision tests.test_review -v`
 Expected: 11 tests, `OK`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/log_decision.py scripts/review.py tests/test_log_decision.py tests/test_review.py
@@ -1941,7 +1941,7 @@ git commit -m "feat(fx): 决策日志脚本代笔 + 两日快照方向复盘(tas
 
 **验收标准(spec fx-daily-report 全部 Requirement 的操作化载体):** SKILL.md 完整编排五步管线;内嵌日报模板(执行摘要 ≤6 条 → 五币种节 ≤约 300 字 → 复盘节 → 数据缺漏节)与全部禁令;数字纪律与"生成后必须跑 check_report.py"逐字写入。真实报告质量在 Task 13 端到端验收。
 
-- [ ] **Step 1: 写 `skills/fx-daily-report/SKILL.md`(以下为完整内容)**
+- [x] **Step 1: 写 `skills/fx-daily-report/SKILL.md`(以下为完整内容)**
 
 ````markdown
 ---
@@ -2065,7 +2065,7 @@ verdict 规则:触发条件未发生 → 无法判定;触发发生且方向核�
   `> ⚠ 本报告未通过自动自检:<违规项摘要>`,保留落盘,如实结束。
 ````
 
-- [ ] **Step 2: 建 `.claude/skills` symlink**
+- [x] **Step 2: 建 `.claude/skills` symlink**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -2076,7 +2076,7 @@ ls -l .claude/skills/fx-daily-report/SKILL.md
 
 Expected: 能列出 SKILL.md(symlink 解析成功)。失败则按"关键实现决定 2"反向放置。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add skills/fx-daily-report/SKILL.md .claude/skills/fx-daily-report
@@ -2097,7 +2097,7 @@ git commit -m "feat(fx): 日报 skill 五步编排,模板+禁令+数字纪律(ta
 - Scenario"篇幅合规":摘要 ≤6 条;币种节 CJK ≤330(约 300+容差)
 - 结构:五币种节 + 执行摘要 + 复盘 + 数据缺漏 齐全;违规退出码 1、逐条打印;合规退出码 0
 
-- [ ] **Step 1: 写失败测试 `tests/test_check_report.py`(daily 部分)**
+- [x] **Step 1: 写失败测试 `tests/test_check_report.py`(daily 部分)**
 
 ```python
 import json
@@ -2211,11 +2211,11 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: ERROR(模块不存在)
 
-- [ ] **Step 3: 写 `scripts/check_report.py`(daily 模式;weekly 在 Task 14 扩展)**
+- [x] **Step 3: 写 `scripts/check_report.py`(daily 模式;weekly 在 Task 14 扩展)**
 
 ```python
 #!/usr/bin/env python3
@@ -2351,11 +2351,11 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: 10 tests, `OK`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/check_report.py tests/test_check_report.py
@@ -2375,7 +2375,7 @@ git commit -m "feat(fx): 报告校验器 daily 模式,结构+数字逐字溯源(
 
 前置:真实网络可达。GDELT 串行 5s,采集约需 ≥25s,属正常。
 
-- [ ] **Step 1: 真实运行日报 skill**
+- [x] **Step 1: 真实运行日报 skill**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -2384,7 +2384,7 @@ claude -p "/fx-daily-report" --permission-mode acceptEdits
 
 Expected: 依次完成五步;终端可见 `python3 -m scripts.collect` 的 gaps 输出与 `CHECK PASSED`(或自修流程)。若 skill 未被发现("Unknown skill"),按"关键实现决定 2"调整 symlink 方向后重跑。
 
-- [ ] **Step 2: 复跑校验器,独立确认退出码(不信任 skill 转述)**
+- [x] **Step 2: 复跑校验器,独立确认退出码(不信任 skill 转述)**
 
 ```bash
 D=$(date -u +%F)
@@ -2393,7 +2393,7 @@ python3 scripts/check_report.py reports/daily/$D.md data/$D.json --brief briefs/
 
 Expected: `CHECK PASSED` + `exit=0`。若报告头部带"未通过自检"标注,列出违规项交用户决策,不得静默接受。
 
-- [ ] **Step 3: 人工抽查清单(逐项核对,结果写进 commit message)**
+- [x] **Step 3: 人工抽查清单(逐项核对,结果写进 commit message)**
 
 ```bash
 D=$(date -u +%F)
@@ -2411,7 +2411,7 @@ sed -n '/## 复盘/,/## 数据缺漏/p' reports/daily/$D.md
 
 核对项:抽查数字全部逐字命中快照;缺漏节与 gaps 一一对应;日志条数=5(五币种);复盘节符合首次运行/正常日预期;叙事无"无条件方向预测"。任何一项不符 → 加载 systematic-debugging 定位(区分 SKILL.md 措辞问题 vs 校验器漏检),修复后重跑本任务。
 
-- [ ] **Step 4: Commit(产物入库)**
+- [x] **Step 4: Commit(产物入库)**
 
 ```bash
 D=$(date -u +%F)
@@ -2434,7 +2434,7 @@ git commit -m "feat(fx): 首次端到端日报验收通过(tasks 3.3)——抽�
 - Scenario"周内有缺漏日":缺漏汇总列出日期与缺失内容
 - Scenario"观点复盘汇总":命中/未命中/无法判定 计数与明细(计数来自 `log_decision.py stats`,禁止心算)
 
-- [ ] **Step 1: 追加 weekly 失败测试到 `tests/test_check_report.py`**
+- [x] **Step 1: 追加 weekly 失败测试到 `tests/test_check_report.py`**
 
 ```python
 def make_weekly(coverage="覆盖日报:5 份(2026-08-04 至 2026-08-08);缺失日期:无",
@@ -2488,11 +2488,11 @@ class CheckWeeklyTest(unittest.TestCase):
 
 (放在文件末尾、`if __name__` 之前;`make_weekly` 为模块级函数。)
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: weekly 用例 ERROR(NotImplementedError)
 
-- [ ] **Step 3: 在 `scripts/check_report.py` 用以下实现替换 `check_weekly` 占位**
+- [x] **Step 3: 在 `scripts/check_report.py` 用以下实现替换 `check_weekly` 占位**
 
 ```python
 MAX_THEME_ITEMS = 3
@@ -2532,11 +2532,11 @@ def check_weekly(report):
 
 (常量与正则放到文件顶部常量区;删除 `raise NotImplementedError` 版本。)
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m unittest tests.test_check_report -v` — Expected: 17 tests, `OK`
 
-- [ ] **Step 5: 写 `skills/fx-weekly-report/SKILL.md`(完整内容)**
+- [x] **Step 5: 写 `skills/fx-weekly-report/SKILL.md`(完整内容)**
 
 ````markdown
 ---
@@ -2601,7 +2601,7 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
   保留落盘,如实结束。
 ````
 
-- [ ] **Step 6: 建 symlink 并 Commit**
+- [x] **Step 6: 建 symlink 并 Commit**
 
 ```bash
 ln -sfn ../../skills/fx-weekly-report .claude/skills/fx-weekly-report
@@ -2620,7 +2620,7 @@ git commit -m "feat(fx): 周报 skill 主题聚类模板 + 校验器 weekly 模�
 
 **验收标准:** spec"正常周聚合"(≥3 份日报,一级结构为主题非日期)、"周内有缺漏日"(如有)、"观点复盘汇总"在真实产物上成立;校验器 weekly 模式退出码 0。
 
-- [ ] **Step 1: 回填三天快照与日报(利用 `--date` 与 skill 日期参数;GDELT 回填走 datetimerange)**
+- [x] **Step 1: 回填三天快照与日报(利用 `--date` 与 skill 日期参数;GDELT 回填走 datetimerange)**
 
 ```bash
 cd /home/ubuntu/repos-REBORN-lab/macro
@@ -2632,7 +2632,7 @@ done
 
 Expected: 三份 `reports/daily/*.md` 生成(加上 Task 13 的当日报告,共 ≥4 份可聚合)。注意每轮含 GDELT 串行 5s 间隔,单轮采集 ≥25s 属正常。若 Task 13 已在今日运行,今日报告直接复用。
 
-- [ ] **Step 2: 真实运行周报 skill**
+- [x] **Step 2: 真实运行周报 skill**
 
 ```bash
 claude -p "/fx-weekly-report" --permission-mode acceptEdits
@@ -2640,7 +2640,7 @@ claude -p "/fx-weekly-report" --permission-mode acceptEdits
 
 Expected: 生成 `reports/weekly/$(date -u +%G-W%V).md` 且校验通过。
 
-- [ ] **Step 3: 独立复核(结果写进 commit message)**
+- [x] **Step 3: 独立复核(结果写进 commit message)**
 
 ```bash
 W=$(date -u +%G-W%V)
@@ -2656,7 +2656,7 @@ grep -A3 '## 数据缺漏' reports/daily/*.md
 
 核对项:`exit=0`;`## ` 标题无日期;计数行与 stats 输出逐字一致;缺漏汇总覆盖各日报非"无"的缺漏节。不符 → systematic-debugging 定位后修复重跑。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add data briefs reports state/decision-log.jsonl
@@ -2672,7 +2672,7 @@ git commit -m "feat(fx): 周报端到端验收通过(tasks 4.2)——复核结�
 
 **验收标准:** 文档覆盖:无头模式命令、可选环境变量、目录说明、年历维护方式、交付边界;命令与实际实现逐字一致(照抄 Task 13/15 实际用过的命令)。
 
-- [ ] **Step 1: 在 README.md 追加以下章节(命令须与端到端实测一致,不一致以实测为准修正)**
+- [x] **Step 1: 在 README.md 追加以下章节(命令须与端到端实测一致,不一致以实测为准修正)**
 
 ```markdown
 ## 运行
@@ -2725,12 +2725,12 @@ git commit -m "feat(fx): 周报端到端验收通过(tasks 4.2)——复核结�
 (`scripts/check_report.py`)在每次生成后强制执行该纪律。
 ```
 
-- [ ] **Step 2: 复核文档命令可执行**
+- [x] **Step 2: 复核文档命令可执行**
 
 Run: `python3 -m unittest discover -s tests -t . -v && python3 -m scripts.collect --help`
 Expected: 测试全过;help 正常输出。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md
@@ -2746,12 +2746,12 @@ git commit -m "docs(fx): 运行文档与年历维护说明(tasks 5.1)"
 
 **验收标准:** 三份 delta spec 的全部 Scenario 逐条有核对记录(覆盖方式 + 实测证据);核对当场重跑命令取证,**禁止先写结论再补跑**(硬规则)。
 
-- [ ] **Step 1: 重跑全量测试取证**
+- [x] **Step 1: 重跑全量测试取证**
 
 Run: `python3 -m unittest discover -s tests -t . -v 2>&1 | tail -5`
 把实际输出(`Ran N tests ... OK`)原样记录。
 
-- [ ] **Step 2: 写核对表(每行的"证据"必须是实测输出/文件路径,不得留空或写"应该")**
+- [x] **Step 2: 写核对表(每行的"证据"必须是实测输出/文件路径,不得留空或写"应该")**
 
 ```markdown
 # Scenario 覆盖核对 — fx-daily-report-skill
@@ -2788,7 +2788,7 @@ Run: `python3 -m unittest discover -s tests -t . -v 2>&1 | tail -5`
 遗留事项:<如 indicators 清单有剔除、年历某央行日程缺失等,逐条列出>
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add openspec/changes/fx-daily-report-skill/.super-coding/scenario-coverage.md
