@@ -4,12 +4,16 @@ import unittest
 from scripts import weekly_digest as wd
 
 
-def snap(date, php=None, ref=None, articles=None, gaps=None):
+def snap(date, php=None, ref=None, articles=None, gaps=None, official=None):
     s = {"date": date, "rates": {}, "events": {}, "gaps": gaps or []}
     if php is not None:
         s["rates"]["PHP"] = {"primary": php, "ref_date": ref}
     if articles is not None:
-        s["events"]["PHP"] = {"articles": [{"title": "t%d" % i} for i in range(articles)]}
+        s["events"].setdefault("PHP", {})["articles"] = \
+            [{"title": "t%d" % i} for i in range(articles)]
+    if official is not None:
+        s["events"].setdefault("PHP", {})["official"] = \
+            [{"title": "o%d" % i, "issuer": "X"} for i in range(official)]
     return s
 
 
@@ -65,9 +69,25 @@ class EventsAndGapsTest(unittest.TestCase):
         snaps = WEEK_SNAPS + [snap("2026-08-11", 60.75, "2026-08-10")]   # 无 events 键
         d, _ = wd.build(snaps, [], "2026-W33")
         e = d["events"]["PHP"]
-        self.assertEqual(e["total"], 22)              # 8+8+6
+        self.assertEqual(e["articles_total"], 22)     # 8+8+6
         self.assertEqual(e["days_with_data"], 3)
-        self.assertEqual(e["days_failed"], 1)         # 最后一天没采到
+        self.assertEqual(e["days_gdelt_failed"], 1)   # 最后一天没采到
+
+    def test_official_counted_separately_from_articles(self):
+        """两个通道口径不同,不得相加;GDELT 挂了但 RSS 成功的那天也要可见。"""
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", articles=6, official=2),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=3)]   # GDELT 挂
+        d, _ = wd.build(snaps, [], "2026-W33")
+        e = d["events"]["PHP"]
+        self.assertEqual(e["articles_total"], 6)
+        self.assertEqual(e["official_total"], 5)
+        self.assertEqual(e["days_gdelt_failed"], 1)
+        self.assertEqual(e["days_with_official"], 2)
+
+    def test_official_null_when_never_collected(self):
+        d, _ = wd.build([snap("2026-08-10", 60.75, "2026-08-10", articles=6)],
+                        [], "2026-W33")
+        self.assertIsNone(d["events"]["PHP"]["official_total"])
 
     def test_gaps_counted_by_source(self):
         d, _ = wd.build(WEEK_SNAPS, [], "2026-W33")
@@ -76,7 +96,7 @@ class EventsAndGapsTest(unittest.TestCase):
     def test_no_events_at_all_yields_null_total(self):
         """全周一条都没采到 → total 为 null,不是 0(0 会被读成"确实没有新闻")。"""
         d, _ = wd.build([snap("2026-08-10", 60.75, "2026-08-10")], [], "2026-W33")
-        self.assertIsNone(d["events"]["PHP"]["total"])
+        self.assertIsNone(d["events"]["PHP"]["articles_total"])
 
 
 class VerdictTest(unittest.TestCase):
@@ -103,6 +123,39 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(sum(d["verdicts"].values()), 0)
 
 
+class VerdictAvailabilityTest(unittest.TestCase):
+    """日志不可用 ≠ 本周没有观点(delta spec 的 null 约定)。"""
+
+    def test_unavailable_log_yields_null_not_zeros(self):
+        d, problems = wd.build(WEEK_SNAPS, None, "2026-W33")
+        self.assertIsNone(d["verdicts"])
+        self.assertTrue(any("decision log unavailable" in p for p in problems))
+
+    def test_empty_log_yields_zeros(self):
+        d, problems = wd.build(WEEK_SNAPS, [], "2026-W33")
+        self.assertEqual(sum(d["verdicts"].values()), 0)
+        self.assertEqual(problems, [])
+
+    def test_malformed_verdicts_do_not_crash_or_pollute(self):
+        log = [{"date": "2026-08-07", "review": {"verdict": ["命中"]}},   # unhashable
+               {"date": "2026-08-08", "review": {"verdict": "部分命中"}},  # 表外
+               {"date": "2026-08-10", "review": {"verdict": 7}}]
+        d, _ = wd.build(WEEK_SNAPS, log, "2026-W33")
+        self.assertEqual(sorted(d["verdicts"]), sorted(wd.VERDICTS))
+        self.assertEqual(d["verdicts"]["未判定"], 3)
+
+
+class SnapshotOrderingTest(unittest.TestCase):
+    def test_build_sorts_by_date(self):
+        """首末取值依赖时间序,不能只靠调用方保证。"""
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10"),
+                 snap("2026-08-07", 60.867, "2026-08-07")]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        r = d["rates"]["PHP"]
+        self.assertEqual(r["first_ref_date"], "2026-08-07")
+        self.assertEqual(r["chg_pct_week"], round((60.75 - 60.867) / 60.867 * 100, 3))
+
+
 class RobustnessTest(unittest.TestCase):
     def test_bad_snapshots_skipped_and_reported(self):
         d, problems = wd.build(["junk", None, 42] + WEEK_SNAPS, [], "2026-W33")
@@ -124,3 +177,85 @@ class RobustnessTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CrossGenerationFixingTest(unittest.TestCase):
+    """快照 schema 换代:同一次定盘一份有 ref_date、一份没有,不得算两次 ——
+    算两次会让"没有新定盘"变成"0.0% 周涨跌"和虚高的定盘次数(管道状态被
+    呈现成市场事实,本序列第三次同型缺陷)。"""
+
+    def test_same_fixing_across_schema_generations(self):
+        snaps = [snap("2026-08-10", 60.75, None),                 # 存量代
+                 snap("2026-08-11", 60.75, "2026-08-10")]         # 新代,同一次定盘
+        d, _ = wd.build(snaps, [], "2026-W33")
+        r = d["rates"]["PHP"]
+        self.assertEqual(r["fixings"], 1)
+        self.assertIsNone(r["chg_pct_week"])       # 没有新定盘 → 不是 0.0%
+
+    def test_real_two_fixings_with_equal_price_not_merged(self):
+        """两个已知且不同的定盘日恰好同价 → 必须算两次(去重不得按值合并)。"""
+        snaps = [snap("2026-08-07", 60.75, "2026-08-07"),
+                 snap("2026-08-10", 60.75, "2026-08-10")]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        r = d["rates"]["PHP"]
+        self.assertEqual(r["fixings"], 2)
+        self.assertEqual(r["chg_pct_week"], 0.0)   # 真实的两次定盘持平
+
+    def test_mixed_generation_week_counts_actual_fixings(self):
+        """本仓库真实形态:三份存量 + 一份新代,实际只有两个价。"""
+        snaps = [snap("2026-08-07", 60.867, None), snap("2026-08-08", 60.867, None),
+                 snap("2026-08-10", 60.75, None), snap("2026-08-11", 60.75, "2026-08-10")]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        r = d["rates"]["PHP"]
+        self.assertEqual(r["fixings"], 2)
+        self.assertEqual(r["chg_pct_week"], round((60.75 - 60.867) / 60.867 * 100, 3))
+
+
+class GapAccumulationTest(unittest.TestCase):
+    """gaps_by_source 的累加语义(真实周报头条引用它,原先零测试覆盖)。"""
+
+    def test_counts_accumulate_across_days_and_sources(self):
+        snaps = [
+            snap("2026-08-07", 60.8, "2026-08-07", gaps=[
+                {"source": "gdelt", "scope": "PHP", "reason": "429"},
+                {"source": "gdelt", "scope": "THB", "reason": "429"},
+                {"source": "dbnomics", "scope": "X", "reason": "timeout"}]),
+            snap("2026-08-10", 60.75, "2026-08-10", gaps=[
+                {"source": "gdelt", "scope": "BRL", "reason": "429"}]),
+        ]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        self.assertEqual(d["gaps_by_source"], {"gdelt": 3, "dbnomics": 1})
+
+    def test_malformed_gap_entries_skipped(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10",
+                      gaps=["junk", {"scope": "no-source"}, {"source": 42},
+                            {"source": "gdelt", "scope": "PHP", "reason": "429"}])]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        self.assertEqual(d["gaps_by_source"], {"gdelt": 1})
+
+
+class CliTest(unittest.TestCase):
+    """SKILL 与 README 教的是直接跑脚本;import 式测试看不见 sys.path 问题。"""
+
+    def test_runs_as_a_script(self):
+        import subprocess, sys, tempfile, os, json as _json
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(root, "scripts", "weekly_digest.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "data"))
+            with open(os.path.join(tmp, "data", "2026-08-10.json"), "w",
+                      encoding="utf-8") as f:
+                _json.dump(snap("2026-08-10", 60.75, "2026-08-10"), f)
+            r = subprocess.run([sys.executable, script, "--week", "2026-W33",
+                                "--root", tmp], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("digest:", r.stdout)
+
+    def test_rejects_bad_week_and_days(self):
+        import subprocess, sys, os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(root, "scripts", "weekly_digest.py")
+        for argv in (["--week", "a/b"], ["--week", "2026-W33", "--days", "0"]):
+            r = subprocess.run([sys.executable, script] + argv,
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 2, argv)

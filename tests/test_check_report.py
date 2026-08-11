@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import unittest
 
 from scripts import check_report
@@ -380,3 +382,50 @@ class StrictBriefTest(unittest.TestCase):
         brief = "要点表\n- 自己编的 99.123"
         v = check_report.check_daily("# r\n", self.SNAP, brief)
         self.assertFalse([x for x in v if "BRIEF_NUMBER_UNTRACEABLE" in x], v)
+
+
+class DigestFailClosedTest(unittest.TestCase):
+    """digest 不可用时必须响亮失败 —— 打印 PASS 却什么都没查是最坏的失败模式。"""
+
+    def _run(self, tmp, digest_body, extra=()):
+        report = os.path.join(tmp, "w.md")
+        with open(report, "w", encoding="utf-8") as f:
+            f.write(WEEKLY_OK)
+        argv = [report, "--mode", "weekly"]
+        if digest_body is not None:
+            dpath = os.path.join(tmp, "d.json")
+            with open(dpath, "w", encoding="utf-8") as f:
+                f.write(digest_body)
+            argv += ["--digest", dpath]
+        return check_report.main(argv + list(extra))
+
+    def test_empty_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run(tmp, ""), 2)
+
+    def test_non_json_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run(tmp, "# 这是一份 markdown"), 2)
+
+    def test_wrong_shape_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run(tmp, json.dumps({"foo": 1})), 2)
+            self.assertEqual(self._run(tmp, json.dumps([1, 2])), 2)
+
+    def test_daily_without_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            daily = os.path.join(tmp, "d.md")
+            with open(daily, "w", encoding="utf-8") as f:
+                f.write("x")
+            self.assertEqual(self._run(tmp, None, ["--daily", daily]), 2)
+
+    def test_valid_digest_still_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body = json.dumps({"week": "2026-W33", "generated_from": [],
+                               "rates": {"PHP": {"chg_pct_week": -0.192,
+                                                 "range_low": 60.75,
+                                                 "range_high": 60.867,
+                                                 "fixings": 2}},
+                               "verdicts": {"命中": 1, "未命中": 0,
+                                            "无法判定": 15, "未判定": 10}})
+            self.assertEqual(self._run(tmp, body), 0)

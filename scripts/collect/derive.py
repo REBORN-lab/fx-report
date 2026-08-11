@@ -4,7 +4,7 @@
 都写不出来。派生量在这里算好落进快照,报告层引用即合法——防编造纪律不放松,
 分析密度回来。每一项都必须能由快照原始值复算。
 """
-import math
+from ..fixings import distinct_fixings, num as _num
 
 from . import events as events_mod
 from . import util
@@ -28,13 +28,6 @@ EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
 EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
-
-
-def _num(v):
-    """数值门:bool 不是数(约定 2),NaN/Inf 穿过比较会给出确定性错误结论。"""
-    if isinstance(v, bool) or not isinstance(v, (int, float)):
-        return None
-    return v if math.isfinite(v) else None
 
 
 def _entry_of(snap, currency):
@@ -75,28 +68,24 @@ def _chg_pct_1d(entry):
 
 def _range_nd(entry, history, currency):
     """近 N 次不同定盘的高低区间。同一次定盘的多份快照只算一次
-    (回填会产生同值多份,不去重会把"一天"重复计入)。"""
-    values, seen = [], set()
+    (回填会产生同值多份,不去重会把"一天"重复计入)。
+    去重判定与周度聚合器共用 scripts/fixings,避免两处漂移。"""
+    obs = []
     today = _num(entry.get("primary"))
     if today is not None:
-        values.append(today)
-        seen.add(_fixing_key(entry.get("ref_date"), today))
+        obs.append((entry.get("ref_date"), today))
     for snap in history:
-        if len(values) >= RANGE_DAYS:
-            break
         h = _entry_of(snap, currency)
         if h is None:
             continue
         v = _num(h.get("primary"))
         if v is None:
             continue
-        key = _fixing_key(h.get("ref_date"), v)
-        if key in seen:
-            continue
-        values.append(v)
-        seen.add(key)
-    if not values:
+        obs.append((h.get("ref_date"), v))
+    entries = distinct_fixings(obs)[:RANGE_DAYS]
+    if not entries:
         return None, None, 0
+    values = [v for _, v in entries]
     return min(values), max(values), len(values)
 
 

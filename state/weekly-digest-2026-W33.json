@@ -13,60 +13,70 @@
       "chg_pct_week": -0.173,
       "range_low": 0.86543,
       "range_high": 0.86693,
-      "fixings": 3,
+      "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": null
     },
     "PHP": {
       "chg_pct_week": -0.192,
       "range_low": 60.75,
       "range_high": 60.867,
-      "fixings": 3,
+      "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": null
     },
     "THB": {
       "chg_pct_week": -0.127,
       "range_low": 33.013,
       "range_high": 33.055,
-      "fixings": 3,
+      "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": null
     },
     "BRL": {
       "chg_pct_week": -0.278,
       "range_low": 5.0856,
       "range_high": 5.0998,
-      "fixings": 3,
+      "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": null
     }
   },
   "events": {
     "USD": {
-      "total": 16,
+      "articles_total": 16,
+      "official_total": 3,
       "days_with_data": 2,
-      "days_failed": 3
+      "days_gdelt_failed": 3,
+      "days_with_official": 1
     },
     "EUR": {
-      "total": 24,
+      "articles_total": 24,
+      "official_total": 3,
       "days_with_data": 3,
-      "days_failed": 2
+      "days_gdelt_failed": 2,
+      "days_with_official": 1
     },
     "PHP": {
-      "total": 8,
+      "articles_total": 8,
+      "official_total": null,
       "days_with_data": 1,
-      "days_failed": 4
+      "days_gdelt_failed": 4,
+      "days_with_official": 0
     },
     "THB": {
-      "total": 5,
+      "articles_total": 5,
+      "official_total": null,
       "days_with_data": 1,
-      "days_failed": 4
+      "days_gdelt_failed": 4,
+      "days_with_official": 0
     },
     "BRL": {
-      "total": null,
+      "articles_total": null,
+      "official_total": null,
       "days_with_data": 0,
-      "days_failed": 5
+      "days_gdelt_failed": 5,
+      "days_with_official": 0
     }
   },
   "gaps_by_source": {

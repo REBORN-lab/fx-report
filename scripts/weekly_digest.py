@@ -10,28 +10,26 @@
 import argparse
 import glob
 import json
-import math
 import os
+import re
 import sys
+from datetime import date
+
+if __package__ in (None, ""):   # 直接 `python3 scripts/weekly_digest.py` 时补 path
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.fixings import distinct_fixings, num as _num
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERDICTS = ["命中", "未命中", "无法判定", "未判定"]
-
-
-def _num(v):
-    if isinstance(v, bool) or not isinstance(v, (int, float)):
-        return None
-    return v if math.isfinite(v) else None
-
-
-def _fixing_key(ref, value):
-    """一次定盘的身份;与 collect/derive.py 同法(ref 已知用 ref,未知按值)。"""
-    return ("ref", ref) if isinstance(ref, str) else ("val", value)
+SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+WEEK_RE = re.compile(r"\d{4}-W\d{2}")
 
 
 def _rate_entries(snapshots, currency):
-    """按日期顺序取该币种的 (ref_date, primary),同一次定盘只留首次出现。"""
-    out, seen = [], set()
+    """按日期顺序取该币种的 (ref_date, primary),同一次定盘只留首次出现。
+    去重判定与采集层共用 scripts/fixings —— 曾因两份复制而漂移(见该模块注释)。"""
+    obs = []
     for snap in snapshots:
         rates = snap.get("rates")
         if not isinstance(rates, dict):
@@ -43,12 +41,8 @@ def _rate_entries(snapshots, currency):
         if value is None:
             continue
         ref = entry.get("ref_date")
-        key = _fixing_key(ref, value)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append((ref if isinstance(ref, str) else None, value))
-    return out
+        obs.append((ref if isinstance(ref, str) else None, value))
+    return distinct_fixings(obs)
 
 
 def _rates_digest(snapshots, currencies):
@@ -73,22 +67,33 @@ def _rates_digest(snapshots, currencies):
 
 
 def _events_digest(snapshots, currencies):
+    """两个通道分别计数:GDELT articles 与官方 RSS official 口径不同,
+    合并会让计数不可比;而只数 articles 又会让"GDELT 挂了但 RSS 成功"
+    被记成纯粹的采集失败,夸大停摆。"""
     out = {}
     for currency in currencies:
-        total, with_data, failed = 0, 0, 0
+        arts_total, official_total = 0, 0
+        with_data, failed, official_days = 0, 0, 0
         for snap in snapshots:
             events = snap.get("events")
             entry = events.get(currency) if isinstance(events, dict) else None
             arts = entry.get("articles") if isinstance(entry, dict) else None
+            official = entry.get("official") if isinstance(entry, dict) else None
             if isinstance(arts, list):
-                total += len(arts)
+                arts_total += len(arts)
                 with_data += 1
             else:
                 failed += 1
+            if isinstance(official, list) and official:
+                official_total += len(official)
+                official_days += 1
         out[currency] = {
             # 一天都没采到 → null:0 会被读成"确实没有新闻"
-            "total": total if with_data else None,
-            "days_with_data": with_data, "days_failed": failed,
+            "articles_total": arts_total if with_data else None,
+            "official_total": official_total if official_days else None,
+            "days_with_data": with_data,
+            "days_gdelt_failed": failed,
+            "days_with_official": official_days,
         }
     return out
 
@@ -123,21 +128,31 @@ def _verdicts(log_entries, dates):
             continue
         review = e.get("review")
         verdict = review.get("verdict") if isinstance(review, dict) else None
-        counts["未判定" if verdict is None else verdict] = \
-            counts.get("未判定" if verdict is None else verdict, 0) + 1
+        # 可哈希门 + 词表白名单:外部日志可能是 list(unhashable → TypeError)
+        # 或表外字符串(会凭空多出一个 JSON 键)。与 log_decision.py 同规格。
+        key = verdict if isinstance(verdict, str) and verdict in counts else "未判定"
+        counts[key] += 1
     return counts
 
 
 def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", "BRL")):
-    """纯函数:snapshots 按日期升序的快照 list;返回 (digest, problems)。"""
+    """纯函数:snapshots 快照 list(内部按 date 排序);log_entries 为 None
+    表示决策日志不可用(与"日志为空"区分)。返回 (digest, problems)。"""
     good, problems = [], []
     for s in snapshots:
         if isinstance(s, dict):
             good.append(s)
         else:
             problems.append("skipped non-dict snapshot: %s" % type(s).__name__)
+    # 首末取值依赖时间序;不能只靠调用方保证(main 的文件名序曾经就不是日期序)
+    good.sort(key=lambda s: s.get("date") if isinstance(s.get("date"), str) else "")
     dates = [s.get("date") for s in good if isinstance(s.get("date"), str)]
-    entries = log_entries if isinstance(log_entries, list) else []
+    if log_entries is None:
+        # 日志不可用 ≠ 本周没有观点:写 0 会让周报断言"复盘全 0"
+        verdicts = None
+        problems.append("decision log unavailable; verdicts recorded as null")
+    else:
+        verdicts = _verdicts(log_entries if isinstance(log_entries, list) else [], dates)
     digest = {
         "week": week,
         "generated_from": dates,
@@ -145,7 +160,7 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
         "rates": _rates_digest(good, currencies),
         "events": _events_digest(good, currencies) if good else {},
         "gaps_by_source": _gaps_by_source(good),
-        "verdicts": _verdicts(entries, dates),
+        "verdicts": verdicts,
     }
     return digest, problems
 
@@ -164,20 +179,36 @@ def main(argv=None):
     ap.add_argument("--days", type=int, default=7)
     ap.add_argument("--root", default=ROOT)
     args = ap.parse_args(argv)
+    if not WEEK_RE.fullmatch(args.week):
+        ap.error("--week 需形如 YYYY-Www(如 2026-W33)")
+    if args.days < 1:
+        ap.error("--days 需为正整数")
     data_dir = os.path.join(args.root, "data")
-    paths = sorted(glob.glob(os.path.join(data_dir, "*.json")))[-args.days:]
-    snapshots = [_load_json(p) for p in paths]
+    today = date.today().isoformat()
+    names = []
+    for path in glob.glob(os.path.join(data_dir, "*.json")):
+        name = os.path.basename(path)[:-len(".json")]
+        # 误放的非快照文件不得进入窗口(字典序会让 zz-*.json 冒充"最新一天");
+        # 未来日期同样排除
+        if SNAPSHOT_NAME_RE.fullmatch(name) and name <= today:
+            names.append(name)
+    selected = sorted(names)[-args.days:]
+    snapshots = [_load_json(os.path.join(data_dir, n + ".json")) for n in selected]
     log_path = os.path.join(args.root, "state", "decision-log.jsonl")
-    entries = []
+    entries = None
     if os.path.exists(log_path):
-        with open(log_path, encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    entries.append(json.loads(line))
-                except (ValueError, RecursionError):
-                    continue
+        entries = []
+        try:
+            with open(log_path, encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except (ValueError, RecursionError):
+                        continue
+        except (OSError, UnicodeDecodeError):
+            entries = None
     digest, problems = build(snapshots, entries, args.week)
     out_dir = os.path.join(args.root, "state")
     os.makedirs(out_dir, exist_ok=True)

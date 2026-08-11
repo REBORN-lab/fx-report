@@ -13,8 +13,8 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
 1. 列出最近 7 个自然日(TODAY-6 … TODAY)中存在的日报:
    `ls reports/daily/ | sort`(对照日期清点)
    记录:覆盖日报 N 份、日期列表、缺失日期列表。
-2. 复盘计数用脚本取得,输出原样照抄:
-   `python3 scripts/log_decision.py stats --from <TODAY-6> --to <TODAY>`
+2. (复盘计数已由第 4 步的 digest 提供,不再单独跑 stats —— 两处窗口定义不同,
+   并存会让同一份周报有两个都"合法"的计数。)
 3. 逐份读取这 N 份日报全文(含各自的"数据缺漏"节)。
 4. 跑周度聚合器,输出原样照抄:
    `python3 scripts/weekly_digest.py --week WEEK`
@@ -46,7 +46,9 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
     ## 各币种一周归因
     (五币种各一小段:USD/EUR/PHP/THB/BRL,基于日报内容做一周归因;
      跨日数字逐字引 digest:周涨跌 <chg_pct_week>%、周区间 <range_low>–<range_high>
-     (<fixings> 次定盘)、事件合计 <total>(<days_failed> 天采集失败))
+     (基于 <fixings> 次不同定盘)、GDELT 事件 <articles_total> 条
+     (<days_gdelt_failed> 天采集失败)、官方公告 <official_total> 条;
+     两个通道口径不同,禁止相加,也禁止把 GDELT 失败说成"该币种无事件")
 
     ## 复盘汇总
     - <stats 命令输出的计数行,原样照抄>

@@ -183,11 +183,27 @@ def main(argv=None):
         violations = check_daily(report, snapshot_text, brief_text,
                                  strict_brief=args.strict_brief)
     else:
+        if args.daily and not args.digest:
+            print("--daily 需与 --digest 同用(单独给日报不会启用数字溯源)",
+                  file=sys.stderr)
+            return 2
         digest_text = None
-        if args.digest:
+        if args.digest is not None:
             digest_text, err = _read_file(args.digest, "周度聚合文件")
             if err:
                 print(err, file=sys.stderr)
+                return 2
+            # 校验器打印 PASS 却什么都没查,是最坏的失败模式:digest 为空、
+            # 非 JSON、或指向别的文件时必须响亮失败(与快照同规格 rc=2)
+            try:
+                digest = json.loads(digest_text)
+            except (ValueError, RecursionError) as e:
+                print("周度聚合文件无法解析: %s" % e, file=sys.stderr)
+                return 2
+            if not isinstance(digest, dict) or "week" not in digest \
+                    or "generated_from" not in digest:
+                print("周度聚合文件结构不符(需含 week 与 generated_from)",
+                      file=sys.stderr)
                 return 2
         daily_texts = []
         for path in args.daily:
@@ -196,7 +212,8 @@ def main(argv=None):
                 print(err, file=sys.stderr)
                 return 2
             daily_texts.append(text)
-        violations = check_weekly(report, digest_text, daily_texts)
+        violations = check_weekly(report, digest_text, daily_texts,
+                                  digest if args.digest is not None else None)
     if violations:
         print("CHECK FAILED (%d):" % len(violations))
         for x in violations:
@@ -206,7 +223,7 @@ def main(argv=None):
     return 0
 
 
-def check_weekly(report, digest_text=None, daily_texts=()):
+def check_weekly(report, digest_text=None, daily_texts=(), digest=None):
     v = []
     secs = sections(report)
     for key in WEEKLY_SECTIONS:
@@ -240,6 +257,14 @@ def check_weekly(report, digest_text=None, daily_texts=()):
             allowed |= numbers_in(text)
         for n in sorted(numbers_in(report) - allowed):
             v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于周度聚合文件或当周日报" % n)
+    if isinstance(digest, dict):
+        # 与日报的 GAP_OMITTED 对称:聚合出的每个缺漏源都必须在缺漏汇总里出现
+        by_source = digest.get("gaps_by_source")
+        gap_sec = find_section(secs, "缺漏汇总")
+        if isinstance(by_source, dict) and gap_sec:
+            for source in sorted(by_source):
+                if isinstance(source, str) and source and source not in gap_sec[1]:
+                    v.append("GAP_OMITTED: 缺漏汇总未提及 %s" % source)
     return v
 
 
