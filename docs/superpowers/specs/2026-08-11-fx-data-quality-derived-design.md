@@ -45,11 +45,12 @@ skills/fx-daily-report/SKILL.md
 }
 ```
 
-- `chg_pct_1d`:`round((today − prev) / prev × 100, 3)`;`ref_date == prev_ref_date` 时为 null(参考价未更新不构成价格变动)
-- `range_5d_*`:取最近 5 个**不同 ref_date** 的 primary(不足 5 个用现有个数,`range_5d_days` 记实际参与天数);保留原值精度不 round
-- `real_rate.value`:`round(policy_rate − cpi, 3)`;双期号原文强制携带,任一缺失整项 null
+- `chg_pct_1d`:`round((today − prev) / prev × 100, 3)`;`ref_date == prev_ref_date` 时为 null(参考价未更新不构成价格变动);`prev_ref_date` 未知且两值 bit 级相等时同样为 null(无法区分真持平与没定盘,而 0.0% 会被读成方向结论)
+- `range_5d_*`:取最近 5 **次不同定盘**的 primary(定盘身份 = ref_date;存量快照 ref_date 缺失时退回按 primary 值去重,同值即同一次定盘)。历史窗口读 `RANGE_DAYS+4` 份,因为周末/假日让相邻快照共享同一次定盘。保留原值精度不 round
+- `real_rate.value`:`round(policy_rate − cpi, 3)`;双期号原文强制携带,任一缺失则 `value` 为 null(键与已知的另一半保留)
 - `deviation_pct_prev`:上一份快照该币种的 `deviation_pct`,供报告谈"偏差在扩大/收敛"
-- `events.count_delta`:当日文章数 − 上一份快照文章数
+- `events.count`:**null 表示该币种事件采集失败,0 表示确实 0 篇** —— 合并二者就是把「没采到」报成「没发生」。覆盖币种取 `rates` 键与 `events.KEYWORDS` 键的并集(后者含基准货币 USD)
+- `events.count_delta`:当日文章数 − 最近一份存在的快照的文章数(「前值」口径与 rates 的 prev_primary 不同,后者严格取昨日文件)
 
 ## Components
 
@@ -58,12 +59,12 @@ skills/fx-daily-report/SKILL.md
 - 每个子计算独立 try,内部异常 → `util.make_gap("derive", <scope>, ...)` 并该项 null;**绝不向上抛**(与既有采集模块同一硬契约)
 - 全部数值访问前过 isinstance 门,bool 排除在数值之外,`math.isfinite` 检查;除法前分母零检查
 
-**rates.py**:`_fetch_primary` 额外返回响应 `date`;逐币种写 `ref_date`(降级到副源或双源皆失败的币种为 null —— 主源定盘日期对该数值不成立,这是实现期发现的边界,顶层单值表达不了);`_prev_ref_date` 从上一份快照任一币种条目读 `ref_date`
+**rates.py**:`_fetch_primary` 额外返回响应 `date`;`_prev_ref_date` 返回**逐币种 dict**(全快照共用值去顶替会让 derive 与 review.py 对同一币种给出相反的「参考价未更新」结论);逐币种写 `ref_date`(降级到副源或双源皆失败的币种为 null —— 主源定盘日期对该数值不成立,这是实现期发现的边界,顶层单值表达不了);`_prev_ref_date` 从上一份快照任一币种条目读 `ref_date`
 
 **events.py**:
-- `_query_with_retry` 的重试触发条件扩为 `err == "soft-rate-limited" or "429" in str(err)`
+- 硬限流在 `_fetch` 源头按 `HTTPError.code == 429` 认出并返回哨兵值 `HARD_LIMIT_ERR`;`_is_rate_limited` 只比两个哨兵(不在错误串里搜数字,那会被 `IncompleteRead(429 bytes)` 误伤)
 - `DEFAULT_DELAY_S` 5 → 20(`FX_GDELT_DELAY_S` 覆盖保留;spec 下限 ≥5 不变)
-- 顺序轮转:`offset = sum(ord(ch) for ch in date) % 5`,对 `list(KEYWORDS.items())` 循环右移
+- 顺序轮转:`offset = sum(ord(ch) for ch in date) % 5`,对 `list(KEYWORDS)` 循环右移。**这是公平性措施,不是 429 缓解手段** —— 2026-08-11 实测证伪了「限流总落在尾部」的假设(轮转把 BRL 排首位它仍首个 429,位置 2、3 成功)
 - 去重:同币种内按 `title` 精确匹配保留首条
 
 **review.py**:新增 ref_date 取值 helper;材料行在"参考价未更新"分支输出专用文案,`direction_outcome` 仍为"无法判定"(不改既有 verdict 语义,只改可读性与 LLM 的判定依据)
