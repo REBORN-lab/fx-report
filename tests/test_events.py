@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 import urllib.parse
+from unittest import mock
 
 from scripts.collect import events
 from tests.helpers import DEAD_URL, FixtureServer, make_test_cfg
@@ -132,13 +133,19 @@ class EventsTest(unittest.TestCase):
         for g in gaps:
             self.assertIn("unparseable response", g["reason"])
 
-    def test_articles_not_list_treated_as_empty(self):
-        """doc.articles 非 list(dict)→ 视为空列表,不记缺漏、不抛异常。"""
-        with FixtureServer({"/doc": (200, '{"articles": {"oops": 1}}')}) as srv:
-            out, gaps = events.collect(cfg_with(srv))
-        self.assertEqual(gaps, [])
-        self.assertEqual(len(out), 5)
-        self.assertEqual(out["PHP"]["articles"], [])
+    def test_unrecognized_payload_records_gap_not_empty_list(self):
+        """HTTP 200 但没有可用的 articles 列表 → 必须记 gap、不落该币种的键。
+
+        折叠成空列表且不记 gap,落盘后与"GDELT 确实一条都没索引到"在结构上
+        完全不可区分,周度聚合器据此会给出"区间内确实 0 条"——源改版被读成
+        市场事实。feeds.py 对同类危害早有这道门,这里补齐(第六轮 C12)。"""
+        for body in ('{"articles": {"oops": 1}}', '{}', '{"articles": null}',
+                     '{"error": "quota"}'):
+            with FixtureServer({"/doc": (200, body)}) as srv:
+                out, gaps = events.collect(cfg_with(srv))
+            self.assertEqual(out, {}, body)
+            self.assertEqual(len(gaps), 5, body)
+            self.assertIn("no usable 'articles' list", gaps[0]["reason"], body)
 
     def test_non_dict_article_elements_skipped(self):
         """articles 元素非 dict(标量/None)→ 跳过,仅保留 dict 元素。"""
@@ -262,7 +269,20 @@ class DedupeTest(unittest.TestCase):
         with FixtureServer({"/doc": (200, body)}) as srv:
             out, _ = events.collect(cfg_with(srv))
         self.assertEqual(len(out["PHP"]["articles"]), 2)
+class RawCountTest(unittest.TestCase):
+    """去重前条数必须落盘:只留去重后的长度,下游无法判断是否顶到每日上限,
+    截断会被漏报(报告随之把封顶样本当成精确计数)。"""
 
+    def test_raw_count_recorded_alongside_deduped_articles(self):
+        dupes = [{"title": "same"}] * 3 + [{"title": "other"}]
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        with mock.patch.object(events, "_query_with_retry",
+                               return_value=((dupes, len(dupes)), None)):
+            out, gaps = events.collect(cfg)
+        self.assertEqual(gaps, [])
+        entry = out["PHP"]
+        self.assertEqual(len(entry["articles"]), 2)      # 去重后
+        self.assertEqual(entry["articles_raw_count"], 4)  # 去重前
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import unittest
 
 from scripts import check_report
@@ -310,3 +312,145 @@ class CheckWeeklyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+DIGEST = json.dumps({"week": "2026-W33",
+                     "rates": {"PHP": {"chg_pct_week": -0.192, "range_low": 60.75,
+                                       "range_high": 60.867, "fixings": 2}},
+                     "verdicts": {"命中": 1, "未命中": 0, "无法判定": 15, "未判定": 10}})
+
+WEEKLY_OK = """# 外汇周报 2026-W33
+
+> 覆盖日报:3 份(2026-08-07, 2026-08-08, 2026-08-10);缺失日期:无
+
+## 本周主线
+- 比索本周走强
+
+## 各币种一周归因
+USD / EUR / PHP 周涨跌 -0.192%,区间 60.75–60.867(2 次定盘) / THB / BRL
+
+## 复盘汇总
+- 命中 1、未命中 0、无法判定 15、未判定 10
+
+## 下周关注
+- 关注定盘更新
+
+## 缺漏汇总
+- 无
+"""
+
+
+class WeeklyDigestTraceabilityTest(unittest.TestCase):
+    """周报数字溯源(delta spec: 周报数字溯源 / 未提供聚合文件)。"""
+
+    def test_compliant_weekly_passes(self):
+        self.assertEqual(check_report.check_weekly(WEEKLY_OK, DIGEST), [])
+
+    def test_fabricated_number_caught(self):
+        bad = WEEKLY_OK.replace("60.867", "61.999")
+        v = check_report.check_weekly(bad, DIGEST)
+        self.assertTrue(any("NUMBER_UNTRACEABLE" in x and "61.999" in x for x in v), v)
+
+    def test_number_from_daily_report_allowed(self):
+        bad = WEEKLY_OK.replace("区间 60.75–60.867", "区间 60.75–60.867,期间见 33.013")
+        self.assertTrue(check_report.check_weekly(bad, DIGEST))          # 无日报时被拦
+        daily = "PHP 33.013"
+        self.assertEqual(check_report.check_weekly(bad, DIGEST, [daily]), [])
+
+    def test_without_digest_behaviour_unchanged(self):
+        bad = WEEKLY_OK.replace("60.867", "61.999")
+        self.assertEqual(check_report.check_weekly(bad), [])             # 不传即不查数字
+
+
+class StrictBriefTest(unittest.TestCase):
+    """要点表溯源(delta spec: 要点表数字溯源 / 未启用要点表溯源)。"""
+
+    SNAP = json.dumps({"date": "2026-08-10", "rates": {"PHP": {"primary": 60.75}},
+                       "macro": [], "events": {}, "gaps": []})
+
+    def test_brief_number_outside_snapshot_caught(self):
+        brief = "要点表\n- primary 60.75\n- 自己编的 99.123"
+        v = check_report.check_daily("# r\n", self.SNAP, brief, strict_brief=True)
+        self.assertTrue(any("BRIEF_NUMBER_UNTRACEABLE" in x and "99.123" in x for x in v), v)
+
+    def test_compliant_brief_not_flagged(self):
+        brief = "要点表\n- primary 60.75"
+        v = check_report.check_daily("# r\n", self.SNAP, brief, strict_brief=True)
+        self.assertFalse([x for x in v if "BRIEF_NUMBER_UNTRACEABLE" in x], v)
+
+    def test_without_flag_behaviour_unchanged(self):
+        brief = "要点表\n- 自己编的 99.123"
+        v = check_report.check_daily("# r\n", self.SNAP, brief)
+        self.assertFalse([x for x in v if "BRIEF_NUMBER_UNTRACEABLE" in x], v)
+
+
+class DigestFailClosedTest(unittest.TestCase):
+    """digest 不可用时必须响亮失败 —— 打印 PASS 却什么都没查是最坏的失败模式。"""
+
+    def _run(self, tmp, digest_body, extra=()):
+        report = os.path.join(tmp, "w.md")
+        with open(report, "w", encoding="utf-8") as f:
+            f.write(WEEKLY_OK)
+        argv = [report, "--mode", "weekly"]
+        if digest_body is not None:
+            dpath = os.path.join(tmp, "d.json")
+            with open(dpath, "w", encoding="utf-8") as f:
+                f.write(digest_body)
+            argv += ["--digest", dpath]
+        return check_report.main(argv + list(extra))
+
+    def test_empty_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run(tmp, ""), 2)
+
+    def test_non_json_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run(tmp, "# 这是一份 markdown"), 2)
+
+    def test_wrong_shape_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._run(tmp, json.dumps({"foo": 1})), 2)
+            self.assertEqual(self._run(tmp, json.dumps([1, 2])), 2)
+
+    def test_daily_without_digest_is_rc2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            daily = os.path.join(tmp, "d.md")
+            with open(daily, "w", encoding="utf-8") as f:
+                f.write("x")
+            self.assertEqual(self._run(tmp, None, ["--daily", daily]), 2)
+
+    def test_valid_digest_still_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            body = json.dumps({"week": "2026-W33", "generated_from": [],
+                               "rates": {"PHP": {"chg_pct_week": -0.192,
+                                                 "range_low": 60.75,
+                                                 "range_high": 60.867,
+                                                 "fixings": 2}},
+                               "verdicts": {"命中": 1, "未命中": 0,
+                                            "无法判定": 15, "未判定": 10}})
+            self.assertEqual(self._run(tmp, body), 0)
+
+
+class WeeklyGapOmittedTest(unittest.TestCase):
+    """I9 收口检查此前零测试(变异存活):digest 的每个缺漏源须在缺漏汇总出现。"""
+
+    DIGEST_OBJ = {"week": "2026-W33", "generated_from": ["2026-08-10"],
+                  "gaps_by_source": {"gdelt": 18, "dbnomics": 3}}
+
+    def _weekly(self, gap_body):
+        return WEEKLY_OK.replace("## 缺漏汇总\n- 无\n", "## 缺漏汇总\n" + gap_body)
+
+    def test_missing_source_flagged(self):
+        report = self._weekly("- [gdelt] 限流 波及全周\n")
+        v = check_report.check_weekly(report, DIGEST, (), self.DIGEST_OBJ)
+        self.assertTrue(any("GAP_OMITTED" in x and "dbnomics" in x for x in v), v)
+
+    def test_all_sources_present_passes(self):
+        report = self._weekly("- [gdelt] 限流\n- [dbnomics] 超时\n")
+        v = check_report.check_weekly(report, DIGEST, (), self.DIGEST_OBJ)
+        self.assertFalse([x for x in v if "GAP_OMITTED" in x], v)
+
+    def test_without_digest_object_no_gap_check(self):
+        report = self._weekly("- [gdelt] 限流\n")
+        v = check_report.check_weekly(report, DIGEST, ())
+        self.assertFalse([x for x in v if "GAP_OMITTED" in x], v)

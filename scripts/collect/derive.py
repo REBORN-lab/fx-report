@@ -4,7 +4,7 @@
 都写不出来。派生量在这里算好落进快照,报告层引用即合法——防编造纪律不放松,
 分析密度回来。每一项都必须能由快照原始值复算。
 """
-import math
+from ..fixings import distinct_fixings, num as _num
 
 from . import events as events_mod
 from . import util
@@ -25,16 +25,10 @@ EMPTY_RATE_DERIVED = {
 }
 EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
                    "cpi": None, "cpi_period": None}
-EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None}
+EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None,
+                        "count_capped": None, "count_prev_capped": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
-
-
-def _num(v):
-    """数值门:bool 不是数(约定 2),NaN/Inf 穿过比较会给出确定性错误结论。"""
-    if isinstance(v, bool) or not isinstance(v, (int, float)):
-        return None
-    return v if math.isfinite(v) else None
 
 
 def _entry_of(snap, currency):
@@ -75,28 +69,24 @@ def _chg_pct_1d(entry):
 
 def _range_nd(entry, history, currency):
     """近 N 次不同定盘的高低区间。同一次定盘的多份快照只算一次
-    (回填会产生同值多份,不去重会把"一天"重复计入)。"""
-    values, seen = [], set()
+    (回填会产生同值多份,不去重会把"一天"重复计入)。
+    去重判定与周度聚合器共用 scripts/fixings,避免两处漂移。"""
+    obs = []
     today = _num(entry.get("primary"))
     if today is not None:
-        values.append(today)
-        seen.add(_fixing_key(entry.get("ref_date"), today))
+        obs.append((entry.get("ref_date"), today))
     for snap in history:
-        if len(values) >= RANGE_DAYS:
-            break
         h = _entry_of(snap, currency)
         if h is None:
             continue
         v = _num(h.get("primary"))
         if v is None:
             continue
-        key = _fixing_key(h.get("ref_date"), v)
-        if key in seen:
-            continue
-        values.append(v)
-        seen.add(key)
-    if not values:
+        obs.append((h.get("ref_date"), v))
+    entries = distinct_fixings(obs)[:RANGE_DAYS]
+    if not entries:
         return None, None, 0
+    values = [v for _, v in entries]
     return min(values), max(values), len(values)
 
 
@@ -145,6 +135,28 @@ def _rates_derived(payload, history, gaps):
     return out
 
 
+def _count_capped(snap, currency):
+    """当日该币种的 GDELT 条数是否顶到采集上限。上限优先取快照记录的采集时真值。
+    去重前条数(articles_raw_count)缺失的存量快照退回去重后长度,方向偏保守
+    (只会漏报触顶,不会虚报)。无法判断时返回 None。"""
+    events = snap.get("events") if isinstance(snap, dict) else None
+    entry = events.get(currency) if isinstance(events, dict) else None
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("articles_raw_count")
+    if not (isinstance(raw, int) and not isinstance(raw, bool)):
+        arts = entry.get("articles")
+        if not isinstance(arts, list):
+            return None
+        raw = len(arts)
+    meta = snap.get("meta") if isinstance(snap, dict) else None
+    caps = meta.get("caps") if isinstance(meta, dict) else None
+    cap = caps.get("gdelt_records") if isinstance(caps, dict) else None
+    if not (isinstance(cap, int) and not isinstance(cap, bool) and cap > 0):
+        cap = events_mod.MAX_RECORDS
+    return raw >= cap
+
+
 def _events_derived(payload, history, gaps):
     """count 为 null 表示"没采到"(该币种事件采集失败),0 表示"确实 0 篇"——
     两者绝不可合并:把采集失败写成 0 就是在报"没发生",属编造。"""
@@ -162,6 +174,11 @@ def _events_derived(payload, history, gaps):
                 "count_prev": prev,
                 "count_delta": (count - prev)
                                if (count is not None and prev is not None) else None,
+                # 两天都触顶时 count_delta 恒为 0,"与前值持平"就成了上限造成的
+                # 假象而非事件面平稳 —— 必须让报告能看见这一点
+                "count_capped": _count_capped(payload, currency),
+                "count_prev_capped": (_count_capped(history[0], currency)
+                                      if history else None),
             }
         except Exception as e:
             out[currency] = dict(EMPTY_EVENTS_DERIVED)

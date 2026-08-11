@@ -26,16 +26,28 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
     -(≤3 条候选,基于快照事件与年历命中归纳)
 
     ## USD
-    - 昨日事件 top:<title>(<domain>)……至多 3 条
+    - 昨日事件 top:<title>(<domain>,采见 <seendate>)……至多 3 条
       (选取:FX/货币政策相关优先;与任一共同主线候选方向相反的标题至少
       保留 1 条,快照中没有反向标题则不强凑)
-    - 官方公告:<title>(<issuer>,<published>)……至多 3 条,取自 events.<币种>.official
-      (央行官方 RSS,可署名高可信;该币种无 official 键时写"无")
+      **每条必须带 seendate 原文**。GDELT 查询窗跨越不止一个自然日,回来的条目
+      未必属于昨日:seendate 的日期部分不是 DATE 前一日的,行尾标
+      "(采见日非昨日)";seendate 缺失或无法辨认的标"(采见日不明)"。
+      与 official 同理——采样口径不等于当日市场事件。
+    - 官方公告:<title>(<issuer>,发布于 <published>)……至多 3 条,取自
+      events.<币种>.official(央行官方 RSS,可署名高可信;该币种无 official 键
+      时写"无")。**每条必须带 published 原文**;RSS 只给"最新 N 条"、不按日期
+      过滤,实测 2026-08-11 抓到的三条 Fed 公告全部发布于 7 月。发布日不是
+      DATE 或 DATE 前一日的条目,行尾标"(存量背景,非昨日发布)";
+      published 缺失或无法辨认的标"(发布日不明)"。
     - 数据发布:<indicator> 最新 <value> 前值 <prev> 期 <period>(滞后 <lag_months>
       个月,来源 <source>)——该条目含 `source_changed_from` 时,行尾必须加
       "(口径已由 <source_changed_from> 切换为 <source>,与前值不可比)"
-      (只列 is_new_release
-      为 true 或与年历命中相关的;没有写"无"。例外:本币种"昨日事件 top"为空时,
+      (列出条件:is_new_release 为 true、**或含 `source_changed_from`**、
+      或与年历命中相关;没有写"无"。
+      ——`source_changed_from` 必须单独作为列出条件:换源时采集层会把
+      `is_new_release` 强制置 false(期号跳变来自换源、不是新发布),只按
+      is_new_release 过滤会把换源披露整个滤掉,而那正是最需要说出来的一条。
+      例外:本币种"昨日事件 top"为空时,
       可列快照 macro 中该经济体的政策利率与最新 CPI(有哪项列哪项),行尾标
       "(存量背景,非昨日发布)",给该币种的触发条件留数值锚点——数字仍逐字抄快照;
       该经济体 macro 也无值时照旧写"无")
@@ -46,11 +58,16 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       (<range_5d_days> 次定盘),双源偏差 <deviation_pct>(前值 <deviation_pct_prev>),
       实际利率 <real_rate.value>(政策利率 <policy_rate> 期 <policy_period>
       − CPI <cpi> 期 <cpi_period>),事件数 <count>(前值 <count_prev>,
-      变化 <count_delta>)
+      变化 <count_delta>;<count_capped> 为 true 时追加"已达当日采集上限,
+      实际篇数只多不少",<count_prev_capped> 亦为 true 时改写为"两日均达采集
+      上限,变化 0 是上限造成的,不表示事件面持平")
       (全部逐字抄快照 derived 节;某项为 null **或该键不存在**时写"不可得",
       禁止自行补算、禁止自己去数文章篇数。事件数为 null 表示该币种事件采集失败,
       与"0 篇"是两回事,不得混写——事件数为 null 只说明 GDELT 那一路失败,
-      不代表 official 官方通道也失败,两者要分开陈述。USD 为基准货币,
+      不代表 official 官方通道也失败,两者要分开陈述。**count_capped 为 true 时
+      禁止把 count_delta 为 0 写成"与前值持平"** —— 两天都撞上限时该差值恒为 0,
+      那是采集上限的产物,不是事件面平稳(把管道读数当成市场事实,
+      该失败模式在本仓库已发生六次)。USD 为基准货币,
       derived.rates 无 USD 条目,本行不写日涨跌与区间)
     - 年历命中:<bank> <event>(<date>)(没有写"无")
     - 缺漏:<gaps 中 scope 为本币种或 all 的条目>(没有写"无")
@@ -112,6 +129,10 @@ rates 中 suspect 为 true 的币种,汇率行须注明"(双源偏差超阈,数�
    GDELT 缺漏但 official 有条目时,该币种改用官方公告归因,并注明发布方。
 4. 市场共识/预期值只在 GDELT 文章标题明说时可用,且必须标"据报道"转引;
    引自 official 的内容标"据<发布方>公告",不用"据报道"(那是转述,这是一手)。
+   **只有发布日为 DATE 或其前一日的公告才能写进"昨日发生"**;要点表标了
+   "存量背景"或"发布日不明"的条目,只能出现在"定价含义"里作背景,并保留
+   发布日或"发布日不明"的标注。把上个月的公告写进"昨日发生",就是把管道
+   取样口径当成了当日市场事件(该失败模式在本仓库已发生六次)。
    引用滞后 6 个月以上的宏观值时必须带上滞后月数,不得当作当期数据陈述。
 5. **禁止把管道状态变化叙述成市场事实。**具体:某指标的 `prev` 为 null,或其
    `source_changed_from` 存在(当日换了数据源),则该指标一律禁止用
@@ -163,7 +184,10 @@ verdict 规则:触发条件未发生 → 无法判定;触发发生且方向核�
 ## 第 5 步:校验(脚本,不可跳过)
 
 运行:
-`python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json --brief briefs/DATE-brief.md --mode daily`
+`python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json --brief briefs/DATE-brief.md --mode daily --strict-brief`
+
+(`--strict-brief` 同时校验"要点表 ⊆ 快照";新流程必须带上——不带的话
+要点表里写错的数字会成为下游报告的合法来源。)
 
 - 退出码 0:完成,输出报告路径,结束。
 - 非 0:按输出的违规项修改报告**一次**(仍只准用要点表数字),重跑校验。

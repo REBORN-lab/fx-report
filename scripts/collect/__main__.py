@@ -120,7 +120,11 @@ def run(cfg):
         "date": cfg["date"], "run_at": util.now_iso(), "schema_version": 1,
         "rates": rates_p, "macro": macro_p["indicators"], "events": events_p,
         "calendar_hits": hits, "gaps": gaps,
-        "meta": {"collector_version": COLLECTOR_VERSION},
+        # caps 随快照落盘:两个事件通道都按上限截断,不记下当时的上限,
+        # 日后常量一改,聚合器拿新上限去判旧快照就会静默错判"是否触顶"
+        "meta": {"collector_version": COLLECTOR_VERSION,
+                 "caps": {"official_daily": feeds.MAX_ITEMS,
+                          "gdelt_records": events.MAX_RECORDS}},
     }
     if macro_p.get("us_release_dates") is not None:
         snapshot["us_release_dates"] = macro_p["us_release_dates"]

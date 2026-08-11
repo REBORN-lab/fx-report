@@ -458,28 +458,28 @@
         "chg_pct_1d": null,
         "range_5d_low": 60.75,
         "range_5d_high": 60.867,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.078
       },
       "THB": {
         "chg_pct_1d": null,
         "range_5d_low": 33.013,
         "range_5d_high": 33.055,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.017
       },
       "BRL": {
         "chg_pct_1d": null,
         "range_5d_low": 5.0856,
         "range_5d_high": 5.0998,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.038
       },
       "EUR": {
         "chg_pct_1d": null,
         "range_5d_low": 0.86543,
         "range_5d_high": 0.86693,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.013
       }
     },
@@ -487,27 +487,37 @@
       "PHP": {
         "count": 8,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": true,
+        "count_prev_capped": null
       },
       "THB": {
         "count": 5,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": false,
+        "count_prev_capped": null
       },
       "BRL": {
         "count": null,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": null,
+        "count_prev_capped": null
       },
       "EUR": {
         "count": 8,
         "count_prev": 8,
-        "count_delta": 0
+        "count_delta": 0,
+        "count_capped": true,
+        "count_prev_capped": true
       },
       "USD": {
         "count": 8,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": true,
+        "count_prev_capped": null
       }
     },
     "real_rate": {
