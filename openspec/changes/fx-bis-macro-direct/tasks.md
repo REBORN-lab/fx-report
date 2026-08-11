@@ -1,8 +1,8 @@
 ## 1. HTTP 取数封装(P2,后续 P3/P4 的硬前置)
 
-- [ ] 1.1 `scripts/collect/util.py` 的 `fetch_text` 按 gzip 魔数(`raw[:2] == b"\x1f\x8b"`)解压后再解码;解压失败抛异常,不得回退为有损解码。`fetch_json` 复用之
-- [ ] 1.2 `fetch_text` / `fetch_json` 增加可选 `headers` 参数,与默认 `User-Agent: macro-fx-collector/0.1` 合并(调用方可覆盖,未传时行为不变)
-- [ ] 1.3 回归测试:gzip 响应正常解压、`Accept-Encoding: identity` 被无视时仍解压、压缩体损坏时抛异常而非返回乱码、未压缩响应行为不变、自定义 header 随请求发出
+- [x] 1.1 `scripts/collect/util.py` 的 `fetch_text` 按 gzip 魔数(`raw[:2] == b"\x1f\x8b"`)解压后再解码;解压失败抛异常,不得回退为有损解码。`fetch_json` 复用之
+- [x] 1.2 `fetch_text` / `fetch_json` 增加可选 `headers` 参数,与默认 `User-Agent: macro-fx-collector/0.1` 合并(调用方可覆盖,未传时行为不变)
+- [x] 1.3 回归测试:gzip 响应正常解压、`Accept-Encoding: identity` 被无视时仍解压、压缩体损坏时抛异常而非返回乱码、未压缩响应行为不变、自定义 header 随请求发出
 
 ## 2. BIS 取数与解析
 

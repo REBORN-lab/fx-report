@@ -1,10 +1,61 @@
-"""宏观指标采集:DBnomics 主体 + BLS 美国 CPI 主源 + FRED 可选增强(零 key)。"""
+"""宏观指标采集:BIS 直连主体 + BLS 美国 CPI 主源 + DBnomics 回落 + FRED 可选增强。
+
+来源优先级 BLS > BIS > DBnomics。DBnomics 是 IMF/BIS 的**镜像**,实测滞后
+8–17 个月且政策利率给出过期值(2026-08-11 实测五个经济体全错),故对它上游
+本来就是 BIS 的那些序列改为直连——这是去掉中间商,不是换源。
+"""
+import csv
+import io
+import math
 import re
 
 from . import util
 
 PERIOD_RE = re.compile(r"^(\d{4})-(\d{2})")
 US_CPI = ("US", "CPI 同比")
+
+
+BIS_REQUIRED_COLS = ("REF_AREA", "TIME_PERIOD", "OBS_VALUE")
+
+
+def _obs_value(raw):
+    """BIS 的非交易日写字符串 "NaN"。必须在**转 float 之前**按字符串判掉——
+    float("NaN") 会成功,随后 NaN 的任何比较都是 False,会让"取最新非 NaN"
+    与"找上一个不同值"同时给出错误结果。实测也有 "1" 这种无小数点形态。"""
+    s = (raw or "").strip()
+    if not s or s.upper() == "NAN":
+        return None
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return v if math.isfinite(v) else None
+
+
+def _bis_parse(text):
+    """BIS CSV → {REF_AREA: [(period, value), ...]},按 period 升序。
+
+    按列名取,不按位置:两个 dataflow 的列集合本就不同(CPI 多 UNIT_MEASURE),
+    且 SDMX 版本升级改列序时按位置取不会报错,只会静默取错列。
+    """
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    cols = reader.fieldnames or []
+    missing = [c for c in BIS_REQUIRED_COLS if c not in cols]
+    if missing:
+        raise ValueError("BIS CSV 缺列 %s(实际:%s)"
+                         % (",".join(missing), ",".join(cols)))
+    out = {}
+    for row in reader:
+        value = _obs_value(row.get("OBS_VALUE"))
+        if value is None:
+            continue
+        area, period = row.get("REF_AREA"), row.get("TIME_PERIOD")
+        if not (isinstance(area, str) and area and isinstance(period, str) and period):
+            continue
+        out.setdefault(area, []).append((period, value))
+    for obs in out.values():
+        obs.sort()
+    return out
 
 
 def collect(cfg):

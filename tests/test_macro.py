@@ -431,6 +431,50 @@ class LagMonthsTest(unittest.TestCase):
                 endpoints={"dbnomics_series_url": srv.base_url + "/db/{series_id}"})
             out, _ = macro.collect(cfg)
         self.assertIn("lag_months", out["indicators"][0])
+CBPOL_CSV = (
+    "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+    "D,BR,2026-06-16,14.5\n"
+    "D,BR,2026-06-17,14.25\n"
+    "D,BR,2026-06-18,NaN\n"
+    "D,TH,2026-07-30,1\n"          # 实测形态:无小数点
+)
+
+
+class BisParseTest(unittest.TestCase):
+    def test_groups_by_ref_area_sorted_by_period(self):
+        got = macro._bis_parse(CBPOL_CSV)
+        self.assertEqual(got["BR"], [("2026-06-16", 14.5), ("2026-06-17", 14.25)])
+        self.assertEqual(got["TH"], [("2026-07-30", 1.0)])   # "1" 也要解析
+
+    def test_nan_rows_dropped_not_zeroed(self):
+        """NaN 是"当天没有读数",不是 0。"""
+        self.assertEqual(len(macro._bis_parse(CBPOL_CSV)["BR"]), 2)
+
+    def test_column_order_does_not_matter(self):
+        """按列名取。按位置取的实现会在这里给出错值。"""
+        reordered = ("OBS_VALUE,TIME_PERIOD,REF_AREA,FREQ\n"
+                     "14.25,2026-06-17,BR,D\n")
+        self.assertEqual(macro._bis_parse(reordered)["BR"], [("2026-06-17", 14.25)])
+
+    def test_missing_required_column_raises(self):
+        for csv_text in ("FREQ,REF_AREA,TIME_PERIOD\nD,BR,2026-06-17\n",
+                         "FREQ,TIME_PERIOD,OBS_VALUE\nD,2026-06-17,14.25\n",
+                         "FREQ,REF_AREA,OBS_VALUE\nD,BR,14.25\n"):
+            with self.assertRaises(ValueError):
+                macro._bis_parse(csv_text)
+
+    def test_empty_and_header_only(self):
+        self.assertEqual(macro._bis_parse("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"), {})
+        with self.assertRaises(ValueError):
+            macro._bis_parse("")
+
+    def test_non_numeric_obs_value_dropped(self):
+        text = ("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+                "D,BR,2026-06-17,abc\n"
+                "D,BR,2026-06-18,\n"
+                "D,BR,2026-06-19,inf\n")
+        self.assertEqual(macro._bis_parse(text), {})
+
 
 if __name__ == "__main__":
     unittest.main()
