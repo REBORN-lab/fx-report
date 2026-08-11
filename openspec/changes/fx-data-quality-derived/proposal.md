@@ -5,7 +5,7 @@
 ## What Changes
 
 - rates.py 保存 Frankfurter 响应的参考日期 `ref_date`;review.py 遇 ref_date 未更新时输出"参考价未更新(非工作日)"替代伪连平
-- events.py:硬 HTTP 429 也退避重试一次;串行延迟默认提至 20s;查询顺序按日期确定性轮转;币种内标题去重;**删除 tone/tone_avg 死字段**
+- events.py:硬 HTTP 429 也退避重试一次;串行延迟默认提至 20s;查询顺序按日期确定性轮转(公平性措施,实测证伪了"限流总落在尾部"的假设,非 429 缓解手段);币种内标题去重;**删除 tone/tone_avg 死字段**
 - 新增快照 `derived` 节(脚本计算、round 后落盘):日涨跌%(按 ref_date 去重)、5 运行日高低区间、实际利率(政策利率−CPI,强制携带双 period 原文)、双源偏差前值、事件计数变化
 - 日报 SKILL:要点表加"派生指标"行(逐字抄 derived);砍 tone_avg 行;禁算条款改写为"禁止 LLM 计算;快照 derived 节由脚本计算,可逐字引用";汇率行呈现 ref_date
 - README 运行节:cron 建议挪至 ≥17:00 UTC(ECB 参考价定盘后)

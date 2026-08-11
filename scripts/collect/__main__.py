@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import sys
 from datetime import date, timedelta
 
@@ -15,14 +16,22 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 COLLECTOR_VERSION = "0.1.0"
 
 
-def _load_history(data_dir, date_str, limit=derive_mod.RANGE_DAYS):
+SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}$")
+
+
+def _load_history(data_dir, date_str, limit=derive_mod.HISTORY_SPAN):
     """派生指标要的近若干份历史快照,按日期倒序。坏文件跳过——历史缺失只让
-    派生量降级(区间变窄),不值得为此中断当日采集。"""
+    派生量降级(区间变窄),不值得为此中断当日采集。
+
+    `name >= date_str` 同时排除当日自身:重跑当天时 data/<date>.json 已存在,
+    放进来会让"前值"变成今早自己的产物(count_delta 恒 0)。"""
     out = []
     for path in sorted(glob.glob(os.path.join(data_dir, "*.json")), reverse=True):
         if len(out) >= limit:
             break
         name = os.path.basename(path)[:-len(".json")]
+        if not SNAPSHOT_NAME_RE.match(name):
+            continue    # 误放的非快照文件不得占用历史窗口
         if name >= date_str:
             continue
         try:

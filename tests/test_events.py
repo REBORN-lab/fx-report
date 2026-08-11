@@ -215,6 +215,13 @@ class QueryOrderTest(unittest.TestCase):
         orders = {tuple(events.query_order("2026-08-%02d" % d)) for d in range(1, 15)}
         self.assertGreater(len(orders), 1)
 
+    def test_order_matches_hardcoded_expectation(self):
+        """预期值硬编码,不拿被测函数自己当预期(否则轮转被删也测不出)。"""
+        self.assertEqual(events.query_order("2026-08-11"),
+                         ["BRL", "USD", "EUR", "PHP", "THB"])
+        self.assertEqual(events.query_order("2026-08-12"),
+                         ["USD", "EUR", "PHP", "THB", "BRL"])
+
     def test_collect_follows_rotated_order(self):
         seen = []
 
@@ -226,12 +233,11 @@ class QueryOrderTest(unittest.TestCase):
             cfg = cfg_with(srv)
             cfg["date"] = "2026-08-11"
             events.collect(cfg)
-        expected = events.query_order("2026-08-11")
-        got = [c for c in expected
-               if any(events.KEYWORDS[c].split('"')[1] in q for q in seen)]
-        first_kw = events.KEYWORDS[expected[0]].split('"')[1]
-        self.assertIn(first_kw, seen[0])
-        self.assertEqual(len(got), 5)
+        # 全部 5 个位置逐一核对,不只看首位
+        expected = ["BRL", "USD", "EUR", "PHP", "THB"]
+        actual = [next(c for c in events.KEYWORDS
+                       if events.KEYWORDS[c].split('"')[1] in q) for q in seen]
+        self.assertEqual(actual, expected)
 
 
 class DedupeTest(unittest.TestCase):

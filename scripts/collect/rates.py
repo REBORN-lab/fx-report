@@ -17,7 +17,7 @@ def collect(cfg):
         # ref_date 逐币种存:降级到副源的币种,主源的定盘日期对它不成立(须为 None)
         entry = {"primary": p, "secondary": s, "primary_source": "frankfurter",
                  "deviation_pct": None, "suspect": False, "prev_primary": prev.get(c),
-                 "ref_date": ref_date, "prev_ref_date": prev_ref_date}
+                 "ref_date": ref_date, "prev_ref_date": prev_ref_date.get(c)}
         if p is None and s is not None:
             entry["primary"] = s
             entry["primary_source"] = "exchange-api"
@@ -125,17 +125,20 @@ def _prev_primary(cfg):
 
 
 def _prev_ref_date(cfg):
-    """上一份快照的参考价定盘日期;存量快照(本变更之前生成)无此字段 → None。
+    """上一份快照**逐币种**的参考价定盘日期;存量快照(本变更之前生成)无此字段。
 
-    取任一币种条目的 ref_date:同一份快照内各币种同源同批,值相同或为 None。
+    必须逐币种取:上一份快照里降级到副源的币种 ref_date 为 None,若拿全快照
+    共用值去顶替,derive 与 review.py 的"参考价未更新"判定会对同一币种给出
+    相反结论。
     """
+    out = {}
     snap = cfg.get("prev_snapshot")
     if not isinstance(snap, dict):
-        return None
+        return out
     snap_rates = snap.get("rates")
     if not isinstance(snap_rates, dict):
-        return None
-    for entry in snap_rates.values():
+        return out
+    for c, entry in snap_rates.items():
         if isinstance(entry, dict) and isinstance(entry.get("ref_date"), str):
-            return entry["ref_date"]
-    return None
+            out[c] = entry["ref_date"]
+    return out

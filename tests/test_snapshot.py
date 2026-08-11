@@ -178,6 +178,18 @@ class DerivedSectionTest(unittest.TestCase):
         self.assertEqual(r["range_5d_low"], 60.843)      # 当日值最低
         self.assertEqual(r["range_5d_high"], 69.0)       # 08-09 的 60+9
 
+    def test_history_excludes_self_and_non_snapshot_files(self):
+        """重跑当天时 data/<date>.json 已存在,不得把今早自己的产物当历史;
+        误放的非日期文件也不得占用历史窗口。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            data = os.path.join(tmp, "data")
+            os.makedirs(data)
+            for name in ("2026-08-10.json", "2026-08-09.json", "1backup.json", "foo.json"):
+                with open(os.path.join(data, name), "w", encoding="utf-8") as f:
+                    json.dump({"marker": name}, f)
+            hist = entry._load_history(data, "2026-08-10")
+        self.assertEqual([h["marker"] for h in hist], ["2026-08-09.json"])
+
     def test_derive_failure_becomes_gap_and_snapshot_still_written(self):
         with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
             make_test_root(tmp, endpoints(srv), indicators=IND)
