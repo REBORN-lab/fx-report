@@ -50,11 +50,16 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       (<range_5d_days> 次定盘),双源偏差 <deviation_pct>(前值 <deviation_pct_prev>),
       实际利率 <real_rate.value>(政策利率 <policy_rate> 期 <policy_period>
       − CPI <cpi> 期 <cpi_period>),事件数 <count>(前值 <count_prev>,
-      变化 <count_delta>)
+      变化 <count_delta>;<count_capped> 为 true 时追加"已达当日采集上限,
+      实际篇数只多不少",<count_prev_capped> 亦为 true 时改写为"两日均达采集
+      上限,变化 0 是上限造成的,不表示事件面持平")
       (全部逐字抄快照 derived 节;某项为 null **或该键不存在**时写"不可得",
       禁止自行补算、禁止自己去数文章篇数。事件数为 null 表示该币种事件采集失败,
       与"0 篇"是两回事,不得混写——事件数为 null 只说明 GDELT 那一路失败,
-      不代表 official 官方通道也失败,两者要分开陈述。USD 为基准货币,
+      不代表 official 官方通道也失败,两者要分开陈述。**count_capped 为 true 时
+      禁止把 count_delta 为 0 写成"与前值持平"** —— 两天都撞上限时该差值恒为 0,
+      那是采集上限的产物,不是事件面平稳(把管道读数当成市场事实,
+      该失败模式在本仓库已发生六次)。USD 为基准货币,
       derived.rates 无 USD 条目,本行不写日涨跌与区间)
     - 年历命中:<bank> <event>(<date>)(没有写"无")
     - 缺漏:<gaps 中 scope 为本币种或 all 的条目>(没有写"无")

@@ -49,6 +49,8 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
 
     ## 各币种一周归因
     (五币种各一小段:USD/EUR/PHP/THB/BRL,基于日报内容做一周归因;
+     USD 是基准货币,digest.rates 无 USD 条目——该节不写周涨跌与周区间,
+     写「作为基准货币无自身汇率读数」;
      跨日数字逐字引 digest:周涨跌 <chg_pct_week>%、周区间 <range_low>–<range_high>
      (基于 <fixings> 次不同定盘)、区间内 GDELT 事件 <articles_in_window> 条
      (<days_gdelt_failed>/<days> 天采集失败;<articles_capped_days> 天顶到每日上限
@@ -95,7 +97,8 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
      同一条公告的这两个日期可以不同。)
 
     ## 复盘汇总
-    - <digest verdicts 的四项计数,原样照抄>
+    - <digest verdicts 的四项计数,原样照抄>(统计窗口同为覆盖区间
+      <window_from> 至 <window_to>;区间外的观点不计入,不得说成「本周无观点」)
     - 明细逐条:<日期> <币种> <verdict>(照抄 digest 的 verdict_details;
       该字段为 null 时写「决策日志不可用,本周复盘无法统计」,不得写成全 0)
 

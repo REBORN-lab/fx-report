@@ -697,6 +697,31 @@ class MalformedEventsTest(unittest.TestCase):
             s = snap("2026-08-11", 60.75, "2026-08-10", official=1, meta=bad)
             e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
             self.assertEqual(e["official_cap_assumed_days"], 1, bad)
+class RawCountCappingTest(unittest.TestCase):
+    """采集层落盘前已按标题去重:只看去重后的长度会把"取满上限、其中有重复"
+    读成"没取满",漏报截断。"""
+
+    def test_capping_uses_pre_dedupe_count(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", articles=6,
+                 meta={"caps": {"gdelt_records": 8}})
+        s["events"]["PHP"]["articles_raw_count"] = 8      # 取满 8,去重后剩 6
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_sampled"], 6)
+        self.assertEqual(e["articles_capped_days"], 1)
+
+    def test_missing_raw_count_falls_back_to_length(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", articles=8,
+                 meta={"caps": {"gdelt_records": 8}})
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_capped_days"], 1)
+
+    def test_bad_raw_count_ignored(self):
+        for bad in (True, -1, "8", 3.0):
+            s = snap("2026-08-11", 60.75, "2026-08-10", articles=2,
+                     meta={"caps": {"gdelt_records": 8}})
+            s["events"]["PHP"]["articles_raw_count"] = bad
+            e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+            self.assertEqual(e["articles_capped_days"], 0, bad)
 
 if __name__ == "__main__":
     unittest.main()

@@ -72,7 +72,12 @@ def _rates_digest(snapshots, currencies):
 
 def _pub_date(item):
     """RSS pubDate → YYYY-MM-DD。解析不了返回 None,绝不猜——猜错会把上个月的
-    公告算进本周。"""
+    公告算进本周。
+
+    取的是**条目自带时区**的本地日期(ECB 写 +0200 就按柏林日历),而窗口两端来自
+    快照文件名(UTC 日)。跨零点几小时发布的公告因此可能落到相邻一天;不统一折算成
+    UTC,是因为「央行哪天发的公告」在读者心里就是发行方本地的那一天。
+    """
     raw = item.get("published")
     if not isinstance(raw, str) or not raw:
         return None
@@ -137,8 +142,10 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     曾各写一份,于是 official 有截断披露而 GDELT 没有(第三轮 I10);同一个
     change 里已经因为"复制粘贴判定逻辑"栽过一次(见 scripts/fixings.py)。
 
-    observations: [(snap, items | None)] 按日期序;items 为 None 表示当日该通道
-    无数据(采集失败,或该币种压根没接这个通道)。
+    observations: [(snap, items | None, raw_count | None)] 按日期序;items 为 None
+    表示当日该通道无数据(采集失败,或该币种压根没接这个通道)。raw_count 是采集层
+    去重**之前**的条数——GDELT 落盘前已按标题去重,只看 len(items) 会把
+    "取满 8 条、其中 2 条重复"读成"只有 6 条,没触顶",漏报截断。
 
     三个量必须分开,混用就是本 change 反复出现的那个失败模式:
     - sampled:采到几条。上限截断过、跨日重复过、含窗口外的旧条目 —— 管道读数
@@ -151,7 +158,7 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     days_collected = days_nonempty = capped = assumed = 0
     seen, caps = set(), set()
     per_day, published_by_date = [], {}
-    for snap, items in observations:
+    for snap, items, raw_count in observations:
         if items is None:
             per_day.append((False, None))
             continue
@@ -163,7 +170,7 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
             cap, was_assumed = _cap(snap, cap_key, cap_fallback)
             caps.add(cap)
             assumed += 1 if was_assumed else 0
-            if len(items) >= cap:
+            if (raw_count if raw_count is not None else len(items)) >= cap:
                 capped += 1
         for item in items:
             if not isinstance(item, dict):
@@ -214,8 +221,12 @@ def _events_one(snapshots, currency, lo, hi):
         entry = events.get(currency) if isinstance(events, dict) else None
         arts = entry.get("articles") if isinstance(entry, dict) else None
         official = entry.get("official") if isinstance(entry, dict) else None
-        art_obs.append((snap, arts if isinstance(arts, list) else None))
-        off_obs.append((snap, official if isinstance(official, list) else None))
+        raw = entry.get("articles_raw_count") if isinstance(entry, dict) else None
+        if not (isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0):
+            raw = None
+        art_obs.append((snap, arts if isinstance(arts, list) else None, raw))
+        # official 落盘前不去重,采到几条就是几条
+        off_obs.append((snap, official if isinstance(official, list) else None, None))
     a, a_days, a_pub = _channel(art_obs, "gdelt_records", GDELT_DAILY_CAP,
                                 _seen_date, _article_key, lo, hi)
     o, o_days, o_pub = _channel(off_obs, "official_daily", OFFICIAL_DAILY_CAP,

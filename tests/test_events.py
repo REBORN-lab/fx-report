@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 import urllib.parse
+from unittest import mock
 
 from scripts.collect import events
 from tests.helpers import DEAD_URL, FixtureServer, make_test_cfg
@@ -262,7 +263,20 @@ class DedupeTest(unittest.TestCase):
         with FixtureServer({"/doc": (200, body)}) as srv:
             out, _ = events.collect(cfg_with(srv))
         self.assertEqual(len(out["PHP"]["articles"]), 2)
+class RawCountTest(unittest.TestCase):
+    """去重前条数必须落盘:只留去重后的长度,下游无法判断是否顶到每日上限,
+    截断会被漏报(报告随之把封顶样本当成精确计数)。"""
 
+    def test_raw_count_recorded_alongside_deduped_articles(self):
+        dupes = [{"title": "same"}] * 3 + [{"title": "other"}]
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        with mock.patch.object(events, "_query_with_retry",
+                               return_value=(dupes, None)):
+            out, gaps = events.collect(cfg)
+        self.assertEqual(gaps, [])
+        entry = out["PHP"]
+        self.assertEqual(len(entry["articles"]), 2)      # 去重后
+        self.assertEqual(entry["articles_raw_count"], 4)  # 去重前
 
 if __name__ == "__main__":
     unittest.main()

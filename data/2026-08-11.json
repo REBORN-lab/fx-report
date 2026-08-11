@@ -487,27 +487,37 @@
       "PHP": {
         "count": 8,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": true,
+        "count_prev_capped": null
       },
       "THB": {
         "count": 5,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": false,
+        "count_prev_capped": null
       },
       "BRL": {
         "count": null,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": null,
+        "count_prev_capped": null
       },
       "EUR": {
         "count": 8,
         "count_prev": 8,
-        "count_delta": 0
+        "count_delta": 0,
+        "count_capped": true,
+        "count_prev_capped": true
       },
       "USD": {
         "count": 8,
         "count_prev": null,
-        "count_delta": null
+        "count_delta": null,
+        "count_capped": true,
+        "count_prev_capped": null
       }
     },
     "real_rate": {

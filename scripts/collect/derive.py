@@ -25,7 +25,8 @@ EMPTY_RATE_DERIVED = {
 }
 EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
                    "cpi": None, "cpi_period": None}
-EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None}
+EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None,
+                        "count_capped": None, "count_prev_capped": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
 
@@ -134,6 +135,28 @@ def _rates_derived(payload, history, gaps):
     return out
 
 
+def _count_capped(snap, currency):
+    """当日该币种的 GDELT 条数是否顶到采集上限。上限优先取快照记录的采集时真值。
+    去重前条数(articles_raw_count)缺失的存量快照退回去重后长度,方向偏保守
+    (只会漏报触顶,不会虚报)。无法判断时返回 None。"""
+    events = snap.get("events") if isinstance(snap, dict) else None
+    entry = events.get(currency) if isinstance(events, dict) else None
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("articles_raw_count")
+    if not (isinstance(raw, int) and not isinstance(raw, bool)):
+        arts = entry.get("articles")
+        if not isinstance(arts, list):
+            return None
+        raw = len(arts)
+    meta = snap.get("meta") if isinstance(snap, dict) else None
+    caps = meta.get("caps") if isinstance(meta, dict) else None
+    cap = caps.get("gdelt_records") if isinstance(caps, dict) else None
+    if not (isinstance(cap, int) and not isinstance(cap, bool) and cap > 0):
+        cap = events_mod.MAX_RECORDS
+    return raw >= cap
+
+
 def _events_derived(payload, history, gaps):
     """count 为 null 表示"没采到"(该币种事件采集失败),0 表示"确实 0 篇"——
     两者绝不可合并:把采集失败写成 0 就是在报"没发生",属编造。"""
@@ -151,6 +174,11 @@ def _events_derived(payload, history, gaps):
                 "count_prev": prev,
                 "count_delta": (count - prev)
                                if (count is not None and prev is not None) else None,
+                # 两天都触顶时 count_delta 恒为 0,"与前值持平"就成了上限造成的
+                # 假象而非事件面平稳 —— 必须让报告能看见这一点
+                "count_capped": _count_capped(payload, currency),
+                "count_prev_capped": (_count_capped(history[0], currency)
+                                      if history else None),
             }
         except Exception as e:
             out[currency] = dict(EMPTY_EVENTS_DERIVED)

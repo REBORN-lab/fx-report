@@ -246,7 +246,48 @@ class RobustnessTest(unittest.TestCase):
     def test_schema_version_present(self):
         d, _ = derive.derive(payload(), [])
         self.assertEqual(d["schema_version"], 1)
+class EventCappingTest(unittest.TestCase):
+    """两天都顶到 GDELT 每日上限时 count_delta 恒为 0,"与前值持平"就成了上限
+    造成的假象,而不是事件面平稳。报告必须能看见这一点。"""
 
+    def _arts(self, n, raw=None):
+        entry = {"articles": [{"title": "t%d" % i} for i in range(n)]}
+        if raw is not None:
+            entry["articles_raw_count"] = raw
+        return {"PHP": entry}
+
+    def test_capped_flag_set_on_both_sides(self):
+        cap = derive.events_mod.MAX_RECORDS
+        p = payload(events=self._arts(cap))
+        hist = [{"events": self._arts(cap)}]
+        d, _ = derive.derive(p, hist)
+        e = d["events"]["PHP"]
+        self.assertEqual(e["count_delta"], 0)       # 看起来"持平"
+        self.assertTrue(e["count_capped"])          # 其实两边都被上限截断
+        self.assertTrue(e["count_prev_capped"])
+
+    def test_uncapped_not_flagged(self):
+        d, _ = derive.derive(payload(events=self._arts(1)), [{"events": self._arts(1)}])
+        e = d["events"]["PHP"]
+        self.assertFalse(e["count_capped"])
+        self.assertFalse(e["count_prev_capped"])
+
+    def test_pre_dedupe_count_decides(self):
+        """去重后 6 条但取满了上限 → 仍属触顶。"""
+        cap = derive.events_mod.MAX_RECORDS
+        d, _ = derive.derive(payload(events=self._arts(cap - 2, raw=cap)), [])
+        self.assertTrue(d["events"]["PHP"]["count_capped"])
+
+    def test_snapshot_cap_overrides_current_constant(self):
+        p = payload(events=self._arts(2))
+        p["meta"] = {"caps": {"gdelt_records": 2}}
+        d, _ = derive.derive(p, [])
+        self.assertTrue(d["events"]["PHP"]["count_capped"])
+
+    def test_missing_currency_yields_none_not_false(self):
+        d, _ = derive.derive(payload(events=self._arts(1)), [])
+        self.assertIsNone(d["events"]["USD"]["count_capped"])
+        self.assertIsNone(d["events"]["PHP"]["count_prev_capped"])   # 无 history
 
 if __name__ == "__main__":
     unittest.main()

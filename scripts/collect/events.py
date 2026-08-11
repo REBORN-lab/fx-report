@@ -58,7 +58,10 @@ def collect(cfg):
         if err is not None:
             gaps.append(util.make_gap("gdelt", currency, err))
             continue
-        out[currency] = {"articles": _dedupe_titles(articles)}
+        # 去重前条数一并落盘:只留去重后的长度,下游就无法判断"是否顶到
+        # 每日上限"——同一批里删掉两条重复,8 条会变成 6 条,截断被漏报
+        out[currency] = {"articles": _dedupe_titles(articles),
+                         "articles_raw_count": len(articles)}
     return out, gaps
 
 
