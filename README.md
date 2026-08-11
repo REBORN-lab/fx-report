@@ -61,6 +61,17 @@ skill 会按"无快照不生成报告"前置约束正确终止(零产物)——`
 
     python3 -m scripts.collect --date 2026-08-10
 
+周度聚合(周报前置步骤):
+
+    python3 scripts/weekly_digest.py --week 2026-W33
+
+校验(新流程必须带溯源参数):
+
+    python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json \
+      --brief briefs/DATE-brief.md --mode daily --strict-brief
+    python3 scripts/check_report.py reports/weekly/WEEK.md --mode weekly \
+      --digest state/weekly-digest-WEEK.json --daily reports/daily/<每一天>.md
+
 测试:
 
     python3 -m unittest discover -s tests -t . -v

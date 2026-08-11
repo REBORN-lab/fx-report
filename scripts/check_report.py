@@ -75,7 +75,7 @@ def parse_snapshot(snapshot_text):
     return snap, problems
 
 
-def check_daily(report, snapshot_text, brief_text):
+def check_daily(report, snapshot_text, brief_text, strict_brief=False):
     v = []
     secs = sections(report)
     snap, snap_problems = parse_snapshot(snapshot_text)
@@ -126,6 +126,12 @@ def check_daily(report, snapshot_text, brief_text):
     allowed = numbers_in(snapshot_text) | numbers_in(brief_text) | ALLOWED_SMALL
     for n in sorted(numbers_in(report) - allowed):
         v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于快照或要点表" % n)
+    if strict_brief:
+        # 报告 ⊆ 快照∪要点表 一直有校验,但要点表本身 ⊆ 快照 从来没人查——
+        # 要点表环节写错的数字会被下游当作合法来源。此开关堵住这条缝。
+        brief_allowed = numbers_in(snapshot_text) | ALLOWED_SMALL
+        for n in sorted(numbers_in(brief_text) - brief_allowed):
+            v.append("BRIEF_NUMBER_UNTRACEABLE: 要点表数字 %s 不见于快照" % n)
     return v
 
 
@@ -144,6 +150,12 @@ def main(argv=None):
     ap.add_argument("snapshot", nargs="?")
     ap.add_argument("--brief", default=None)
     ap.add_argument("--mode", choices=["daily", "weekly"], default="daily")
+    ap.add_argument("--strict-brief", action="store_true",
+                    help="daily:同时校验 要点表 ⊆ 快照")
+    ap.add_argument("--digest", default=None,
+                    help="weekly:周度聚合文件,启用周报数字溯源")
+    ap.add_argument("--daily", action="append", default=[],
+                    help="weekly:当周日报路径,可重复;并入数字白名单")
     args = ap.parse_args(argv)
     report, err = _read_file(args.report, "报告文件")
     if err:
@@ -168,9 +180,23 @@ def main(argv=None):
             if err:
                 print(err, file=sys.stderr)
                 return 2
-        violations = check_daily(report, snapshot_text, brief_text)
+        violations = check_daily(report, snapshot_text, brief_text,
+                                 strict_brief=args.strict_brief)
     else:
-        violations = check_weekly(report)   # Task 14 实现
+        digest_text = None
+        if args.digest:
+            digest_text, err = _read_file(args.digest, "周度聚合文件")
+            if err:
+                print(err, file=sys.stderr)
+                return 2
+        daily_texts = []
+        for path in args.daily:
+            text, err = _read_file(path, "日报文件")
+            if err:
+                print(err, file=sys.stderr)
+                return 2
+            daily_texts.append(text)
+        violations = check_weekly(report, digest_text, daily_texts)
     if violations:
         print("CHECK FAILED (%d):" % len(violations))
         for x in violations:
@@ -180,7 +206,7 @@ def main(argv=None):
     return 0
 
 
-def check_weekly(report):
+def check_weekly(report, digest_text=None, daily_texts=()):
     v = []
     secs = sections(report)
     for key in WEEKLY_SECTIONS:
@@ -206,6 +232,14 @@ def check_weekly(report):
         for tok in ("命中", "未命中", "无法判定"):
             if tok not in rs[1]:
                 v.append("REVIEW_TOKEN_MISSING: 复盘汇总缺少「%s」" % tok)
+    if digest_text:
+        # 周报此前完全没有数字溯源(只查结构),数字纪律纯靠 prompt 禁令。
+        # 白名单 = 聚合文件 ∪ 当周日报 ∪ 小整数:日报本身已过溯源,链条完整。
+        allowed = numbers_in(digest_text) | ALLOWED_SMALL
+        for text in daily_texts:
+            allowed |= numbers_in(text)
+        for n in sorted(numbers_in(report) - allowed):
+            v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于周度聚合文件或当周日报" % n)
     return v
 
 

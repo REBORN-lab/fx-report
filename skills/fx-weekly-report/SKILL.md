@@ -16,7 +16,13 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
 2. 复盘计数用脚本取得,输出原样照抄:
    `python3 scripts/log_decision.py stats --from <TODAY-6> --to <TODAY>`
 3. 逐份读取这 N 份日报全文(含各自的"数据缺漏"节)。
-4. 读 `state/calendar-*.json`(多个文件时取文件名字典序最大者,与采集层一致),
+4. 跑周度聚合器,输出原样照抄:
+   `python3 scripts/weekly_digest.py --week WEEK`
+   它写出 `state/weekly-digest-WEEK.json`,内含各币种周涨跌/周区间/定盘次数、
+   事件计数、缺漏按源统计、verdict 计数。**周报里的跨日数字一律逐字引用它**,
+   不得自己从日报里心算(与日报引用快照 derived 同一模式);某项为 null 时
+   写"不可得",禁止补算。
+5. 读 `state/calendar-*.json`(多个文件时取文件名字典序最大者,与采集层一致),
    摘出未来 2-3 周内(TODAY+1 … TODAY+21)的日程条目供"下周关注"引用——只准
    摘文件里实际存在的条目,文件没有的类别不得凭记忆补;年历过期或缺失时记入
    缺漏汇总。
@@ -38,7 +44,9 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
     -(≤3 条,主题式,跨币种归纳)
 
     ## 各币种一周归因
-    (五币种各一小段:USD/EUR/PHP/THB/BRL,基于日报内容做一周归因)
+    (五币种各一小段:USD/EUR/PHP/THB/BRL,基于日报内容做一周归因;
+     跨日数字逐字引 digest:周涨跌 <chg_pct_week>%、周区间 <range_low>–<range_high>
+     (<fixings> 次定盘)、事件合计 <total>(<days_failed> 天采集失败))
 
     ## 复盘汇总
     - <stats 命令输出的计数行,原样照抄>
@@ -55,13 +63,20 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
 
 **禁令:**
 1. 一级/二级结构禁止按日期组织(不得出现 `## 2026-08-05` 式标题)。
-2. 数字只准逐字来自日报原文、stats 命令输出与年历文件原文;禁止自行计算或汇总数字。
+   正文里提日期一律写完整形式 `YYYY-MM-DD`:写成 `08-07` 会被数字溯源当成
+   两个裸数字拦下(校验器只识别完整日期形态)。
+2. 数字只准逐字来自周度聚合文件、日报原文、stats 命令输出与年历文件原文;
+   禁止自行计算或汇总数字。
 3. 复盘汇总的计数行必须与 stats 输出逐字一致。
 4. 不得引用缺失日期的任何"数据"。
 
 ## 第 3 步:校验(脚本,不可跳过)
 
-运行:`python3 scripts/check_report.py reports/weekly/WEEK.md --mode weekly`
+运行(**必须带 --digest 与全部当周日报**,否则数字溯源不生效):
+
+    python3 scripts/check_report.py reports/weekly/WEEK.md --mode weekly \
+      --digest state/weekly-digest-WEEK.json \
+      --daily reports/daily/<日期1>.md --daily reports/daily/<日期2>.md ...
 
 - 退出码 0:完成。
 - 非 0:按违规项修改一次,重跑。
