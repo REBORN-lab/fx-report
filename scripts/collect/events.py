@@ -60,8 +60,9 @@ def collect(cfg):
             continue
         # 去重前条数一并落盘:只留去重后的长度,下游就无法判断"是否顶到
         # 每日上限"——同一批里删掉两条重复,8 条会变成 6 条,截断被漏报
-        out[currency] = {"articles": _dedupe_titles(articles),
-                         "articles_raw_count": len(articles)}
+        arts, raw_count = articles
+        out[currency] = {"articles": _dedupe_titles(arts),
+                         "articles_raw_count": raw_count}
     return out, gaps
 
 
@@ -123,9 +124,20 @@ def _fetch(cfg, query):
                       % type(doc).__name__)
     raw = doc.get("articles")
     if not isinstance(raw, list):
-        raw = []  # articles 非 list → 视为空
+        # 「JSON 能解析但结构不认识」曾被折叠成空列表且不记 gap —— 落盘后与
+        # 「GDELT 确实一条都没索引到」在结构上完全不可区分,聚合器据此可以
+        # 得出「区间内确实 0 条」。源改版/字段改名/HTTP 200 错误信封都走这条路。
+        # feeds.py 对完全同类的危害是显式记 gap 的(见其 collect 的零条目分支),
+        # 这里补上同一道门。
+        return None, ("parsed ok but no usable 'articles' list (got %s;"
+                      "源可能已改版或返回了 HTTP 200 错误信封)" % type(raw).__name__)
     # tone 不落盘:artlist 端点不返回该字段(实测 40/40 为 null),留着即误导
-    arts = [{"title": a.get("title"), "url": a.get("url"), "domain": a.get("domain"),
-             "seendate": a.get("seendate")}
-            for a in raw if isinstance(a, dict)]  # 非 dict 元素 → 跳过
-    return arts, None
+    arts, dropped = [], 0
+    for a in raw:
+        if not isinstance(a, dict):
+            dropped += 1        # 非 dict 元素 → 跳过,但要计入原始条数
+            continue
+        arts.append({"title": a.get("title"), "url": a.get("url"),
+                     "domain": a.get("domain"), "seendate": a.get("seendate")})
+    # 原始条数含被丢弃的元素:用过滤后的长度比每日上限会漏报截断
+    return (arts, len(raw)), None

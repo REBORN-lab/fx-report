@@ -70,12 +70,16 @@ class RatesTest(unittest.TestCase):
 
 class EventsAndGapsTest(unittest.TestCase):
     def test_event_totals_and_failure_days(self):
+        """分母是区间日历天数,不是快照份数:08-09 根本没有快照,那天同样
+        没被观测,必须计入未采到(第六轮 C11)。"""
         snaps = WEEK_SNAPS + [snap("2026-08-11", 60.75, "2026-08-10")]   # 无 events 键
         d, _ = wd.build(snaps, [], "2026-W33")
         e = d["events"]["PHP"]
         self.assertEqual(e["articles_sampled"], 22)     # 8+8+6
         self.assertEqual(e["days_with_data"], 3)
-        self.assertEqual(e["days_gdelt_failed"], 1)   # 最后一天没采到
+        self.assertEqual(e["days"], 5)                  # 08-07..08-11 五个日历日
+        self.assertEqual(e["snapshots_loaded"], 4)      # 手上只有四份
+        self.assertEqual(e["days_gdelt_failed"], 2)     # 08-09 缺快照 + 08-11 没采到
 
     def test_official_counted_separately_from_articles(self):
         """两个通道口径不同,不得相加;GDELT 挂了但 RSS 成功的那天也要可见。"""
@@ -913,6 +917,98 @@ class PubDateParsingTest(unittest.TestCase):
             s = snap("2026-08-11", 60.75, "2026-08-10", official=1, published=bad)
             e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
             self.assertEqual(e["official_in_window"], 0, bad)
+class VerdictDomainTest(unittest.TestCase):
+    """不变量必须陈述在**日历**这个定义域上。分母取"载入到的快照份数"时,
+    整天缺采会同时缩小分子分母,missing 恒为 0,脚本于是对一个从未被观测的
+    日子说出"全区间采集完整"(第六轮 C11,不变量被攻破的那条路)。"""
+
+    def test_missing_calendar_day_blocks_the_zero_claim(self):
+        # 08-07 与 08-11 采到且为空,08-08/09/10 三天根本没有快照
+        snaps = [snap(d, 60.75, "2026-08-10", official=0,
+                      meta={"caps": {"official_daily": 3}})
+                 for d in ("2026-08-07", "2026-08-11")]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertNotIn("确实", e["official_verdict"])
+        self.assertIn("3/5 天未采到", e["official_verdict"])
+        self.assertIn("无法判定", e["official_verdict"])
+
+    def test_corrupt_snapshots_block_the_zero_claim(self):
+        """坏快照的日期不可知,那几天同样没被观测。"""
+        good = [snap(d, 60.75, "2026-08-10", official=0,
+                     meta={"caps": {"official_daily": 3}})
+                for d in ("2026-08-10", "2026-08-11")]
+        e = wd.build([None, "junk"] + good, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertNotIn("确实", e["official_verdict"])
+        self.assertIn("2 份快照损坏被跳过", e["official_verdict"])
+
+    def test_contiguous_full_coverage_still_allows_the_zero_claim(self):
+        """连续五天全采到、全为空 —— 这才是唯一允许说"确实 0 条"的形态。"""
+        snaps = [snap(d, 60.75, "2026-08-10", official=0,
+                      meta={"caps": {"official_daily": 3}})
+                 for d in ("2026-08-07", "2026-08-08", "2026-08-09",
+                           "2026-08-10", "2026-08-11")]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertIn("确实 0 条", e["official_verdict"])
+
+    def test_no_caveat_means_no_observation_gap(self):
+        """总断言:verdict 含「确实」当且仅当三类观测缺口全部为零。
+        逐个场景的用例挡不住"再开一条新路径",这条总断言才是不变量本身。"""
+        cases = [
+            # (snapshots, 是否应当允许"确实")
+            ([snap(d, 60.75, "2026-08-10", official=0,
+                   meta={"caps": {"official_daily": 3}})
+              for d in ("2026-08-10", "2026-08-11")], True),
+            ([snap("2026-08-07", 60.867, "2026-08-07", official=0,
+                   meta={"caps": {"official_daily": 3}}),
+              snap("2026-08-11", 60.75, "2026-08-10", official=0,
+                   meta={"caps": {"official_daily": 3}})], False),   # 缺日历天
+            ([snap(d, 60.75, "2026-08-10", official=1, published="昨天",
+                   meta={"caps": {"official_daily": 3}})
+              for d in ("2026-08-10", "2026-08-11")], False),        # undated
+            ([snap(d, 60.75, "2026-08-10", official=3,
+                   published="Wed, 29 Jul 2026 15:00:00 -0400",
+                   meta={"caps": {"official_daily": 3}})
+              for d in ("2026-08-10", "2026-08-11")], False),        # 触顶
+        ]
+        for snaps, allowed in cases:
+            e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+            v = e["official_verdict"]
+            gaps = (e["days"] != e["days_official_collected"]
+                    or bool(e["official_undated"]) or bool(e["official_capped_days"]))
+            self.assertEqual("确实" in v, not gaps, v)
+            self.assertEqual("确实" in v, allowed, v)
+class FixingsVerdictTest(unittest.TestCase):
+    """汇率通道也要有结论句。fixings 是 distinct_fixings 声明过的**下界**
+    (定盘日未知时按同值合并,只会低估),周报写"全周仅 N 次定盘"就是把下界
+    讲成市场事实(第六轮 C13)。"""
+
+    def test_unknown_ref_dates_make_it_a_lower_bound(self):
+        snaps = [snap(d, v, None) for d, v in
+                 (("2026-08-10", 60.867), ("2026-08-11", 60.75))]
+        r = wd.build(snaps, [], "2026-W33")[0]["rates"]["PHP"]
+        self.assertIn("只多不少", r["fixings_verdict"])
+        self.assertIn("2 次观测的定盘日未记录", r["fixings_verdict"])
+        self.assertNotIn("仅", r["fixings_verdict"])
+
+    def test_all_ref_dates_known_and_full_coverage_is_a_count(self):
+        snaps = [snap("2026-08-10", 60.867, "2026-08-10"),
+                 snap("2026-08-11", 60.75, "2026-08-11")]
+        r = wd.build(snaps, [], "2026-W33")[0]["rates"]["PHP"]
+        self.assertEqual(r["fixings_verdict"],
+                         "区间内 2 次不同定盘(2026-08-10 至 2026-08-11)")
+
+    def test_missing_calendar_day_is_disclosed(self):
+        snaps = [snap("2026-08-07", 60.867, "2026-08-07"),
+                 snap("2026-08-11", 60.75, "2026-08-11")]
+        r = wd.build(snaps, [], "2026-W33")[0]["rates"]["PHP"]
+        self.assertIn("3/5 天未采到", r["fixings_verdict"])
+        self.assertIn("只多不少", r["fixings_verdict"])
+
+    def test_corrupt_snapshots_disclosed(self):
+        snaps = [None, snap("2026-08-10", 60.867, "2026-08-10"),
+                 snap("2026-08-11", 60.75, "2026-08-11")]
+        r = wd.build(snaps, [], "2026-W33")[0]["rates"]["PHP"]
+        self.assertIn("1 份快照损坏被跳过", r["fixings_verdict"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -49,7 +49,27 @@ def _rate_entries(snapshots, currency):
     return distinct_fixings(obs)
 
 
-def _rates_digest(snapshots, currencies):
+def _fixings_verdict(n, unknown_ref, first_ref, last_ref, missing_days, window_days,
+                     skipped):
+    """定盘次数是**下界**,不是计数:distinct_fixings 在定盘日未知时按同值合并,
+    其 docstring 明说"只可能低估定盘次数"。周报写"全周仅 N 次定盘"就是把脚本
+    刻意保守的下界讲成了市场事实(第六轮 C13)。区间同理——它是被观测到的那些
+    价位的高低,不是区间内的真实极值。"""
+    caveats = []
+    if unknown_ref:
+        caveats.append("%d 次观测的定盘日未记录" % unknown_ref)
+    if missing_days:
+        caveats.append("%d/%d 天未采到" % (missing_days, window_days))
+    if skipped:
+        caveats.append("另有 %d 份快照损坏被跳过" % skipped)
+    if caveats:
+        return ("区间内观测到 %d 个不同价位,实际定盘次数只多不少(%s);"
+                "周区间是这些价位的高低,不是区间内的真实极值"
+                % (n, "、".join(caveats)))
+    return "区间内 %d 次不同定盘(%s 至 %s)" % (n, first_ref, last_ref)
+
+
+def _rates_digest(snapshots, currencies, window_days, skipped):
     out = {}
     for currency in currencies:
         entries = _rate_entries(snapshots, currency)
@@ -62,10 +82,20 @@ def _rates_digest(snapshots, currencies):
         chg = None
         if len(entries) >= 2 and first_v != 0:
             chg = round((last_v - first_v) / first_v * 100, 3)
+        observed = sum(1 for snap in snapshots
+                       if isinstance(snap.get("rates"), dict)
+                       and isinstance(snap["rates"].get(currency), dict)
+                       and _num(snap["rates"][currency].get("primary")) is not None)
+        missing = (window_days - observed) if window_days is not None else None
         out[currency] = {
             "chg_pct_week": chg, "range_low": min(values), "range_high": max(values),
             "fixings": len(entries), "first_ref_date": first_ref,
-            "last_ref_date": last_ref,
+            "last_ref_date": last_ref, "days_observed": observed,
+            "fixings_verdict": _fixings_verdict(
+                len(entries), sum(1 for r, _ in entries if not isinstance(r, str)),
+                first_ref, last_ref,
+                missing if (missing and missing > 0) else 0,
+                window_days, skipped),
         }
     return out
 
@@ -214,7 +244,23 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     return stats, per_day, published_by_date
 
 
-def _verdict(stats, days, unit):
+def _window_days(lo, hi):
+    """覆盖区间的**日历天数**。
+
+    分母曾经取"载入到的快照份数"——某天根本没跑采集时,它同时缩小分子和分母,
+    missing 恒为 0,于是脚本对一个从未被观测的日子说出"全区间采集完整"。
+    不变量必须陈述在日历这个定义域上:分母是区间里有多少天,不是我们手上有几份。
+    """
+    if not (isinstance(lo, str) and isinstance(hi, str)):
+        return None
+    try:
+        d0, d1 = date.fromisoformat(lo), date.fromisoformat(hi)
+    except (TypeError, ValueError):
+        return None
+    return (d1 - d0).days + 1 if d1 >= d0 else None
+
+
+def _verdict(stats, window_days, skipped, unit):
     """把「能不能下结论」从 LLM 手里收回脚本。
 
     前九次同型全部卡在同一步:报告拿着一堆计数自己推「有没有」。每加一条 prompt
@@ -228,9 +274,15 @@ def _verdict(stats, days, unit):
     if stats["days_collected"] == 0:
         return "未接入或全区间采集失败,有无%s无法判定" % unit
     caveats = []
-    missing = days - stats["days_collected"]
-    if missing > 0:
-        caveats.append("%d/%d 天未采到" % (missing, days))
+    if window_days is None:
+        caveats.append("覆盖区间不可知")
+    else:
+        missing = window_days - stats["days_collected"]
+        if missing > 0:
+            caveats.append("%d/%d 天未采到" % (missing, window_days))
+    if skipped:
+        # 损坏被跳过的快照,其日期不可知 —— 那几天同样没被观测
+        caveats.append("另有 %d 份快照损坏被跳过" % skipped)
     if stats["undated"]:
         caveats.append("%d 条时间戳无法解析" % stats["undated"])
     if stats["capped_days"]:
@@ -244,7 +296,7 @@ def _verdict(stats, days, unit):
     return "区间内确实 0 条(全区间采集完整、无截断、时间戳均可解析)"
 
 
-def _events_one(snapshots, currency, lo, hi):
+def _events_one(snapshots, currency, lo, hi, skipped):
     art_obs, off_obs = [], []
     for snap in snapshots:
         events = snap.get("events")
@@ -287,8 +339,8 @@ def _events_one(snapshots, currency, lo, hi):
     return {
         # 唯一可以用来陈述"有没有、有几条"的字段。脚本已把观测缺口(未采到的
         # 天数、截断、无法解析的时间戳)折进结论,报告逐字引用即可,禁止自行推断
-        "articles_verdict": _verdict(a, len(snapshots), "事件"),
-        "official_verdict": _verdict(o, len(snapshots), "公告"),
+        "articles_verdict": _verdict(a, _window_days(lo, hi), skipped, "事件"),
+        "official_verdict": _verdict(o, _window_days(lo, hi), skipped, "公告"),
         "fallback_days": fallback_days,
         "articles_sampled": a["sampled"], "articles_distinct": a["distinct"],
         "articles_dup_dropped": a["dup_dropped"],
@@ -299,7 +351,8 @@ def _events_one(snapshots, currency, lo, hi):
         "articles_daily_cap": a["daily_cap"],
         "articles_cap_assumed_days": a["cap_assumed_days"],
         "days_with_data": a["days_collected"],
-        "days_gdelt_failed": len(snapshots) - a["days_collected"],
+        "days_gdelt_failed": (_window_days(lo, hi) or len(snapshots))
+                             - a["days_collected"],
         "official_sampled": o["sampled"], "official_distinct": o["distinct"],
         "official_dup_dropped": o["dup_dropped"],
         "official_in_window": o["in_window"],
@@ -312,18 +365,20 @@ def _events_one(snapshots, currency, lo, hi):
         # "央行本周没发公告"这个市场事实伪装成管道故障
         "days_official_collected": o["days_collected"],
         "days_with_official": o["days_nonempty"],
-        "days": len(snapshots),
+        # 区间日历天数(分母);载入到的快照份数另记,两者不等就意味着有整天缺采
+        "days": _window_days(lo, hi) or len(snapshots),
+        "snapshots_loaded": len(snapshots),
         # 逐日交叉表:让"哪天 GDELT 失败、哪天真有公告发布"成为可逐字引用的
         # 事实,而不是写报告时翻原始快照得出的、下次无法复现的结论
         "by_date": by_date,
     }
 
 
-def _events_digest(snapshots, currencies, lo, hi):
+def _events_digest(snapshots, currencies, lo, hi, skipped):
     """两个通道分别计数:GDELT articles 与官方 RSS official 口径不同,
     合并会让计数不可比;而只数 articles 又会让"GDELT 挂了但 RSS 成功"
     被记成纯粹的采集失败,夸大停摆。"""
-    return {c: _events_one(snapshots, c, lo, hi) for c in currencies}
+    return {c: _events_one(snapshots, c, lo, hi, skipped) for c in currencies}
 
 
 def _gaps_by_source(snapshots):
@@ -413,12 +468,15 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
         "week": week,
         "generated_from": dates,
         "skipped": skipped_snapshots,
-        "rates": _rates_digest(good, currencies),
+        "rates": _rates_digest(good, currencies,
+                               _window_days(min(dates), max(dates))
+                               if dates else None, skipped_snapshots),
         "window_from": min(dates) if dates else None,
         "window_to": max(dates) if dates else None,
         "events": (_events_digest(good, currencies,
                                   min(dates) if dates else None,
-                                  max(dates) if dates else None)
+                                  max(dates) if dates else None,
+                                  skipped_snapshots)
                    if good else {}),
         "gaps_by_source": _gaps_by_source(good),
         "verdicts": verdicts,

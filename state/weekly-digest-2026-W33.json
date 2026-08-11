@@ -15,7 +15,9 @@
       "range_high": 0.86693,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": "2026-08-10",
+      "days_observed": 5,
+      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     },
     "PHP": {
       "chg_pct_week": -0.192,
@@ -23,7 +25,9 @@
       "range_high": 60.867,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": "2026-08-10",
+      "days_observed": 5,
+      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     },
     "THB": {
       "chg_pct_week": -0.127,
@@ -31,7 +35,9 @@
       "range_high": 33.055,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": "2026-08-10",
+      "days_observed": 5,
+      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     },
     "BRL": {
       "chg_pct_week": -0.278,
@@ -39,7 +45,9 @@
       "range_high": 5.0998,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10"
+      "last_ref_date": "2026-08-10",
+      "days_observed": 5,
+      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     }
   },
   "window_from": "2026-08-07",
@@ -72,6 +80,7 @@
       "days_official_collected": 1,
       "days_with_official": 1,
       "days": 5,
+      "snapshots_loaded": 5,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
@@ -142,6 +151,7 @@
       "days_official_collected": 1,
       "days_with_official": 1,
       "days": 5,
+      "snapshots_loaded": 5,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
@@ -212,6 +222,7 @@
       "days_official_collected": 0,
       "days_with_official": 0,
       "days": 5,
+      "snapshots_loaded": 5,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
@@ -282,6 +293,7 @@
       "days_official_collected": 0,
       "days_with_official": 0,
       "days": 5,
+      "snapshots_loaded": 5,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
@@ -352,6 +364,7 @@
       "days_official_collected": 0,
       "days_with_official": 0,
       "days": 5,
+      "snapshots_loaded": 5,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
