@@ -1,5 +1,5 @@
 workflow: full
-phase: verify
+phase: archive
 context_compression: off
 build_mode: executing-plans
 build_pause: null
@@ -11,11 +11,11 @@ auto_transition: true
 base_ref: 30a5a314de297394bb01e19a105953f82a15f6c3
 design_doc: docs/superpowers/specs/2026-08-11-fx-source-upgrade-design.md
 plan: docs/superpowers/plans/2026-08-11-fx-source-upgrade.md
-verify_result: pending
+verify_result: pass
 verification_report: docs/superpowers/reports/2026-08-11-fx-source-upgrade-verify.md
-branch_status: pending
+branch_status: handled
 created_at: 2026-08-11
-verified_at: null
+verified_at: 2026-08-11
 archived: false
 handoff_context: openspec/changes/fx-source-upgrade/.super-coding/handoff/design-context.json
 handoff_hash: f9e51070a44ac0c9abdd68f142d610a56f2c4da03b34e88e98e775835fb4ce52
