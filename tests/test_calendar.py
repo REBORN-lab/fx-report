@@ -1,7 +1,9 @@
 import json
 import os
+import re
 import tempfile
 import unittest
+from datetime import date
 
 from scripts.collect import calendar as calendar_mod
 from tests.helpers import make_test_cfg
@@ -142,3 +144,58 @@ class CalendarTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShippedCalendarTest(unittest.TestCase):
+    """随仓库分发的 state/calendar-2026.json 的完整性(数据文件也是产物)。"""
+
+    CAL_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "state", "calendar-2026.json")
+    DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+    def setUp(self):
+        with open(self.CAL_PATH, encoding="utf-8") as f:
+            self.cal = json.load(f)
+
+    def test_every_event_has_wellformed_fields(self):
+        for ev in self.cal["events"]:
+            self.assertIsInstance(ev.get("date"), str, ev)
+            self.assertRegex(ev["date"], self.DATE_RE, ev)
+            date.fromisoformat(ev["date"])          # 非法日期(如 02-30)在此爆出
+            self.assertIsInstance(ev.get("bank"), str, ev)
+            self.assertTrue(ev["bank"].strip(), ev)
+            self.assertIsInstance(ev.get("event"), str, ev)
+            self.assertTrue(ev["event"].strip(), ev)
+
+    def test_no_duplicate_date_event_pairs(self):
+        keys = [(e["date"], e["event"]) for e in self.cal["events"]]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_events_within_validity(self):
+        valid_until = self.cal["valid_until"]
+        for ev in self.cal["events"]:
+            self.assertLessEqual(ev["date"], valid_until, ev)
+
+    def test_us_data_releases_present_and_matchable(self):
+        """扩充后的统计发布条目必须能被 calendar.collect 命中(通用匹配,不需改代码)。"""
+        cpi = [e for e in self.cal["events"] if "CPI 发布" in e["event"]]
+        nfp = [e for e in self.cal["events"] if "非农" in e["event"]]
+        self.assertGreaterEqual(len(cpi), 12)
+        self.assertGreaterEqual(len(nfp), 12)
+        hits, gaps = calendar_mod.collect(make_test_cfg(
+            calendar_path=self.CAL_PATH, date="2026-08-12", yesterday="2026-08-11"))
+        self.assertEqual(gaps, [])
+        self.assertTrue(any("CPI 发布" in h["event"] and h["bank"] == "BLS" for h in hits),
+                        hits)
+
+    def test_sources_recorded_for_every_issuer(self):
+        issuers = {e["bank"] for e in self.cal["events"]}
+        documented = {s["bank"] for s in self.cal["sources"]}
+        self.assertTrue(issuers <= documented, issuers - documented)
+
+    def test_maintenance_documents_known_gaps(self):
+        """未录入的四经济体必须在维护说明里显式记为缺口,不得静默省略。"""
+        m = self.cal["maintenance"]
+        for token in ("PSA", "IBGE", "403"):
+            self.assertIn(token, m)
