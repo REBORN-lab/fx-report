@@ -509,6 +509,95 @@ class PrevSemanticsTest(unittest.TestCase):
         cpi = [("2026-05", 3.1), ("2026-06", 3.1)]
         self.assertEqual(macro._latest_and_prev_observation(cpi),
                          (3.1, "2026-06", 3.1, "2026-05"))
+CPI_CSV = (
+    "FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\n"
+    "M,XM,771,2026-05,3.177015\n"
+    "M,XM,771,2026-06,2.748918\n"
+    "M,BR,771,2026-05,4.7249068792\n"
+    "M,BR,771,2026-06,4.6413275481\n"
+)
+BIS_ROUTES = {"/bis/cbpol": (200, CBPOL_CSV), "/bis/cpi": (200, CPI_CSV)}
+
+
+def bis_cfg(srv, **over):
+    base = {"endpoints": {
+        "dbnomics_series_url": srv.base_url + "/db/{series_id}",
+        "bis_cbpol_url": srv.base_url + "/bis/cbpol",
+        "bis_cpi_url": srv.base_url + "/bis/cpi",
+    }, "indicators": [
+        {"economy": "EA", "indicator": "CPI 同比", "series_id": "ECB/ICP/X"},
+        {"economy": "BR", "indicator": "CPI 同比", "series_id": "IMF/CPI/M.BR.X"},
+        {"economy": "BR", "indicator": "政策利率", "series_id": "BIS/WS_CBPOL/D.BR"},
+        {"economy": "TH", "indicator": "政策利率", "series_id": "BIS/WS_CBPOL/D.TH"},
+    ]}
+    base["endpoints"].update(over.pop("endpoints", {}))
+    base.update(over)
+    return make_test_cfg(**base)
+
+
+class BisTableTest(unittest.TestCase):
+    def test_table_keyed_by_economy_and_indicator(self):
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            gaps = []
+            table = macro._bis_table(bis_cfg(srv), gaps)
+        self.assertEqual(gaps, [])
+        self.assertEqual(table[("BR", "政策利率")]["value"], 14.25)
+        self.assertEqual(table[("BR", "政策利率")]["prev"], 14.5)
+        self.assertEqual(table[("BR", "政策利率")]["prev_period"], "2026-06-16")
+        self.assertEqual(table[("EA", "CPI 同比")]["value"], 2.748918)   # XM → EA
+        self.assertEqual(table[("EA", "CPI 同比")]["source"], "bis")
+
+    def test_euro_area_maps_from_xm(self):
+        """映射互换会让欧元区取到别人的值。"""
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            table = macro._bis_table(bis_cfg(srv), [])
+        self.assertNotIn(("XM", "CPI 同比"), table)
+        self.assertIn(("EA", "CPI 同比"), table)
+
+    def test_unconfigured_endpoint_is_silent_skip(self):
+        """未配置 = 有意停用(与 feeds.py 同约定),使删掉 URL 即整体回滚。"""
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            cfg = bis_cfg(srv)
+            cfg["endpoints"].pop("bis_cbpol_url")
+            gaps = []
+            table = macro._bis_table(cfg, gaps)
+        self.assertEqual(gaps, [])
+        self.assertNotIn(("BR", "政策利率"), table)
+        self.assertIn(("BR", "CPI 同比"), table)
+
+    def test_unreachable_endpoint_records_gap_and_empties_that_dataflow(self):
+        with FixtureServer({"/bis/cpi": (200, CPI_CSV)}) as srv:
+            cfg = bis_cfg(srv, endpoints={"bis_cbpol_url": DEAD_URL + "/x"})
+            gaps = []
+            table = macro._bis_table(cfg, gaps)
+        self.assertEqual([g["source"] for g in gaps], ["bis"])
+        self.assertNotIn(("BR", "政策利率"), table)
+        self.assertIn(("BR", "CPI 同比"), table)     # 另一个 dataflow 不受影响
+
+    def test_missing_column_records_gap(self):
+        bad = {"/bis/cbpol": (200, "FREQ,REF_AREA,TIME_PERIOD\nD,BR,2026-06-17\n"),
+               "/bis/cpi": (200, CPI_CSV)}
+        with FixtureServer(bad) as srv:
+            gaps = []
+            table = macro._bis_table(bis_cfg(srv), gaps)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("缺列", gaps[0]["reason"])
+        self.assertNotIn(("BR", "政策利率"), table)
+
+    def test_economy_absent_from_response_only_that_key_missing(self):
+        """TH 不在 CPI 响应里 → 只有它缺席,BR/EA 照常。"""
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            table = macro._bis_table(bis_cfg(srv), [])
+        self.assertNotIn(("TH", "CPI 同比"), table)
+        self.assertIn(("BR", "CPI 同比"), table)
+
+    def test_all_nan_economy_absent(self):
+        allnan = {"/bis/cbpol": (200, "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+                                      "D,BR,2026-06-17,NaN\nD,BR,2026-06-18,NaN\n"),
+                  "/bis/cpi": (200, CPI_CSV)}
+        with FixtureServer(allnan) as srv:
+            table = macro._bis_table(bis_cfg(srv), [])
+        self.assertNotIn(("BR", "政策利率"), table)
 
 
 if __name__ == "__main__":

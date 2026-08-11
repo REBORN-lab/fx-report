@@ -86,6 +86,51 @@ def _latest_and_prev_distinct(obs):
     return value, period, None, None
 
 
+# BIS 用 XM 表示欧元区,仓库内部用 EA。写死映射,不做字符串启发式。
+BIS_AREA = {"US": "US", "EA": "XM", "PH": "PH", "TH": "TH", "BR": "BR"}
+# (指标名, 端点配置键, dataflow 名, 前值口径)
+BIS_DATAFLOWS = (
+    ("政策利率", "bis_cbpol_url", "WS_CBPOL", "distinct"),
+    ("CPI 同比", "bis_cpi_url", "WS_LONG_CPI", "observation"),
+)
+
+
+def _bis_table(cfg, gaps):
+    """返回 {(economy, indicator): row}。
+
+    批量取数(两次 GET 覆盖五经济体)但**逐指标**可缺席:某经济体没进表,
+    调用方查不到就自然回落 DBnomics。三种降级路径(整体失败 / 缺必需列 /
+    缺某经济体)因此共用同一条代码路径,不需要额外分支。
+
+    任何失败都记 gap 并让受影响指标缺席,绝不上抛(采集层硬契约)。
+    """
+    endpoints = cfg.get("endpoints")
+    endpoints = endpoints if isinstance(endpoints, dict) else {}
+    out = {}
+    for indicator, key, dataflow, prev_mode in BIS_DATAFLOWS:
+        url = endpoints.get(key)
+        if not isinstance(url, str) or not url:
+            continue        # 未配置 = 有意停用(与 feeds.py 同约定),删 URL 即回滚
+        try:
+            by_area = _bis_parse(util.fetch_text(url, cfg["timeout_s"]))
+        except Exception as e:
+            gaps.append(util.make_gap("bis", dataflow,
+                                      "%s: %s" % (type(e).__name__, e)))
+            continue
+        pick = (_latest_and_prev_distinct if prev_mode == "distinct"
+                else _latest_and_prev_observation)
+        for economy, area in BIS_AREA.items():
+            value, period, prev, prev_period = pick(by_area.get(area) or [])
+            if value is None:
+                continue    # 该经济体缺席或全 NaN → 只有它回落
+            out[(economy, indicator)] = {
+                "value": value, "prev": prev, "period": period,
+                "prev_period": prev_period, "source": "bis",
+                "series_id": "BIS/%s/%s" % (dataflow, area),
+            }
+    return out
+
+
 def collect(cfg):
     gaps, indicators = [], []
     tracked = [(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]]
