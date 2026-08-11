@@ -27,8 +27,13 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
 
     ## USD
     - 昨日事件 top:<title>(<domain>)……至多 3 条;tone_avg: <值或 无>
+      (选取:FX/货币政策相关优先;与共同主线方向相反的标题至少保留 1 条,
+      快照中没有反向标题则不强凑)
     - 数据发布:<indicator> 最新 <value> 前值 <prev> 期 <period>(只列 is_new_release
-      为 true 或与年历命中相关的;没有写"无")
+      为 true 或与年历命中相关的;没有写"无"。例外:本币种"昨日事件 top"为空时,
+      可列快照 macro 中该经济体的政策利率与最新 CPI 各一行,行尾标"(存量背景,
+      非昨日发布)",给该币种的触发条件留数值锚点——数字仍逐字抄快照;
+      该经济体 macro 也无值时照旧写"无")
     - 汇率变动:primary <primary>,prev <prev_primary>(USD 为基准货币,本行写"—")
     - 年历命中:<bank> <event>(<date>)(没有写"无")
     - 缺漏:<gaps 中 scope 为本币种或 all 的条目>(没有写"无")
