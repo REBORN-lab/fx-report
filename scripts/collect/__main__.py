@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 COLLECTOR_VERSION = "0.1.0"
 
 
-SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}$")
+SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _load_history(data_dir, date_str, limit=derive_mod.HISTORY_SPAN):
@@ -30,7 +30,7 @@ def _load_history(data_dir, date_str, limit=derive_mod.HISTORY_SPAN):
         if len(out) >= limit:
             break
         name = os.path.basename(path)[:-len(".json")]
-        if not SNAPSHOT_NAME_RE.match(name):
+        if not SNAPSHOT_NAME_RE.fullmatch(name):
             continue    # 误放的非快照文件不得占用历史窗口
         if name >= date_str:
             continue

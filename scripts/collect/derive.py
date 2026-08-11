@@ -25,6 +25,9 @@ EMPTY_RATE_DERIVED = {
 }
 EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
                    "cpi": None, "cpi_period": None}
+EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None}
+# 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
+# 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
 
 
 def _num(v):
@@ -46,7 +49,12 @@ def _entry_of(snap, currency):
 
 def _fixing_key(ref, value):
     """一次定盘的身份。定盘日已知时用它;未知(存量快照)时退回按值去重——
-    同值极大概率是同一次定盘被读了两遍(回填,或早于定盘时点的重复运行)。"""
+    同值极大概率是同一次定盘被读了两遍(回填,或早于定盘时点的重复运行)。
+
+    两族 key 刻意不互通:已知定盘日走 ref 分支,保证"真实两次定盘恰好同价"
+    不被误合并。代价是过渡期(一侧已知、一侧是存量快照)可能把同一次定盘
+    多算一次,随存量快照滚出历史窗口自愈。
+    """
     return ("ref", ref) if isinstance(ref, str) else ("val", value)
 
 
@@ -156,7 +164,7 @@ def _events_derived(payload, history, gaps):
                                if (count is not None and prev is not None) else None,
             }
         except Exception as e:
-            out[currency] = {"count": None, "count_prev": None, "count_delta": None}
+            out[currency] = dict(EMPTY_EVENTS_DERIVED)
             gaps.append(util.make_gap("derive", currency,
                                       "%s: %s" % (type(e).__name__, e)))
     return out

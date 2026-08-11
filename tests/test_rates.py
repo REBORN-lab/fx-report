@@ -349,6 +349,19 @@ class RefDateTest(unittest.TestCase):
             out, _ = rates.collect(cfg)
         self.assertEqual(out["PHP"]["prev_ref_date"], "2026-08-07")
 
+    def test_prev_ref_date_is_per_currency(self):
+        """上一份快照中降级过的币种 ref_date 为 None,不得被全快照共用值顶替——
+        否则 derive 与 review.py 会对同一币种给出相反的"参考价未更新"结论。"""
+        prev = {"rates": {"PHP": {"primary": 60.9},                       # 当时降级到副源
+                          "EUR": {"primary": 0.92, "ref_date": "2026-08-07"}}}
+        with FixtureServer({"/frank": (200, json.dumps(FRANK)),
+                            "/exch": (200, json.dumps(EXCH))}) as srv:
+            cfg = cfg_with(srv)
+            cfg["prev_snapshot"] = prev
+            out, _ = rates.collect(cfg)
+        self.assertIsNone(out["PHP"]["prev_ref_date"])
+        self.assertEqual(out["EUR"]["prev_ref_date"], "2026-08-07")
+
     def test_prev_ref_date_null_for_legacy_snapshot(self):
         prev = {"rates": {"PHP": {"primary": 60.9}}}   # 本变更之前生成,无 rates_ref_date
         with FixtureServer({"/frank": (200, json.dumps(FRANK)),

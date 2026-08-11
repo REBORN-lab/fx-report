@@ -96,6 +96,27 @@ class RangeTest(unittest.TestCase):
         d, _ = derive.derive(payload({"PHP": rate_entry(60.75, ref_date="2026-08-11")}), hist)
         self.assertEqual(d["rates"]["PHP"]["range_5d_days"], 2)
 
+    def test_distinct_known_ref_dates_with_equal_price_not_merged(self):
+        """两次真实定盘恰好同价 → 必须算 2 次,不得按值误合并。"""
+        hist = [hist_snap(60.75, "2026-08-10")]
+        d, _ = derive.derive(payload({"PHP": rate_entry(60.75, ref_date="2026-08-11")}), hist)
+        self.assertEqual(d["rates"]["PHP"]["range_5d_days"], 2)
+
+    def test_unknown_ref_dates_with_distinct_prices_not_merged(self):
+        """两份存量快照价格不同 → 是两次定盘,按值去重不得把它们并成一条。"""
+        hist = [{"rates": {"PHP": {"primary": 60.80}}},
+                {"rates": {"PHP": {"primary": 60.867}}}]
+        d, _ = derive.derive(payload({"PHP": rate_entry(60.75, ref_date=None)}), hist)
+        self.assertEqual(d["rates"]["PHP"]["range_5d_days"], 3)
+
+    def test_history_span_wide_enough_for_shared_fixings(self):
+        """窗口须宽于 RANGE_DAYS:周末让相邻快照共享定盘,窗口不够就永远凑不满。"""
+        self.assertGreater(derive.HISTORY_SPAN, derive.RANGE_DAYS)
+        hist = ([hist_snap(60.0, "2026-08-10")] * 3
+                + [hist_snap(60.1 + i, "2026-08-%02d" % (9 - i)) for i in range(4)])
+        d, _ = derive.derive(payload({"PHP": rate_entry(60.75)}), hist)
+        self.assertEqual(d["rates"]["PHP"]["range_5d_days"], 5)
+
     def test_no_history_uses_today_only(self):
         d, _ = derive.derive(payload({"PHP": rate_entry(60.75)}), [])
         r = d["rates"]["PHP"]
@@ -146,6 +167,17 @@ class EventsCountTest(unittest.TestCase):
         d, _ = derive.derive(
             payload({"PHP": rate_entry(60.75)}, events={"PHP": {"articles": []}}), [])
         self.assertEqual(d["events"]["PHP"]["count"], 0)
+
+    def test_failure_today_with_successful_prev(self):
+        """今天 429、昨天采到:count 为 null 而 count_prev 保留数字,
+        相减必须被守卫挡住(否则 None - 8 会被 except 吞成假 gap)。"""
+        d, gaps = derive.derive(payload({"PHP": rate_entry(60.75)}, events={}),
+                                [hist_snap(60.0, "2026-08-10", article_count=8)])
+        e = d["events"]["PHP"]
+        self.assertIsNone(e["count"])
+        self.assertEqual(e["count_prev"], 8)
+        self.assertIsNone(e["count_delta"])
+        self.assertEqual(gaps, [])
 
     def test_base_currency_usd_covered(self):
         """USD 不在 rates 里(它是基准),但 GDELT 采它 —— derived.events 必须有 USD,
