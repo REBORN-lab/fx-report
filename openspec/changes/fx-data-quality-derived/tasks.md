@@ -13,9 +13,9 @@
 
 ## 3. 派生指标
 
-- [ ] 3.1 新建 scripts/collect/derive.py:日涨跌%(按 ref_date 去重,ref_date 未更新时为 null)、5 运行日高低区间、双源偏差前值、事件计数变化;全部 isinstance 门 + 有限性检查,输入不可用即该项 null。测试覆盖:正常、ref_date 未更新、历史不足 5 日、坏输入(NaN/bool/非数值)
-- [ ] 3.2 derive.py 实际利率(政策利率−CPI)强制携带 `rate_period`/`cpi_period` 双期号原文;任一缺失即整项 null。测试覆盖:双值齐全、缺一、期号缺失
-- [ ] 3.3 __main__.py 在快照组装末尾调用 derive 并写入 `derived` 节(读近 N 份历史快照);derive 内部异常一律转 gap 不上抛。测试覆盖:端到端快照含 derived、derive 抛异常时快照仍落盘且记 gap
+- [x] 3.1 新建 scripts/collect/derive.py:日涨跌%(按 ref_date 去重,ref_date 未更新时为 null)、5 运行日高低区间、双源偏差前值、事件计数变化;全部 isinstance 门 + 有限性检查,输入不可用即该项 null。测试覆盖:正常、ref_date 未更新、历史不足 5 日、坏输入(NaN/bool/非数值)
+- [x] 3.2 derive.py 实际利率(政策利率−CPI)强制携带 `rate_period`/`cpi_period` 双期号原文;任一缺失即整项 null。测试覆盖:双值齐全、缺一、期号缺失
+- [x] 3.3 __main__.py 在快照组装末尾调用 derive 并写入 `derived` 节(读近 N 份历史快照);derive 内部异常一律转 gap 不上抛。测试覆盖:端到端快照含 derived、derive 抛异常时快照仍落盘且记 gap
 
 ## 4. 报告侧与文档
 
