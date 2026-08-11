@@ -12,40 +12,64 @@ KEYWORDS = {
     "THB": '("Thai baht" OR "Bank of Thailand")',
     "BRL": '("Brazilian real" OR "Banco Central do Brasil" OR Copom)',
 }
-DEFAULT_DELAY_S = 5      # spec 硬约束:生产串行间隔 ≥5 秒
-DEFAULT_BACKOFF_S = 30   # 软限速退避
+DEFAULT_DELAY_S = 20     # spec 硬约束:生产串行间隔 ≥5 秒;默认 20 秒(429 缓解)
+DEFAULT_BACKOFF_S = 30   # 限速退避
 RATE_LIMIT_MARKERS = ("rate limit", "too many", "quota", "please try again", "throttl")
 MAX_RECORDS = 8
+
+
+def query_order(date_str):
+    """五币种查询顺序,按采集日期确定性轮转。
+
+    限流下总是尾部的几组挂掉;固定顺序会让同一批币种(实测:PHP/THB/BRL)
+    天天缺事件。轮转把损失摊到各币种,且同日重跑顺序不变(可断言、可复现)。
+    """
+    keys = list(KEYWORDS)
+    offset = sum(ord(ch) for ch in str(date_str)) % len(keys)
+    return keys[offset:] + keys[:offset]
+
+
+def _dedupe_titles(articles):
+    """同币种内标题完全相同的只留首条;标题缺失(None)不构成重复。"""
+    seen, out = set(), []
+    for a in articles:
+        title = a.get("title")
+        if isinstance(title, str):
+            if title in seen:
+                continue
+            seen.add(title)
+        out.append(a)
+    return out
 
 
 def collect(cfg):
     gaps, out = [], {}
     first = True
-    for currency, query in KEYWORDS.items():
+    for currency in query_order(cfg["date"]):
         if not first:
             time.sleep(cfg["gdelt_delay_s"])
         first = False
-        articles, err = _query_with_retry(cfg, query)
+        articles, err = _query_with_retry(cfg, KEYWORDS[currency])
         if err is not None:
             gaps.append(util.make_gap("gdelt", currency, err))
             continue
-        tones = [a["tone"] for a in articles
-                 if isinstance(a.get("tone"), (int, float))
-                 and not isinstance(a.get("tone"), bool)]
-        out[currency] = {
-            "articles": articles,
-            "tone_avg": round(sum(tones) / len(tones), 2) if tones else None,
-        }
+        out[currency] = {"articles": _dedupe_titles(articles)}
     return out, gaps
+
+
+def _is_rate_limited(err):
+    """软限速(HTTP 200 + 限速正文)与硬限流(HTTP 429)统一走退避重试。"""
+    return err == "soft-rate-limited" or (isinstance(err, str) and "429" in err)
 
 
 def _query_with_retry(cfg, query):
     articles, err = _fetch(cfg, query)
-    if err == "soft-rate-limited":
+    if _is_rate_limited(err):
         time.sleep(cfg["gdelt_backoff_s"])
+        first_err = err
         articles, err = _fetch(cfg, query)
-        if err == "soft-rate-limited":
-            return None, "rate-limited after retry"
+        if _is_rate_limited(err):
+            return None, "rate-limited after retry (%s)" % (err or first_err)
     return articles, err
 
 
@@ -85,7 +109,8 @@ def _fetch(cfg, query):
     raw = doc.get("articles")
     if not isinstance(raw, list):
         raw = []  # articles 非 list → 视为空
+    # tone 不落盘:artlist 端点不返回该字段(实测 40/40 为 null),留着即误导
     arts = [{"title": a.get("title"), "url": a.get("url"), "domain": a.get("domain"),
-             "seendate": a.get("seendate"), "tone": a.get("tone")}
+             "seendate": a.get("seendate")}
             for a in raw if isinstance(a, dict)]  # 非 dict 元素 → 跳过
     return arts, None

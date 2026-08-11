@@ -26,7 +26,7 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
     -(≤3 条候选,基于快照事件与年历命中归纳)
 
     ## USD
-    - 昨日事件 top:<title>(<domain>)……至多 3 条;tone_avg: <值或 无>
+    - 昨日事件 top:<title>(<domain>)……至多 3 条
       (选取:FX/货币政策相关优先;与任一共同主线候选方向相反的标题至少
       保留 1 条,快照中没有反向标题则不强凑)
     - 数据发布:<indicator> 最新 <value> 前值 <prev> 期 <period>(只列 is_new_release
