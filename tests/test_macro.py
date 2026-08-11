@@ -468,6 +468,14 @@ class BisParseTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             macro._bis_parse("")
 
+    def test_obs_value_contract_pinned(self):
+        """直接钉住 _obs_value 的契约。注意:字符串 NaN 判定与 math.isfinite
+        互为冗余(变异测试实测),本用例钉的是**行为**,不是某一道门。"""
+        for raw in ("NaN", "nan", "NAN", "inf", "-inf", "", "  ", None, "abc"):
+            self.assertIsNone(macro._obs_value(raw), raw)
+        self.assertEqual(macro._obs_value("1"), 1.0)        # 无小数点
+        self.assertEqual(macro._obs_value(" 14.25 "), 14.25)
+
     def test_non_numeric_obs_value_dropped(self):
         text = ("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
                 "D,BR,2026-06-17,abc\n"

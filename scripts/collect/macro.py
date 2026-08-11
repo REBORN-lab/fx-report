@@ -19,9 +19,14 @@ BIS_REQUIRED_COLS = ("REF_AREA", "TIME_PERIOD", "OBS_VALUE")
 
 
 def _obs_value(raw):
-    """BIS 的非交易日写字符串 "NaN"。必须在**转 float 之前**按字符串判掉——
-    float("NaN") 会成功,随后 NaN 的任何比较都是 False,会让"取最新非 NaN"
-    与"找上一个不同值"同时给出错误结果。实测也有 "1" 这种无小数点形态。"""
+    """BIS 的非交易日写字符串 "NaN";实测也有 "1" 这种无小数点形态。
+
+    两道门:字符串判定与 math.isfinite。**变异测试显示字符串判定单独去掉不会
+    改变行为**(float("NaN") 后被 isfinite 挡住),即它是等价变异而非承重逻辑。
+    保留它是纵深防御——真正的危险是 NaN 逃出本函数:它的任何比较都是 False,
+    会同时毁掉"取最新非 NaN"与"找上一个不同水平"两处判定。isfinite 若日后被
+    当成冗余删掉,这道字符串门就是最后一层。
+    """
     s = (raw or "").strip()
     if not s or s.upper() == "NAN":
         return None
