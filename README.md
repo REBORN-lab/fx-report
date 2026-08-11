@@ -37,6 +37,26 @@ skill 会按"无快照不生成报告"前置约束正确终止(零产物)——`
 已知行为:无头 + 白名单环境下 heredoc 可能被命令安全解析器拦截,skill 的
 决策日志步骤会自动改用临时 JSON 文件经 stdin 重定向(等效、数据正确,无需干预)。
 
+## 数据源(2026-08-11 本机探针实测定案)
+
+| 用途 | 源 | 状态 |
+|---|---|---|
+| 汇率主源 | Frankfurter(ECB 参考价) | ✅ 每工作日约 16:00 CET 定盘 |
+| 汇率副源 | exchange-api(jsDelivr / Cloudflare) | ✅ |
+| 事件 | GDELT DOC 2.0 | ✅ 但本机 IP 长期 429,覆盖不稳定 |
+| 官方公告 | Fed press RSS、ECB press RSS | ✅ 零 key |
+| 美国 CPI | BLS 公共 API v1(零 key) | ✅ 最新观测比 DBnomics 镜像新约 11 个月;同比由脚本按同月计算 |
+| 其余宏观 | DBnomics(IMF/BIS/ECB 口径) | ⚠ 滞后 219–498 天,快照 `lag_months` 显式披露 |
+
+**探针失败、故意未接入的源**(不写进 `config/endpoints.json`,避免每日缺漏噪音):
+
+- BCB(巴西央行)SGS API 与新闻 feed:全域 HTTP 502,两轮重试一致
+- BSP(菲律宾央行)RSS / 媒体发布页:404
+- BOT(泰国央行):无 feed,仅 HTML 页
+- ECB Data Portal HICP:可达,但最新观测与 DBnomics 同为 2025-12 —— 滞后来自源本身,换源无收益
+
+这四条若日后可达,补进 `endpoints.json` 与 `collect/feeds.py` 的 `FEEDS` 表即可,无需改其余代码。
+
 只跑采集(不生成报告):
 
     python3 -m scripts.collect --date 2026-08-10

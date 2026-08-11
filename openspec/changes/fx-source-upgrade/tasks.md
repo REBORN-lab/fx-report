@@ -12,5 +12,5 @@
 
 ## 3. 报告侧与回归
 
-- [ ] 3.1 `skills/fx-daily-report/SKILL.md`:要点表加"官方公告"行(引 `official`,注明发布方与日期);数据发布行要求带 `lag_months`;README 数据源节补 Fed/ECB RSS 与 BLS,并写明 BCB/BSP/BOT 探针失败
-- [ ] 3.2 全量测试通过;真实跑一次采集确认 official 与 lag_months 落盘;既有报告重跑 `check_report.py` 退出码不变
+- [x] 3.1 `skills/fx-daily-report/SKILL.md`:要点表加"官方公告"行(引 `official`,注明发布方与日期);数据发布行要求带 `lag_months`;README 数据源节补 Fed/ECB RSS 与 BLS,并写明 BCB/BSP/BOT 探针失败
+- [x] 3.2 全量测试通过;真实跑一次采集确认 official 与 lag_months 落盘;既有报告重跑 `check_report.py` 退出码不变
