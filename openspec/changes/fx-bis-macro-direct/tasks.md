@@ -24,7 +24,7 @@
 - [x] 4.2 覆盖三条降级路径:BIS 整体不可达、缺必需列、缺某经济体——各自的回落粒度与 gap 记录
 - [x] 4.3 覆盖 `NaN` 处理与 `prev` 口径:末端 NaN、全 NaN、有变动、无变动(`prev` 为 null 而非等值)
 - [x] 4.4 覆盖换源标记:切换当日 10 个指标带 `source_changed_from`、`is_new_release` 为 false;回落方向同样标记
-- [ ] 4.5 畸形输入不崩:CSV 空响应、列名大小写变化、`OBS_VALUE` 非数值、`REF_AREA` 含未知经济体、CSV 体积异常
+- [x] 4.5 畸形输入不崩:CSV 空响应、列名大小写变化、`OBS_VALUE` 非数值、`REF_AREA` 含未知经济体、CSV 体积异常
 
 ## 5. 收尾
 
