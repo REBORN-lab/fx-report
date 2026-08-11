@@ -660,6 +660,60 @@ class PriorityTest(unittest.TestCase):
                if (r["economy"], r["indicator"]) == ("BR", "政策利率")][0]
         self.assertEqual(row["source_changed_from"], "dbnomics")
         self.assertFalse(row["is_new_release"])
+class BisRobustnessTest(unittest.TestCase):
+    """外部网络数据可能任意畸形;采集层不得抛出,只能转 gap。"""
+
+    def _collect(self, cbpol_body):
+        routes = {"/bis/cbpol": (200, cbpol_body), "/bis/cpi": (200, CPI_CSV),
+                  "/db/": (200, json.dumps(SERIES_OK))}
+        with FixtureServer(routes) as srv:
+            return macro.collect(bis_cfg(srv))
+
+    def test_empty_body(self):
+        payload, gaps = self._collect("")
+        self.assertTrue(any(g["source"] == "bis" for g in gaps))
+        self.assertTrue(payload["indicators"])          # 其余指标照常产出
+
+    def test_html_error_page(self):
+        payload, gaps = self._collect("<html><body>503</body></html>")
+        self.assertTrue(any(g["source"] == "bis" for g in gaps))
+
+    def test_unknown_ref_area_ignored(self):
+        body = ("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+                "D,ZZ,2026-06-17,9.9\nD,BR,2026-06-17,14.25\n")
+        payload, _ = self._collect(body)
+        rows = {(r["economy"], r["indicator"]): r for r in payload["indicators"]}
+        self.assertEqual(rows[("BR", "政策利率")]["value"], 14.25)
+        self.assertNotIn(("ZZ", "政策利率"), rows)
+
+    def test_bom_before_required_column(self):
+        """BOM 只污染**首列**列名。必需列排在首位时,不剥离 BOM 就会被判成缺列。
+        (BOM 在 FREQ 前是等价变异——那不是必需列,测不出任何东西。)"""
+        body = ("\ufeffREF_AREA,TIME_PERIOD,OBS_VALUE,FREQ\r\n"
+                "BR,2026-06-17,14.25,D\r\n")
+        payload, gaps = self._collect(body)
+        self.assertEqual([g for g in gaps if g["source"] == "bis"], [])
+        rows = {(r["economy"], r["indicator"]): r for r in payload["indicators"]}
+        self.assertEqual(rows[("BR", "政策利率")]["value"], 14.25)
+
+    def test_short_row_yields_none_fields(self):
+        """字段数少于表头时 DictReader 产出 None,类型门不设就会拿 None 当 str。"""
+        body = ("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+                "D,BR,2026-06-17,14.25\n"
+                "D\n")                       # 短行:REF_AREA/TIME_PERIOD 均为 None
+        got = macro._bis_parse(body)
+        self.assertEqual(got, {"BR": [("2026-06-17", 14.25)]})
+
+    def test_blank_ref_area_dropped(self):
+        body = ("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+                "D,,2026-06-17,14.25\n"
+                "D,BR,2026-06-18,14.0\n")
+        self.assertEqual(macro._bis_parse(body), {"BR": [("2026-06-18", 14.0)]})
+
+    def test_collect_never_raises_on_any_body(self):
+        for body in ("", "\x00\x01", "a,b\n1,2\n", "[]", "null"):
+            payload, gaps = self._collect(body)
+            self.assertIsInstance(payload["indicators"], list)
 
 
 if __name__ == "__main__":
