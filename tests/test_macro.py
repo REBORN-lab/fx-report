@@ -474,6 +474,41 @@ class BisParseTest(unittest.TestCase):
                 "D,BR,2026-06-18,\n"
                 "D,BR,2026-06-19,inf\n")
         self.assertEqual(macro._bis_parse(text), {})
+class PrevSemanticsTest(unittest.TestCase):
+    """日频政策利率绝大多数相邻观测相同,取"上一个观测"会恒等于当前值,
+    对报告零信息(14.25 → 14.25)。"""
+
+    RATES = [("2026-06-15", 14.5), ("2026-06-16", 14.5),
+             ("2026-06-17", 14.25), ("2026-06-18", 14.25)]
+
+    def test_distinct_prev_skips_equal_observations(self):
+        got = macro._latest_and_prev_distinct(self.RATES)
+        self.assertEqual(got, (14.25, "2026-06-18", 14.5, "2026-06-16"))
+
+    def test_prev_period_is_last_day_of_old_level(self):
+        """要说的是"上次变动前是 A,一直到 X 日",故取旧水平的**末日**。"""
+        self.assertEqual(macro._latest_and_prev_distinct(self.RATES)[3], "2026-06-16")
+
+    def test_no_change_in_window_yields_none_not_equal_value(self):
+        """等值会被读成"持平",而事实是"窗口内没看到变动"。"""
+        flat = [("2026-06-15", 14.25), ("2026-06-16", 14.25)]
+        value, period, prev, prev_period = macro._latest_and_prev_distinct(flat)
+        self.assertEqual((value, period), (14.25, "2026-06-16"))
+        self.assertIsNone(prev)
+        self.assertIsNone(prev_period)
+
+    def test_single_observation(self):
+        got = macro._latest_and_prev_distinct([("2026-06-15", 14.25)])
+        self.assertEqual(got, (14.25, "2026-06-15", None, None))
+
+    def test_empty_series(self):
+        self.assertEqual(macro._latest_and_prev_distinct([]), (None, None, None, None))
+
+    def test_monthly_prev_takes_previous_observation_even_if_equal(self):
+        """CPI 同比是月频,相邻月份即便同值也是两次独立发布。"""
+        cpi = [("2026-05", 3.1), ("2026-06", 3.1)]
+        self.assertEqual(macro._latest_and_prev_observation(cpi),
+                         (3.1, "2026-06", 3.1, "2026-05"))
 
 
 if __name__ == "__main__":

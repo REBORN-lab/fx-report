@@ -58,6 +58,34 @@ def _bis_parse(text):
     return out
 
 
+def _latest_and_prev_observation(obs):
+    """月频序列:prev 取上一个观测。相邻月份即便同值也是两次独立发布。"""
+    if not obs:
+        return None, None, None, None
+    period, value = obs[-1]
+    if len(obs) < 2:
+        return value, period, None, None
+    prev_period, prev = obs[-2]
+    return value, period, prev, prev_period
+
+
+def _latest_and_prev_distinct(obs):
+    """日频序列:prev 取上一个**与当前值不同**的水平,及**该水平的末日**。
+
+    取"上一个观测"会恒等于当前值(政策利率绝大多数日子不变),对报告零信息。
+    窗口内始终未变动时 prev 为 None —— 绝不等于 value,等值会被读成"持平",
+    而事实是"回溯窗口内没看到变动"。取末日是因为要说的是"上次变动前是 A,
+    一直到 X 日"。
+    """
+    if not obs:
+        return None, None, None, None
+    period, value = obs[-1]
+    for prev_period, prev in reversed(obs[:-1]):
+        if prev != value:
+            return value, period, prev, prev_period
+    return value, period, None, None
+
+
 def collect(cfg):
     gaps, indicators = [], []
     tracked = [(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]]
