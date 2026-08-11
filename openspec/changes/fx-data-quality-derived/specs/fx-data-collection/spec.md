@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: 五币种汇率双源采集与交叉校验
-系统 SHALL 从 Frankfurter(主源)获取 USD 兑 PHP/THB/BRL/EUR 的日频汇率,并 SHALL 用 exchange-api 版本化日期端点做异源交叉校验;同一币种两源偏差超过 0.5% 时 SHALL 在快照中标记该币种数据可疑并保留两源数值。系统 SHALL 保存主源响应中的参考价定盘日期(`rates_ref_date`)与上一份快照的对应日期(每币种 `prev_ref_date`),使"汇率是否真的变化过"在数据层可判定;主源响应缺该字段时记为 null,采集继续。
+系统 SHALL 从 Frankfurter(主源)获取 USD 兑 PHP/THB/BRL/EUR 的日频汇率,并 SHALL 用 exchange-api 版本化日期端点做异源交叉校验;同一币种两源偏差超过 0.5% 时 SHALL 在快照中标记该币种数据可疑并保留两源数值。系统 SHALL 逐币种保存主源响应中的参考价定盘日期(`ref_date`)与上一份快照的对应日期(`prev_ref_date`),使"汇率是否真的变化过"在数据层可判定;主源响应缺该字段、该币种降级到副源、或双源皆失败时 `ref_date` 记为 null,采集继续。
 
 #### Scenario: 双源正常
 - **WHEN** Frankfurter 与 exchange-api 均可用且各币种偏差 ≤ 0.5%
@@ -19,7 +19,11 @@
 
 #### Scenario: 参考价定盘日期落盘
 - **WHEN** Frankfurter 响应含参考价定盘日期字段
-- **THEN** 快照顶层记录 `rates_ref_date`,各币种记录上一份快照的 `prev_ref_date`
+- **THEN** 各币种条目记录该 `ref_date`,并记录上一份快照的 `prev_ref_date`
+
+#### Scenario: 降级到副源时无参考日期
+- **WHEN** 某币种因主源失败而采用 exchange-api 数值
+- **THEN** 该币种 `ref_date` 为 null(主源定盘日期对该数值不成立)
 
 #### Scenario: 存量快照无参考日期
 - **WHEN** 上一份快照不含参考日期字段(本变更之前生成)
@@ -64,7 +68,7 @@
 - **THEN** 快照 `derived` 节含日涨跌百分比、近 5 运行日高低区间、双源偏差前值、事件计数变化与实际利率
 
 #### Scenario: 参考价未更新时不计涨跌
-- **WHEN** 当日 `rates_ref_date` 与上一份快照相同
+- **WHEN** 当日某币种 `ref_date` 与其 `prev_ref_date` 相同
 - **THEN** 该币种日涨跌百分比记为 null(参考价未更新,不构成价格变动)
 
 #### Scenario: 实际利率携带双期号

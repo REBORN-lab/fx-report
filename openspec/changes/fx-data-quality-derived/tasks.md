@@ -2,7 +2,7 @@
 
 ## 1. 参考日期与连平可判定
 
-- [ ] 1.1 rates.py 保存 Frankfurter 响应 `date` 为快照顶层 `rates_ref_date`,每币种 entry 增 `prev_ref_date`(取自上一份快照);缺失时为 null。测试覆盖:正常响应、响应无 date 字段、prev 快照无该字段(存量兼容)
+- [x] 1.1 rates.py 逐币种保存 Frankfurter 响应 `date` 为 `ref_date`,每币种 entry 增 `prev_ref_date`(取自上一份快照);缺失时为 null。测试覆盖:正常响应、响应无 date 字段、prev 快照无该字段(存量兼容)
 - [ ] 1.2 review.py 三分支判定:ref_date 相等 → 材料行输出"参考价未更新(非工作日)";不同 → 正常比较;任一缺失 → 旧行为。测试覆盖三分支 + 存量快照
 
 ## 2. GDELT 限流缓解

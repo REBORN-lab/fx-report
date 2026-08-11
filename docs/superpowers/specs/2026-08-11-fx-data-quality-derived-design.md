@@ -16,7 +16,7 @@ canonical_spec: openspec
 
 ```
 python3 -m scripts.collect --date DATE
-  ├─ collect/rates.py      + rates_ref_date(顶层)/ prev_ref_date(每币种)
+  ├─ collect/rates.py      + ref_date / prev_ref_date(逐币种)
   ├─ collect/macro.py      (不变)
   ├─ collect/events.py     + 硬 429 重试 / 顺序轮转 / 标题去重 / − tone
   ├─ collect/calendar.py   (不变)
@@ -45,7 +45,7 @@ skills/fx-daily-report/SKILL.md
 }
 ```
 
-- `chg_pct_1d`:`round((today − prev) / prev × 100, 3)`;`rates_ref_date == prev_ref_date` 时为 null(参考价未更新不构成价格变动)
+- `chg_pct_1d`:`round((today − prev) / prev × 100, 3)`;`ref_date == prev_ref_date` 时为 null(参考价未更新不构成价格变动)
 - `range_5d_*`:取最近 5 个**不同 ref_date** 的 primary(不足 5 个用现有个数,`range_5d_days` 记实际参与天数);保留原值精度不 round
 - `real_rate.value`:`round(policy_rate − cpi, 3)`;双期号原文强制携带,任一缺失整项 null
 - `deviation_pct_prev`:上一份快照该币种的 `deviation_pct`,供报告谈"偏差在扩大/收敛"
@@ -58,7 +58,7 @@ skills/fx-daily-report/SKILL.md
 - 每个子计算独立 try,内部异常 → `util.make_gap("derive", <scope>, ...)` 并该项 null;**绝不向上抛**(与既有采集模块同一硬契约)
 - 全部数值访问前过 isinstance 门,bool 排除在数值之外,`math.isfinite` 检查;除法前分母零检查
 
-**rates.py**:`_fetch_primary` 额外返回响应 `date`;`_prev_ref_date` 从 `cfg["prev_snapshot"]` 读 `rates_ref_date`
+**rates.py**:`_fetch_primary` 额外返回响应 `date`;逐币种写 `ref_date`(降级到副源或双源皆失败的币种为 null —— 主源定盘日期对该数值不成立,这是实现期发现的边界,顶层单值表达不了);`_prev_ref_date` 从上一份快照任一币种条目读 `ref_date`
 
 **events.py**:
 - `_query_with_retry` 的重试触发条件扩为 `err == "soft-rate-limited" or "429" in str(err)`
