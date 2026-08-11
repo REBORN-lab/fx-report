@@ -1,0 +1,14 @@
+{
+  "change": "fx-source-upgrade",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "super-coding-handoff.sh",
+  "context_hash": "f9e51070a44ac0c9abdd68f142d610a56f2c4da03b34e88e98e775835fb4ce52",
+  "files": [
+    { "path": "openspec/changes/fx-source-upgrade/proposal.md", "sha256": "78055bfd56a26f0f837dd2d28b55cf1f22cc1d9311645be2ac49187b06f756ae" },
+    { "path": "openspec/changes/fx-source-upgrade/design.md", "sha256": "f56f848a1a208df17a91bbe198fbc3789369a255c36077229e285fec56801cf7" },
+    { "path": "openspec/changes/fx-source-upgrade/tasks.md", "sha256": "4bc8bb1bbed8aa5136d705038d92997cbfb6c6ecb412c09845ea715227b55bd6" },
+    { "path": "openspec/changes/fx-source-upgrade/specs/fx-data-collection/spec.md", "sha256": "14b8e05c2c6ce034888890ccfdef4bdc425b2a8c6d9a7e08c6c52a8b02b1a05d" }
+  ]
+}
