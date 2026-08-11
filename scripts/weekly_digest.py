@@ -18,6 +18,7 @@ from datetime import date
 if __package__ in (None, ""):   # 直接 `python3 scripts/weekly_digest.py` 时补 path
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from scripts.collect.feeds import MAX_ITEMS as OFFICIAL_DAILY_CAP
 from scripts.fixings import distinct_fixings, num as _num
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -73,7 +74,7 @@ def _events_digest(snapshots, currencies):
     out = {}
     for currency in currencies:
         arts_total, official_total = 0, 0
-        with_data, failed, official_days = 0, 0, 0
+        with_data, failed, official_days, capped_days = 0, 0, 0, 0
         for snap in snapshots:
             events = snap.get("events")
             entry = events.get(currency) if isinstance(events, dict) else None
@@ -87,13 +88,21 @@ def _events_digest(snapshots, currencies):
             if isinstance(official, list) and official:
                 official_total += len(official)
                 official_days += 1
+                if len(official) >= OFFICIAL_DAILY_CAP:
+                    capped_days += 1
         out[currency] = {
             # 一天都没采到 → null:0 会被读成"确实没有新闻"
             "articles_total": arts_total if with_data else None,
             "official_total": official_total if official_days else None,
+            # official 每日有上限,顶到上限的天数说明"至少这么多",不是计数;
+            # 覆盖天数说明这个和是几天的样本 —— 两者不给,读者会把
+            # "一天采到 3 条(上限)" 读成 "本周共 3 条公告"
+            "official_capped_days": capped_days,
+            "official_daily_cap": OFFICIAL_DAILY_CAP,
             "days_with_data": with_data,
             "days_gdelt_failed": failed,
             "days_with_official": official_days,
+            "days": len(snapshots),
         }
     return out
 
@@ -111,6 +120,27 @@ def _gaps_by_source(snapshots):
             if isinstance(source, str) and source:
                 out[source] = out.get(source, 0) + 1
     return out
+
+
+def _verdict_details(log_entries, dates):
+    """明细行的脚本来源:删掉 stats 后若不提供,周报的逐条明细将无出处。"""
+    if not dates:
+        return []
+    lo, hi = min(dates), max(dates)
+    out = []
+    for e in log_entries:
+        if not isinstance(e, dict):
+            continue
+        date_, currency = e.get("date"), e.get("currency")
+        if not isinstance(date_, str) or not (lo <= date_ <= hi):
+            continue
+        review = e.get("review")
+        verdict = review.get("verdict") if isinstance(review, dict) else None
+        out.append({"date": date_,
+                    "currency": currency if isinstance(currency, str) else None,
+                    "verdict": verdict if isinstance(verdict, str) and verdict in VERDICTS
+                    else "未判定"})
+    return sorted(out, key=lambda r: (r["date"], r["currency"] or ""))
 
 
 def _verdicts(log_entries, dates):
@@ -140,27 +170,35 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
     表示决策日志不可用(与"日志为空"区分)。返回 (digest, problems)。"""
     good, problems = [], []
     for s in snapshots:
-        if isinstance(s, dict):
-            good.append(s)
-        else:
+        if not isinstance(s, dict):
             problems.append("skipped non-dict snapshot: %s" % type(s).__name__)
+        elif not isinstance(s.get("date"), str):
+            # 无日期的快照排序键会退化成空串、排到所有真实日期之前,
+            # 成为"周首价"——一个不存在的一天在驱动周涨跌。排除并记录。
+            problems.append("skipped snapshot without str date: %r" % (s.get("date"),))
+        else:
+            good.append(s)
+    skipped_snapshots = len(problems)
     # 首末取值依赖时间序;不能只靠调用方保证(main 的文件名序曾经就不是日期序)
     good.sort(key=lambda s: s.get("date") if isinstance(s.get("date"), str) else "")
     dates = [s.get("date") for s in good if isinstance(s.get("date"), str)]
     if log_entries is None:
         # 日志不可用 ≠ 本周没有观点:写 0 会让周报断言"复盘全 0"
-        verdicts = None
+        verdicts, verdict_details = None, None
         problems.append("decision log unavailable; verdicts recorded as null")
     else:
-        verdicts = _verdicts(log_entries if isinstance(log_entries, list) else [], dates)
+        entries = log_entries if isinstance(log_entries, list) else []
+        verdicts = _verdicts(entries, dates)
+        verdict_details = _verdict_details(entries, dates)
     digest = {
         "week": week,
         "generated_from": dates,
-        "skipped": len(problems),
+        "skipped": skipped_snapshots,
         "rates": _rates_digest(good, currencies),
         "events": _events_digest(good, currencies) if good else {},
         "gaps_by_source": _gaps_by_source(good),
         "verdicts": verdicts,
+        "verdict_details": verdict_details,
     }
     return digest, problems
 

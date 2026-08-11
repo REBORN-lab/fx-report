@@ -429,3 +429,28 @@ class DigestFailClosedTest(unittest.TestCase):
                                "verdicts": {"命中": 1, "未命中": 0,
                                             "无法判定": 15, "未判定": 10}})
             self.assertEqual(self._run(tmp, body), 0)
+
+
+class WeeklyGapOmittedTest(unittest.TestCase):
+    """I9 收口检查此前零测试(变异存活):digest 的每个缺漏源须在缺漏汇总出现。"""
+
+    DIGEST_OBJ = {"week": "2026-W33", "generated_from": ["2026-08-10"],
+                  "gaps_by_source": {"gdelt": 18, "dbnomics": 3}}
+
+    def _weekly(self, gap_body):
+        return WEEKLY_OK.replace("## 缺漏汇总\n- 无\n", "## 缺漏汇总\n" + gap_body)
+
+    def test_missing_source_flagged(self):
+        report = self._weekly("- [gdelt] 限流 波及全周\n")
+        v = check_report.check_weekly(report, DIGEST, (), self.DIGEST_OBJ)
+        self.assertTrue(any("GAP_OMITTED" in x and "dbnomics" in x for x in v), v)
+
+    def test_all_sources_present_passes(self):
+        report = self._weekly("- [gdelt] 限流\n- [dbnomics] 超时\n")
+        v = check_report.check_weekly(report, DIGEST, (), self.DIGEST_OBJ)
+        self.assertFalse([x for x in v if "GAP_OMITTED" in x], v)
+
+    def test_without_digest_object_no_gap_check(self):
+        report = self._weekly("- [gdelt] 限流\n")
+        v = check_report.check_weekly(report, DIGEST, ())
+        self.assertFalse([x for x in v if "GAP_OMITTED" in x], v)

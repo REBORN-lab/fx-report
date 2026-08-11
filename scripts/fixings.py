@@ -29,10 +29,26 @@ def same_fixing(a_ref, a_value, b_ref, b_value):
 
 
 def distinct_fixings(observations):
-    """observations: 按时间升序的 (ref_date, value);返回去重后的同序列表。"""
+    """observations: 按时间升序的 (ref_date, value);返回去重后的同序列表。
+
+    合并时"升级"已知定盘日:先来的观测若 ref 未知、后来的同值观测 ref 已知,
+    把已知的那个记下来——否则 first/last 定盘日会全变 null,读者无从知道
+    涨跌是从哪天量到哪天(信息倒退)。升级同时收敛了 same_fixing 的非传递性:
+    A(None,V) 吸收 B(r1,V) 后升级为 r1,再遇 C(r2,V) 就是两个已知不同 ref,
+    正确判为两次定盘。
+
+    结果仍轻微依赖输入顺序,但偏差方向单一:只可能低估定盘次数(未知代吞掉
+    同价观测),不会凭空多出一次"行情"——低估时 chg 退化为 null,落在安全侧。
+    """
     out = []
     for ref, value in observations:
-        if any(same_fixing(ref, value, r, v) for r, v in out):
-            continue
-        out.append((ref, value))
+        merged = False
+        for i, (r, v) in enumerate(out):
+            if same_fixing(ref, value, r, v):
+                if not isinstance(r, str) and isinstance(ref, str):
+                    out[i] = (ref, v)      # 用已知定盘日升级占位
+                merged = True
+                break
+        if not merged:
+            out.append((ref, value))
     return out

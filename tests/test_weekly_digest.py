@@ -259,3 +259,122 @@ class CliTest(unittest.TestCase):
             r = subprocess.run([sys.executable, script] + argv,
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 2, argv)
+
+
+class OfficialDisclosureTest(unittest.TestCase):
+    """official 是被每日上限截断的样本,数字必须随截断与覆盖天数一起给 ——
+    否则"一天采到 3 条(上限)"会被读成"本周共 3 条公告"。"""
+
+    def test_capped_days_and_coverage_reported(self):
+        cap = wd.OFFICIAL_DAILY_CAP
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", articles=6),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=cap)]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        e = d["events"]["PHP"]
+        self.assertEqual(e["official_total"], cap)
+        self.assertEqual(e["official_capped_days"], 1)   # 顶到上限 → "至少这么多"
+        self.assertEqual(e["days_with_official"], 1)
+        self.assertEqual(e["days"], 2)
+        self.assertEqual(e["official_daily_cap"], cap)
+
+    def test_uncapped_day_not_marked(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", official=1)]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        self.assertEqual(d["events"]["PHP"]["official_capped_days"], 0)
+
+
+class SkippedSemanticsTest(unittest.TestCase):
+    """skipped 是"被跳过的坏快照数",不得被日志 problem 污染。"""
+
+    def test_log_unavailable_does_not_inflate_skipped(self):
+        d, problems = wd.build(WEEK_SNAPS, None, "2026-W33")
+        self.assertEqual(d["skipped"], 0)
+        self.assertEqual(len(problems), 1)
+
+    def test_bad_snapshot_and_bad_log_counted_separately(self):
+        d, problems = wd.build(["junk"] + WEEK_SNAPS, None, "2026-W33")
+        self.assertEqual(d["skipped"], 1)
+        self.assertEqual(len(problems), 2)
+
+
+class UndatedSnapshotTest(unittest.TestCase):
+    """无日期的快照排序键退化为空串,会排到所有真实日期之前冒充"周首价"。"""
+
+    def test_undated_snapshot_excluded_and_reported(self):
+        bad = {"rates": {"PHP": {"primary": 99.0, "ref_date": "rX"}},
+               "events": {}, "gaps": []}
+        d, problems = wd.build([bad] + WEEK_SNAPS, [], "2026-W33")
+        r = d["rates"]["PHP"]
+        self.assertEqual(r["range_high"], 60.867)       # 99.0 不得进区间
+        self.assertEqual(r["first_ref_date"], "2026-08-07")
+        self.assertEqual(d["skipped"], 1)
+        self.assertTrue(any("without str date" in p for p in problems))
+
+    def test_nonstring_date_also_excluded(self):
+        bad = {"date": 123, "rates": {"PHP": {"primary": 1.0}}, "events": {}, "gaps": []}
+        d, _ = wd.build([bad] + WEEK_SNAPS, [], "2026-W33")
+        self.assertEqual(d["rates"]["PHP"]["range_low"], 60.75)
+
+
+class VerdictDetailTest(unittest.TestCase):
+    def test_details_provide_script_source_for_the_breakdown(self):
+        log = [{"date": "2026-08-10", "currency": "PHP", "review": {"verdict": "命中"}},
+               {"date": "2026-08-07", "currency": "EUR", "review": {"verdict": None}}]
+        d, _ = wd.build(WEEK_SNAPS, log, "2026-W33")
+        self.assertEqual(d["verdict_details"],
+                         [{"date": "2026-08-07", "currency": "EUR", "verdict": "未判定"},
+                          {"date": "2026-08-10", "currency": "PHP", "verdict": "命中"}])
+
+    def test_details_null_when_log_unavailable(self):
+        d, _ = wd.build(WEEK_SNAPS, None, "2026-W33")
+        self.assertIsNone(d["verdict_details"])
+
+
+class RefUpgradeTest(unittest.TestCase):
+    """合并时保留已知定盘日,否则 first/last 全变 null(信息倒退);
+    升级同时收敛 same_fixing 的非传递性。"""
+
+    def test_known_ref_survives_merge_with_unknown(self):
+        snaps = [snap("2026-08-10", 60.75, None),
+                 snap("2026-08-11", 60.75, "2026-08-10")]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        self.assertEqual(d["rates"]["PHP"]["first_ref_date"], "2026-08-10")
+
+    def test_upgrade_lets_later_distinct_ref_be_recognised(self):
+        """A(未知,V) 吸收 B(r1,V) 升级为 r1 后,C(r2,V) 是不同定盘,应算两次。"""
+        snaps = [snap("2026-08-07", 60.75, None),
+                 snap("2026-08-08", 60.75, "2026-08-07"),
+                 snap("2026-08-10", 60.75, "2026-08-10")]
+        d, _ = wd.build(snaps, [], "2026-W33")
+        self.assertEqual(d["rates"]["PHP"]["fixings"], 2)
+
+
+class SnapshotFileFilterTest(unittest.TestCase):
+    """I3 的文件名/未来日期过滤此前零测试(变异存活):补 CLI 级用例。"""
+
+    def test_cli_ignores_non_snapshot_and_future_files(self):
+        import json as _json
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(root, "scripts", "weekly_digest.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            data = os.path.join(tmp, "data")
+            os.makedirs(data)
+            files = {"2026-08-10.json": snap("2026-08-10", 60.75, "2026-08-10"),
+                     "zz-scratch-notes.json": snap("2026-08-10", 999.0, "rX"),
+                     "9999-01-01.json": snap("9999-01-01", 1.0, "rY"),
+                     "2026-08-09.json.bak.json": snap("2026-08-09", 500.0, "rZ")}
+            for name, body in files.items():
+                with open(os.path.join(data, name), "w", encoding="utf-8") as f:
+                    _json.dump(body, f)
+            r = subprocess.run([sys.executable, script, "--week", "2026-W33",
+                                "--root", tmp], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(os.path.join(tmp, "state", "weekly-digest-2026-W33.json"),
+                      encoding="utf-8") as f:
+                d = _json.load(f)
+        self.assertEqual(d["generated_from"], ["2026-08-10"])
+        self.assertEqual(d["rates"]["PHP"]["range_high"], 60.75)   # 999/500/1 全部未进

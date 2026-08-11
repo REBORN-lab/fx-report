@@ -458,28 +458,28 @@
         "chg_pct_1d": null,
         "range_5d_low": 60.75,
         "range_5d_high": 60.867,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.078
       },
       "THB": {
         "chg_pct_1d": null,
         "range_5d_low": 33.013,
         "range_5d_high": 33.055,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.017
       },
       "BRL": {
         "chg_pct_1d": null,
         "range_5d_low": 5.0856,
         "range_5d_high": 5.0998,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.038
       },
       "EUR": {
         "chg_pct_1d": null,
         "range_5d_low": 0.86543,
         "range_5d_high": 0.86693,
-        "range_5d_days": 3,
+        "range_5d_days": 2,
         "deviation_pct_prev": 0.013
       }
     },

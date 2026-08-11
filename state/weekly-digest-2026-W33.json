@@ -15,7 +15,7 @@
       "range_high": 0.86693,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": null
+      "last_ref_date": "2026-08-10"
     },
     "PHP": {
       "chg_pct_week": -0.192,
@@ -23,7 +23,7 @@
       "range_high": 60.867,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": null
+      "last_ref_date": "2026-08-10"
     },
     "THB": {
       "chg_pct_week": -0.127,
@@ -31,7 +31,7 @@
       "range_high": 33.055,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": null
+      "last_ref_date": "2026-08-10"
     },
     "BRL": {
       "chg_pct_week": -0.278,
@@ -39,44 +39,59 @@
       "range_high": 5.0998,
       "fixings": 2,
       "first_ref_date": null,
-      "last_ref_date": null
+      "last_ref_date": "2026-08-10"
     }
   },
   "events": {
     "USD": {
       "articles_total": 16,
       "official_total": 3,
+      "official_capped_days": 1,
+      "official_daily_cap": 3,
       "days_with_data": 2,
       "days_gdelt_failed": 3,
-      "days_with_official": 1
+      "days_with_official": 1,
+      "days": 5
     },
     "EUR": {
       "articles_total": 24,
       "official_total": 3,
+      "official_capped_days": 1,
+      "official_daily_cap": 3,
       "days_with_data": 3,
       "days_gdelt_failed": 2,
-      "days_with_official": 1
+      "days_with_official": 1,
+      "days": 5
     },
     "PHP": {
       "articles_total": 8,
       "official_total": null,
+      "official_capped_days": 0,
+      "official_daily_cap": 3,
       "days_with_data": 1,
       "days_gdelt_failed": 4,
-      "days_with_official": 0
+      "days_with_official": 0,
+      "days": 5
     },
     "THB": {
       "articles_total": 5,
       "official_total": null,
+      "official_capped_days": 0,
+      "official_daily_cap": 3,
       "days_with_data": 1,
       "days_gdelt_failed": 4,
-      "days_with_official": 0
+      "days_with_official": 0,
+      "days": 5
     },
     "BRL": {
       "articles_total": null,
       "official_total": null,
+      "official_capped_days": 0,
+      "official_daily_cap": 3,
       "days_with_data": 0,
       "days_gdelt_failed": 5,
-      "days_with_official": 0
+      "days_with_official": 0,
+      "days": 5
     }
   },
   "gaps_by_source": {
@@ -88,5 +103,132 @@
     "未命中": 0,
     "无法判定": 15,
     "未判定": 10
-  }
+  },
+  "verdict_details": [
+    {
+      "date": "2026-08-07",
+      "currency": "BRL",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-07",
+      "currency": "EUR",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-07",
+      "currency": "PHP",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-07",
+      "currency": "THB",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-07",
+      "currency": "USD",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-08",
+      "currency": "BRL",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-08",
+      "currency": "EUR",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-08",
+      "currency": "PHP",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-08",
+      "currency": "THB",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-08",
+      "currency": "USD",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-09",
+      "currency": "BRL",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-09",
+      "currency": "EUR",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-09",
+      "currency": "PHP",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-09",
+      "currency": "THB",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-09",
+      "currency": "USD",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-10",
+      "currency": "BRL",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-10",
+      "currency": "EUR",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-10",
+      "currency": "PHP",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-10",
+      "currency": "THB",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-10",
+      "currency": "USD",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-11",
+      "currency": "BRL",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-11",
+      "currency": "EUR",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-11",
+      "currency": "PHP",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-11",
+      "currency": "THB",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-11",
+      "currency": "USD",
+      "verdict": "未判定"
+    }
+  ]
 }

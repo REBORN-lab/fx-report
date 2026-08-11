@@ -47,12 +47,17 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
     (五币种各一小段:USD/EUR/PHP/THB/BRL,基于日报内容做一周归因;
      跨日数字逐字引 digest:周涨跌 <chg_pct_week>%、周区间 <range_low>–<range_high>
      (基于 <fixings> 次不同定盘)、GDELT 事件 <articles_total> 条
-     (<days_gdelt_failed> 天采集失败)、官方公告 <official_total> 条;
-     两个通道口径不同,禁止相加,也禁止把 GDELT 失败说成"该币种无事件")
+     (<days_gdelt_failed> 天采集失败)、官方公告 <official_total> 条
+     (仅 <days_with_official>/<days> 天有采集;<official_capped_days> 天顶到
+     每日上限 <official_daily_cap> 条,那些天的实际条数只多不少);
+     两个通道口径不同,禁止相加,也禁止把 GDELT 失败说成"该币种无事件";
+     **禁止在未逐日核对的情况下断言"官方通道在限流日提供了兜底"** ——
+     `days_with_official` 与 `days_gdelt_failed` 都非零也不等于两者是同几天。)
 
     ## 复盘汇总
-    - <stats 命令输出的计数行,原样照抄>
-    - 明细逐条:<日期> <币种> <verdict>(照抄 stats 明细)
+    - <digest verdicts 的四项计数,原样照抄>
+    - 明细逐条:<日期> <币种> <verdict>(照抄 digest 的 verdict_details;
+      该字段为 null 时写「决策日志不可用,本周复盘无法统计」,不得写成全 0)
 
     ## 下周关注
     -(基于各日报"情景与触发条件"与年历,≤5 条)
@@ -67,9 +72,9 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
 1. 一级/二级结构禁止按日期组织(不得出现 `## 2026-08-05` 式标题)。
    正文里提日期一律写完整形式 `YYYY-MM-DD`:写成 `08-07` 会被数字溯源当成
    两个裸数字拦下(校验器只识别完整日期形态)。
-2. 数字只准逐字来自周度聚合文件、日报原文、stats 命令输出与年历文件原文;
+2. 数字只准逐字来自周度聚合文件(digest)、日报原文与年历文件原文;
    禁止自行计算或汇总数字。
-3. 复盘汇总的计数行必须与 stats 输出逐字一致。
+3. 复盘汇总的计数行必须与 digest 的 verdicts 逐字一致。
 4. 不得引用缺失日期的任何"数据"。
 
 ## 第 3 步:校验(脚本,不可跳过)
