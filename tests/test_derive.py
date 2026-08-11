@@ -288,6 +288,53 @@ class EventCappingTest(unittest.TestCase):
         d, _ = derive.derive(payload(events=self._arts(1)), [])
         self.assertIsNone(d["events"]["USD"]["count_capped"])
         self.assertIsNone(d["events"]["PHP"]["count_prev_capped"])   # 无 history
+class CountCappedGuardTest(unittest.TestCase):
+    """畸形 cap 会把市场事实变成假的"触顶"披露,或反过来漏掉真的截断。"""
+
+    def _arts(self, n):
+        return {"PHP": {"articles": [{"title": "t%d" % i} for i in range(n)]}}
+
+    def _capped(self, cap, n=2):
+        p = payload(events=self._arts(n))
+        p["meta"] = {"caps": {"gdelt_records": cap}}
+        d, _ = derive.derive(p, [])
+        return d["events"]["PHP"]["count_capped"]
+
+    def test_bool_cap_rejected(self):
+        """True == 1,不排除 bool 就会把任何非空结果判成触顶。"""
+        self.assertFalse(self._capped(True))         # 回退到 MAX_RECORDS
+
+    def test_non_positive_cap_rejected(self):
+        for bad in (0, -1):
+            self.assertFalse(self._capped(bad), bad)
+
+    def test_non_int_cap_rejected(self):
+        for bad in ("2", 2.0, None, [2]):
+            self.assertFalse(self._capped(bad), bad)
+
+    def test_valid_snapshot_cap_honoured(self):
+        self.assertTrue(self._capped(2))
+
+    def test_articles_not_a_list_yields_none(self):
+        p = payload(events={"PHP": {"articles": {"n": 1}}})
+        d, _ = derive.derive(p, [])
+        self.assertIsNone(d["events"]["PHP"]["count_capped"])
+
+    def test_prev_capped_reads_history_not_today(self):
+        """今天触顶、昨天没有:两个字段必须给出不同答案。"""
+        cap = derive.events_mod.MAX_RECORDS
+        d, _ = derive.derive(payload(events=self._arts(cap)),
+                             [{"events": self._arts(1)}])
+        e = d["events"]["PHP"]
+        self.assertTrue(e["count_capped"])
+        self.assertFalse(e["count_prev_capped"])
+
+    def test_prev_capped_uses_history_own_cap(self):
+        hist = {"events": self._arts(2), "meta": {"caps": {"gdelt_records": 2}}}
+        d, _ = derive.derive(payload(events=self._arts(2)), [hist])
+        e = d["events"]["PHP"]
+        self.assertFalse(e["count_capped"])          # 今天按当前常量,2 < 8
+        self.assertTrue(e["count_prev_capped"])      # 昨天上限就是 2
 
 if __name__ == "__main__":
     unittest.main()

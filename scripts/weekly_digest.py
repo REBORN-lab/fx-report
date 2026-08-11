@@ -83,7 +83,7 @@ def _pub_date(item):
         return None
     try:
         dt = parsedate_to_datetime(raw)
-    except (TypeError, ValueError, IndexError, OverflowError):
+    except (AttributeError, TypeError, ValueError, IndexError, OverflowError):
         return None
     if dt is None:      # 3.9 及更早对无法解析的串返回 None 而非抛错
         return None
@@ -214,6 +214,36 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     return stats, per_day, published_by_date
 
 
+def _verdict(stats, days, unit):
+    """把「能不能下结论」从 LLM 手里收回脚本。
+
+    前九次同型全部卡在同一步:报告拿着一堆计数自己推「有没有」。每加一条 prompt
+    禁令,下一轮审查就找到一条绕过去的路径 —— undated 堵上了,采集覆盖没堵;
+    覆盖堵上了,截断没堵。枚举补丁永远差一条,所以这里改成脚本给结论、报告
+    逐字引用,与「脚本算好、LLM 逐字引用」的数字纪律同构。
+
+    不变量:只有**全区间每天都采到、无截断、时间戳全部可解析**时,才允许说
+    「确实 0 条」;任何一处观测缺口一律退化成「无法判定」。
+    """
+    if stats["days_collected"] == 0:
+        return "未接入或全区间采集失败,有无%s无法判定" % unit
+    caveats = []
+    missing = days - stats["days_collected"]
+    if missing > 0:
+        caveats.append("%d/%d 天未采到" % (missing, days))
+    if stats["undated"]:
+        caveats.append("%d 条时间戳无法解析" % stats["undated"])
+    if stats["capped_days"]:
+        caveats.append("%d 天顶到每日上限 %s 条"
+                       % (stats["capped_days"], stats["daily_cap"]))
+    if stats["in_window"]:
+        head = "区间内至少 %d 条" % stats["in_window"]
+        return head if not caveats else "%s(%s)" % (head, "、".join(caveats))
+    if caveats:
+        return "区间内未见%s,但 %s,有无%s无法判定" % (unit, "、".join(caveats), unit)
+    return "区间内确实 0 条(全区间采集完整、无截断、时间戳均可解析)"
+
+
 def _events_one(snapshots, currency, lo, hi):
     art_obs, off_obs = [], []
     for snap in snapshots:
@@ -231,24 +261,35 @@ def _events_one(snapshots, currency, lo, hi):
                                 _seen_date, _article_key, lo, hi)
     o, o_days, o_pub = _channel(off_obs, "official_daily", OFFICIAL_DAILY_CAP,
                                 _pub_date, _official_key, lo, hi)
-    by_date = {}
+    by_date, fallback_days = {}, 0
     for i, snap in enumerate(snapshots):
         date_ = snap.get("date")
         if not isinstance(date_, str):
             continue
         a_ok, a_n = a_days[i]
         o_ok, o_n = o_days[i]
+        if not a_ok and o_ok and o_n:
+            # 兜底是**管道属性**:当日 GDELT 没采到,而官方通道当日采到了东西。
+            # 它与那些公告的发布日无关 —— 一条发布于 08-07 的公告要到 08-11
+            # 才被采到,08-07 当天并没有任何兜底发生
+            fallback_days += 1
         by_date[date_] = {
             # 管道读数:当日采到没有、采到几条
             "gdelt_collected": a_ok, "articles_sampled": a_n,
             "official_collected": o_ok, "official_sampled": o_n,
-            # 市场事实:发布日为当天的去重条数。判"官方在限流日兜底"只准用
-            # official_published —— 用 official_sampled 就是把"当天 RSS 回了
-            # 三条七月旧公告"读成"当天央行发了三条"(第六次同型)
-            "articles_seen": a_pub.get(date_, 0),
-            "official_published": o_pub.get(date_, 0),
+            # 已采到的、发布日/采见日为当天的去重条数。**是下界,不是当日总数**:
+            # 没采的那些天可能还有;采了的那天也可能被上限截断。通道整个没采到
+            # 时写 null —— 写 0 会和"确实没有"混为一谈
+            "articles_seen": a_pub.get(date_, 0) if a["days_collected"] else None,
+            "official_published": (o_pub.get(date_, 0)
+                                   if o["days_collected"] else None),
         }
     return {
+        # 唯一可以用来陈述"有没有、有几条"的字段。脚本已把观测缺口(未采到的
+        # 天数、截断、无法解析的时间戳)折进结论,报告逐字引用即可,禁止自行推断
+        "articles_verdict": _verdict(a, len(snapshots), "事件"),
+        "official_verdict": _verdict(o, len(snapshots), "公告"),
+        "fallback_days": fallback_days,
         "articles_sampled": a["sampled"], "articles_distinct": a["distinct"],
         "articles_dup_dropped": a["dup_dropped"],
         "articles_in_window": a["in_window"],

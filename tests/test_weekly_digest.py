@@ -716,12 +716,203 @@ class RawCountCappingTest(unittest.TestCase):
         self.assertEqual(e["articles_capped_days"], 1)
 
     def test_bad_raw_count_ignored(self):
-        for bad in (True, -1, "8", 3.0):
-            s = snap("2026-08-11", 60.75, "2026-08-10", articles=2,
-                     meta={"caps": {"gdelt_records": 8}})
+        """守卫拆掉就能观察到差异:浮点会被当成有效上限比较,字符串会直接抛。"""
+        for bad in (3.0, "3", -1, None, [3]):
+            s = snap("2026-08-11", 60.75, "2026-08-10", articles=1,
+                     meta={"caps": {"gdelt_records": 3}})
             s["events"]["PHP"]["articles_raw_count"] = bad
             e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
-            self.assertEqual(e["articles_capped_days"], 0, bad)
+            self.assertEqual(e["articles_capped_days"], 0, bad)   # 回退到 len=1
+class VerdictInvariantTest(unittest.TestCase):
+    """结论由脚本给出。不变量:只有全区间每天都采到、无截断、时间戳全部可解析时,
+    才允许说「确实 0 条」;任何一处观测缺口一律退化成「无法判定」。
+    前九次同型全部发生在把这个判断交给 LLM 的那一步。"""
+
+    def _v(self, snaps):
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        return e["official_verdict"], e["articles_verdict"]
+
+    def test_never_collected_is_undecidable(self):
+        off, arts = self._v([snap("2026-08-10", 60.75, "2026-08-10")])
+        self.assertIn("无法判定", off)
+        self.assertIn("无法判定", arts)
+        self.assertNotIn("确实", off)
+
+    def test_full_coverage_empty_channel_is_a_real_zero(self):
+        """每天都采到、每天都是空 → 这才是"确实没有"。"""
+        snaps = [snap(d, 60.75, "2026-08-10", official=0,
+                      meta={"caps": {"official_daily": 3}})
+                 for d in ("2026-08-10", "2026-08-11")]
+        off, _ = self._v(snaps)
+        self.assertIn("确实 0 条", off)
+
+    def test_coverage_gap_blocks_the_zero_claim(self):
+        """只采到一天 → 即便那天为空,也不准说"确实没有"(第九次同型的路径)。"""
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10"),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=0,
+                      meta={"caps": {"official_daily": 3}})]
+        off, _ = self._v(snaps)
+        self.assertNotIn("确实", off)
+        self.assertIn("1/2 天未采到", off)
+        self.assertIn("无法判定", off)
+
+    def test_capping_blocks_the_zero_claim(self):
+        """采满上限、且全部发布于区间外 → 被挤掉的更早条目不可知,不准说没有。"""
+        snaps = [snap(d, 60.75, "2026-08-10", official=3,
+                      published="Wed, 29 Jul 2026 15:00:00 -0400",
+                      meta={"caps": {"official_daily": 3}})
+                 for d in ("2026-08-10", "2026-08-11")]
+        off, _ = self._v(snaps)
+        self.assertNotIn("确实", off)
+        self.assertIn("顶到每日上限", off)
+        self.assertIn("无法判定", off)
+
+    def test_undated_blocks_the_zero_claim(self):
+        snaps = [snap(d, 60.75, "2026-08-10", official=1, published="昨天",
+                      meta={"caps": {"official_daily": 3}})
+                 for d in ("2026-08-10", "2026-08-11")]
+        off, _ = self._v(snaps)
+        self.assertNotIn("确实", off)
+        self.assertIn("时间戳无法解析", off)
+
+    def test_positive_count_is_a_lower_bound_when_gaps_exist(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10"),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=1,
+                      published="Tue, 11 Aug 2026 09:00:00 +0000",
+                      meta={"caps": {"official_daily": 3}})]
+        off, _ = self._v(snaps)
+        self.assertIn("至少 1 条", off)
+        self.assertIn("1/2 天未采到", off)
+
+
+class FallbackDaysTest(unittest.TestCase):
+    """兜底是管道属性:当日 GDELT 没采到、而官方通道当日采到了东西。
+    与那些公告的发布日无关——发布于 08-07 的公告 08-11 才采到,08-07 当天
+    并没有任何兜底发生。"""
+
+    def test_counted_when_official_covers_a_gdelt_outage(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", official=1,
+                 published="Tue, 11 Aug 2026 09:00:00 +0000")   # 无 articles
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["fallback_days"], 1)
+
+    def test_publication_on_an_outage_day_is_not_fallback(self):
+        """08-07 GDELT 失败、官方也没采到;那天发布的公告 08-11 才到手。"""
+        snaps = [snap("2026-08-07", 60.867, "2026-08-07"),
+                 snap("2026-08-11", 60.75, "2026-08-10", articles=3,
+                      seendate="20260811T000000Z", official=1,
+                      published="Fri, 07 Aug 2026 10:00:00 +0200")]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["by_date"]["2026-08-07"]["official_published"], 1)
+        self.assertEqual(e["by_date"]["2026-08-07"]["gdelt_collected"], False)
+        self.assertEqual(e["fallback_days"], 0)      # 当天并没有兜底
+
+    def test_empty_official_is_not_fallback(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", official=0)
+        self.assertEqual(wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+                         ["fallback_days"], 0)
+
+
+class ByDateNullTest(unittest.TestCase):
+    """通道整个没采到时逐日表写 null;写 0 会和"确实没有"混为一谈,
+    并与聚合量的 null 自相矛盾。"""
+
+    def test_uncollected_channel_yields_null_per_day(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10")
+        by = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]["by_date"]
+        self.assertIsNone(by["2026-08-11"]["articles_seen"])
+        self.assertIsNone(by["2026-08-11"]["official_published"])
+
+    def test_collected_channel_yields_counts(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", articles=2,
+                 seendate="20260811T000000Z")
+        by = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]["by_date"]
+        self.assertEqual(by["2026-08-11"]["articles_seen"], 2)
+        self.assertIsNone(by["2026-08-11"]["official_published"])
+
+
+class SeenDateParsingTest(unittest.TestCase):
+    def test_month_and_day_not_swapped(self):
+        """月日互换在 20260811 上不可分辨,必须用月≠日的日期锁住。"""
+        snaps = [snap("2026-08-07", 60.867, "2026-08-07"),
+                 snap("2026-08-11", 60.75, "2026-08-10", articles=1,
+                      seendate="20260807T120000Z")]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_in_window"], 1)
+        self.assertEqual(e["by_date"]["2026-08-07"]["articles_seen"], 1)
+        self.assertEqual(e["by_date"]["2026-08-11"]["articles_seen"], 0)
+
+    def test_impossible_calendar_date_is_undated(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", articles=1,
+                 seendate="20260230T120000Z")
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_undated"], 1)
+
+
+class PublishedAccumulationTest(unittest.TestCase):
+    def test_two_announcements_same_day_both_counted(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10")
+        s["events"]["PHP"] = {"official": [
+            {"issuer": "X", "title": "a", "published": "Tue, 11 Aug 2026 09:00:00 +0000"},
+            {"issuer": "X", "title": "b", "published": "Tue, 11 Aug 2026 10:00:00 +0000"}]}
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["official_in_window"], 2)
+        self.assertEqual(e["by_date"]["2026-08-11"]["official_published"], 2)
+
+
+class EmptyGdeltDayTest(unittest.TestCase):
+    def test_collected_but_zero_articles_is_not_a_failure(self):
+        """采到了、确实 0 条 —— 不得计入 days_gdelt_failed。"""
+        s = snap("2026-08-11", 60.75, "2026-08-10", articles=0)
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["days_with_data"], 1)
+        self.assertEqual(e["days_gdelt_failed"], 0)
+        self.assertEqual(e["articles_sampled"], 0)
+        self.assertEqual(e["by_date"]["2026-08-11"]["gdelt_collected"], True)
+
+
+class ArticleIdentityTest(unittest.TestCase):
+    def test_url_used_when_title_missing(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10")
+        s["events"]["PHP"] = {"articles": [
+            {"url": "u1", "seendate": "20260811T000000Z"},
+            {"url": "u1", "seendate": "20260811T000000Z"},
+            {"url": "u2", "seendate": "20260811T000000Z"}]}
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_sampled"], 3)
+        self.assertEqual(e["articles_distinct"], 2)
+
+
+class GdeltCapKeyTest(unittest.TestCase):
+    def test_gdelt_reads_its_own_cap_key(self):
+        """两个通道的键名串了就会拿 official 的上限判 GDELT。"""
+        s = snap("2026-08-11", 60.75, "2026-08-10", articles=3,
+                 meta={"caps": {"official_daily": 3, "gdelt_records": 8}})
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_daily_cap"], 8)
+        self.assertEqual(e["articles_capped_days"], 0)      # 3 < 8
+
+    def test_official_ignores_raw_count_channel(self):
+        """official 落盘不去重,raw_count 恒 None;串上 GDELT 的读数会误判触顶。"""
+        s = snap("2026-08-11", 60.75, "2026-08-10", articles=8, official=1,
+                 meta={"caps": {"official_daily": 3, "gdelt_records": 8}})
+        s["events"]["PHP"]["articles_raw_count"] = 8
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_capped_days"], 1)
+        self.assertEqual(e["official_capped_days"], 0)      # 1 < 3
+class PubDateParsingTest(unittest.TestCase):
+    def test_non_str_published_is_undated(self):
+        for bad in (7, ["Tue, 11 Aug 2026 09:00:00 +0000"], {"d": 1}, "", None):
+            s = snap("2026-08-11", 60.75, "2026-08-10", official=1, published=bad)
+            e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+            self.assertEqual(e["official_undated"], 1, bad)
+
+    def test_assorted_malformed_timestamps_do_not_crash(self):
+        for bad in ("2026-08-11T09:00:00Z", "Mon, 32 Aug 2026 09:00:00 +0000",
+                    "Tue, 11 Aug 99999999 09:00:00 +0000", "11 Aug", "+0000"):
+            s = snap("2026-08-11", 60.75, "2026-08-10", official=1, published=bad)
+            e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+            self.assertEqual(e["official_in_window"], 0, bad)
 
 if __name__ == "__main__":
     unittest.main()

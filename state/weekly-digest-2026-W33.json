@@ -46,6 +46,9 @@
   "window_to": "2026-08-11",
   "events": {
     "USD": {
+      "articles_verdict": "区间内至少 15 条(3/5 天未采到、2 天顶到每日上限 8 条)",
+      "official_verdict": "区间内未见公告,但 4/5 天未采到、1 天顶到每日上限 3 条,有无公告无法判定",
+      "fallback_days": 0,
       "articles_sampled": 16,
       "articles_distinct": 15,
       "articles_dup_dropped": 1,
@@ -113,6 +116,9 @@
       }
     },
     "EUR": {
+      "articles_verdict": "区间内至少 20 条(2/5 天未采到、3 天顶到每日上限 8 条)",
+      "official_verdict": "区间内至少 1 条(4/5 天未采到、1 天顶到每日上限 3 条)",
+      "fallback_days": 0,
       "articles_sampled": 24,
       "articles_distinct": 20,
       "articles_dup_dropped": 4,
@@ -180,6 +186,9 @@
       }
     },
     "PHP": {
+      "articles_verdict": "区间内至少 8 条(4/5 天未采到、1 天顶到每日上限 8 条)",
+      "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
+      "fallback_days": 0,
       "articles_sampled": 8,
       "articles_distinct": 8,
       "articles_dup_dropped": 0,
@@ -210,7 +219,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 0,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-08": {
           "gdelt_collected": false,
@@ -218,7 +227,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 0,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-09": {
           "gdelt_collected": false,
@@ -226,7 +235,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 4,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-10": {
           "gdelt_collected": false,
@@ -234,7 +243,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 3,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-11": {
           "gdelt_collected": true,
@@ -242,11 +251,14 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 1,
-          "official_published": 0
+          "official_published": null
         }
       }
     },
     "THB": {
+      "articles_verdict": "区间内至少 5 条(4/5 天未采到)",
+      "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
+      "fallback_days": 0,
       "articles_sampled": 5,
       "articles_distinct": 5,
       "articles_dup_dropped": 0,
@@ -277,7 +289,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 0,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-08": {
           "gdelt_collected": false,
@@ -285,7 +297,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 0,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-09": {
           "gdelt_collected": false,
@@ -293,7 +305,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 0,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-10": {
           "gdelt_collected": false,
@@ -301,7 +313,7 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 3,
-          "official_published": 0
+          "official_published": null
         },
         "2026-08-11": {
           "gdelt_collected": true,
@@ -309,11 +321,14 @@
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 2,
-          "official_published": 0
+          "official_published": null
         }
       }
     },
     "BRL": {
+      "articles_verdict": "未接入或全区间采集失败,有无事件无法判定",
+      "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
+      "fallback_days": 0,
       "articles_sampled": null,
       "articles_distinct": null,
       "articles_dup_dropped": null,
@@ -343,40 +358,40 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": 0
+          "articles_seen": null,
+          "official_published": null
         },
         "2026-08-08": {
           "gdelt_collected": false,
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": 0
+          "articles_seen": null,
+          "official_published": null
         },
         "2026-08-09": {
           "gdelt_collected": false,
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": 0
+          "articles_seen": null,
+          "official_published": null
         },
         "2026-08-10": {
           "gdelt_collected": false,
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": 0
+          "articles_seen": null,
+          "official_published": null
         },
         "2026-08-11": {
           "gdelt_collected": false,
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": 0
+          "articles_seen": null,
+          "official_published": null
         }
       }
     }

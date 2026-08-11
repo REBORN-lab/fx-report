@@ -26,9 +26,13 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
     -(≤3 条候选,基于快照事件与年历命中归纳)
 
     ## USD
-    - 昨日事件 top:<title>(<domain>)……至多 3 条
+    - 昨日事件 top:<title>(<domain>,采见 <seendate>)……至多 3 条
       (选取:FX/货币政策相关优先;与任一共同主线候选方向相反的标题至少
       保留 1 条,快照中没有反向标题则不强凑)
+      **每条必须带 seendate 原文**。GDELT 查询窗跨越不止一个自然日,回来的条目
+      未必属于昨日:seendate 的日期部分不是 DATE 前一日的,行尾标
+      "(采见日非昨日)";seendate 缺失或无法辨认的标"(采见日不明)"。
+      与 official 同理——采样口径不等于当日市场事件。
     - 官方公告:<title>(<issuer>,发布于 <published>)……至多 3 条,取自
       events.<币种>.official(央行官方 RSS,可署名高可信;该币种无 official 键
       时写"无")。**每条必须带 published 原文**;RSS 只给"最新 N 条"、不按日期
@@ -38,8 +42,12 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
     - 数据发布:<indicator> 最新 <value> 前值 <prev> 期 <period>(滞后 <lag_months>
       个月,来源 <source>)——该条目含 `source_changed_from` 时,行尾必须加
       "(口径已由 <source_changed_from> 切换为 <source>,与前值不可比)"
-      (只列 is_new_release
-      为 true 或与年历命中相关的;没有写"无"。例外:本币种"昨日事件 top"为空时,
+      (列出条件:is_new_release 为 true、**或含 `source_changed_from`**、
+      或与年历命中相关;没有写"无"。
+      ——`source_changed_from` 必须单独作为列出条件:换源时采集层会把
+      `is_new_release` 强制置 false(期号跳变来自换源、不是新发布),只按
+      is_new_release 过滤会把换源披露整个滤掉,而那正是最需要说出来的一条。
+      例外:本币种"昨日事件 top"为空时,
       可列快照 macro 中该经济体的政策利率与最新 CPI(有哪项列哪项),行尾标
       "(存量背景,非昨日发布)",给该币种的触发条件留数值锚点——数字仍逐字抄快照;
       该经济体 macro 也无值时照旧写"无")
