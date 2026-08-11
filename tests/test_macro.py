@@ -598,6 +598,68 @@ class BisTableTest(unittest.TestCase):
         with FixtureServer(allnan) as srv:
             table = macro._bis_table(bis_cfg(srv), [])
         self.assertNotIn(("BR", "政策利率"), table)
+class PriorityTest(unittest.TestCase):
+    """来源优先级 BLS > BIS > DBnomics。"""
+
+    def test_bis_used_and_dbnomics_not_called(self):
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            payload, gaps = macro.collect(bis_cfg(srv))
+        rows = {(r["economy"], r["indicator"]): r for r in payload["indicators"]}
+        self.assertEqual(rows[("BR", "政策利率")]["source"], "bis")
+        self.assertEqual(rows[("BR", "政策利率")]["value"], 14.25)
+        self.assertEqual(rows[("EA", "CPI 同比")]["source"], "bis")
+        self.assertEqual(rows[("TH", "政策利率")]["value"], 1.0)
+        self.assertEqual(gaps, [])          # 未打 dbnomics,故无 dbnomics gap
+
+    def test_bls_wins_over_bis_for_us_cpi(self):
+        """BIS 不得覆盖美国 CPI。"""
+        cpi_with_us = CPI_CSV + "M,US,771,2026-05,4.248674\nM,US,771,2026-06,3.531425\n"
+        routes = {"/bis/cbpol": (200, CBPOL_CSV), "/bis/cpi": (200, cpi_with_us),
+                  "/bls": (200, BLS_OK)}
+        with FixtureServer(routes) as srv:
+            cfg = bis_cfg(srv, endpoints={"bls_timeseries_url": srv.base_url + "/bls"},
+                          indicators=[{"economy": "US", "indicator": "CPI 同比",
+                                       "series_id": "IMF/CPI/M.US.X"}])
+            payload, _ = macro.collect(cfg)
+        self.assertEqual(payload["indicators"][0]["source"], "bls")
+
+    def test_falls_back_to_dbnomics_when_bis_absent(self):
+        with FixtureServer({"/db/": (200, json.dumps(SERIES_OK))}) as srv:
+            cfg = bis_cfg(srv)
+            cfg["endpoints"].pop("bis_cbpol_url")
+            cfg["endpoints"].pop("bis_cpi_url")
+            payload, _ = macro.collect(cfg)
+        self.assertTrue(all(r["source"] == "dbnomics" for r in payload["indicators"]))
+
+    def test_partial_fallback_granularity(self):
+        """BIS 只覆盖部分指标时,其余单独回落,不是全有或全无。"""
+        routes = {"/bis/cpi": (200, CPI_CSV), "/db/": (200, json.dumps(SERIES_OK))}
+        with FixtureServer(routes) as srv:
+            cfg = bis_cfg(srv, endpoints={"bis_cbpol_url": DEAD_URL + "/x"})
+            payload, gaps = macro.collect(cfg)
+        rows = {(r["economy"], r["indicator"]): r for r in payload["indicators"]}
+        self.assertEqual(rows[("BR", "CPI 同比")]["source"], "bis")
+        self.assertEqual(rows[("BR", "政策利率")]["source"], "dbnomics")
+        self.assertEqual([g["source"] for g in gaps], ["bis"])
+
+    def test_lag_months_and_prev_period_present(self):
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            payload, _ = macro.collect(bis_cfg(srv, date="2026-08-11"))
+        row = [r for r in payload["indicators"]
+               if (r["economy"], r["indicator"]) == ("BR", "政策利率")][0]
+        self.assertEqual(row["lag_months"], 2)          # 2026-06 → 2026-08
+        self.assertEqual(row["prev_period"], "2026-06-16")
+
+    def test_source_change_marked_on_switch_day(self):
+        prev_snap = {"macro": [{"economy": "BR", "indicator": "政策利率",
+                                "series_id": "BIS/WS_CBPOL/D.BR", "period": "2025-07-07",
+                                "source": "dbnomics"}]}
+        with FixtureServer(dict(BIS_ROUTES)) as srv:
+            payload, _ = macro.collect(bis_cfg(srv, prev_snapshot=prev_snap))
+        row = [r for r in payload["indicators"]
+               if (r["economy"], r["indicator"]) == ("BR", "政策利率")][0]
+        self.assertEqual(row["source_changed_from"], "dbnomics")
+        self.assertFalse(row["is_new_release"])
 
 
 if __name__ == "__main__":

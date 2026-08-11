@@ -136,6 +136,10 @@ def collect(cfg):
     tracked = [(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]]
     # 没跟踪美国 CPI 就别打 BLS 这一枪(也就不会为未跟踪指标记 gap)
     bls_row = _bls_us_cpi(cfg, gaps) if US_CPI in tracked else None
+    # 批量取数放在循环之前:两次 GET 覆盖五经济体,循环内只查表。
+    # BIS 整体失败时表为空 → 全部未命中 → 全部走 DBnomics,
+    # 「逐指标回落」因此不需要任何额外分支。
+    bis_table = _bis_table(cfg, gaps)
     for ind in cfg["indicators"]:
         if bls_row is not None and (ind["economy"], ind["indicator"]) == US_CPI:
             # BLS 比 DBnomics 镜像新约 11 个月(2026-08-11 实测),优先用它;
@@ -146,6 +150,13 @@ def collect(cfg):
                        is_new_release=_is_new(cfg, bls_row["series_id"],
                                               bls_row["period"]),
                        lag_months=lag_months(bls_row["period"], cfg["date"]))
+            indicators.append(_mark_source_change(cfg, ind, row))
+            continue
+        bis = bis_table.get((ind["economy"], ind["indicator"]))
+        if bis is not None:
+            row = dict(bis, economy=ind["economy"], indicator=ind["indicator"],
+                       is_new_release=_is_new(cfg, bis["series_id"], bis["period"]),
+                       lag_months=lag_months(bis["period"], cfg["date"]))
             indicators.append(_mark_source_change(cfg, ind, row))
             continue
         try:
