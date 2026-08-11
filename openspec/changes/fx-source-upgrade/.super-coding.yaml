@@ -6,13 +6,13 @@ build_pause: null
 subagent_dispatch: null
 tdd_mode: tdd
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: 30a5a314de297394bb01e19a105953f82a15f6c3
 design_doc: docs/superpowers/specs/2026-08-11-fx-source-upgrade-design.md
 plan: docs/superpowers/plans/2026-08-11-fx-source-upgrade.md
 verify_result: pending
-verification_report: null
+verification_report: docs/superpowers/reports/2026-08-11-fx-source-upgrade-verify.md
 branch_status: pending
 created_at: 2026-08-11
 verified_at: null
