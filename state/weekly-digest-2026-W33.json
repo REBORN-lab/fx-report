@@ -42,209 +42,341 @@
       "last_ref_date": "2026-08-10"
     }
   },
+  "window_from": "2026-08-07",
+  "window_to": "2026-08-11",
   "events": {
     "USD": {
-      "articles_total": 16,
+      "articles_sampled": 16,
       "articles_distinct": 15,
+      "articles_dup_dropped": 1,
+      "articles_in_window": 15,
+      "articles_outside_window": 0,
+      "articles_undated": 0,
       "articles_capped_days": 2,
       "articles_daily_cap": 8,
       "articles_cap_assumed_days": 2,
+      "days_with_data": 2,
+      "days_gdelt_failed": 3,
       "official_sampled": 3,
+      "official_distinct": 3,
+      "official_dup_dropped": 0,
       "official_in_window": 0,
       "official_outside_window": 3,
       "official_undated": 0,
       "official_capped_days": 1,
       "official_daily_cap": 3,
       "official_cap_assumed_days": 1,
-      "days_with_data": 2,
-      "days_gdelt_failed": 3,
       "days_official_collected": 1,
       "days_with_official": 1,
       "days": 5,
       "by_date": {
         "2026-08-07": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-08": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 7,
+          "official_published": 0
         },
         "2026-08-09": {
-          "articles": 8,
-          "official": null
+          "gdelt_collected": true,
+          "articles_sampled": 8,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 3,
+          "official_published": 0
         },
         "2026-08-10": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 4,
+          "official_published": 0
         },
         "2026-08-11": {
-          "articles": 8,
-          "official": 3
+          "gdelt_collected": true,
+          "articles_sampled": 8,
+          "official_collected": true,
+          "official_sampled": 3,
+          "articles_seen": 1,
+          "official_published": 0
         }
       }
     },
     "EUR": {
-      "articles_total": 24,
+      "articles_sampled": 24,
       "articles_distinct": 20,
+      "articles_dup_dropped": 4,
+      "articles_in_window": 20,
+      "articles_outside_window": 0,
+      "articles_undated": 0,
       "articles_capped_days": 3,
       "articles_daily_cap": 8,
       "articles_cap_assumed_days": 3,
+      "days_with_data": 3,
+      "days_gdelt_failed": 2,
       "official_sampled": 3,
+      "official_distinct": 3,
+      "official_dup_dropped": 0,
       "official_in_window": 1,
       "official_outside_window": 2,
       "official_undated": 0,
       "official_capped_days": 1,
       "official_daily_cap": 3,
       "official_cap_assumed_days": 1,
-      "days_with_data": 3,
-      "days_gdelt_failed": 2,
       "days_official_collected": 1,
       "days_with_official": 1,
       "days": 5,
       "by_date": {
         "2026-08-07": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 1
         },
         "2026-08-08": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 8,
+          "official_published": 0
         },
         "2026-08-09": {
-          "articles": 8,
-          "official": null
+          "gdelt_collected": true,
+          "articles_sampled": 8,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 2,
+          "official_published": 0
         },
         "2026-08-10": {
-          "articles": 8,
-          "official": null
+          "gdelt_collected": true,
+          "articles_sampled": 8,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 8,
+          "official_published": 0
         },
         "2026-08-11": {
-          "articles": 8,
-          "official": 3
+          "gdelt_collected": true,
+          "articles_sampled": 8,
+          "official_collected": true,
+          "official_sampled": 3,
+          "articles_seen": 2,
+          "official_published": 0
         }
       }
     },
     "PHP": {
-      "articles_total": 8,
+      "articles_sampled": 8,
       "articles_distinct": 8,
+      "articles_dup_dropped": 0,
+      "articles_in_window": 8,
+      "articles_outside_window": 0,
+      "articles_undated": 0,
       "articles_capped_days": 1,
       "articles_daily_cap": 8,
       "articles_cap_assumed_days": 1,
+      "days_with_data": 1,
+      "days_gdelt_failed": 4,
       "official_sampled": null,
+      "official_distinct": null,
+      "official_dup_dropped": null,
       "official_in_window": null,
-      "official_outside_window": 0,
-      "official_undated": 0,
+      "official_outside_window": null,
+      "official_undated": null,
       "official_capped_days": 0,
       "official_daily_cap": null,
       "official_cap_assumed_days": 0,
-      "days_with_data": 1,
-      "days_gdelt_failed": 4,
       "days_official_collected": 0,
       "days_with_official": 0,
       "days": 5,
       "by_date": {
         "2026-08-07": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-08": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-09": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 4,
+          "official_published": 0
         },
         "2026-08-10": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 3,
+          "official_published": 0
         },
         "2026-08-11": {
-          "articles": 8,
-          "official": null
+          "gdelt_collected": true,
+          "articles_sampled": 8,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 1,
+          "official_published": 0
         }
       }
     },
     "THB": {
-      "articles_total": 5,
+      "articles_sampled": 5,
       "articles_distinct": 5,
+      "articles_dup_dropped": 0,
+      "articles_in_window": 5,
+      "articles_outside_window": 0,
+      "articles_undated": 0,
       "articles_capped_days": 0,
       "articles_daily_cap": 8,
       "articles_cap_assumed_days": 1,
+      "days_with_data": 1,
+      "days_gdelt_failed": 4,
       "official_sampled": null,
+      "official_distinct": null,
+      "official_dup_dropped": null,
       "official_in_window": null,
-      "official_outside_window": 0,
-      "official_undated": 0,
+      "official_outside_window": null,
+      "official_undated": null,
       "official_capped_days": 0,
       "official_daily_cap": null,
       "official_cap_assumed_days": 0,
-      "days_with_data": 1,
-      "days_gdelt_failed": 4,
       "days_official_collected": 0,
       "days_with_official": 0,
       "days": 5,
       "by_date": {
         "2026-08-07": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-08": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-09": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-10": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 3,
+          "official_published": 0
         },
         "2026-08-11": {
-          "articles": 5,
-          "official": null
+          "gdelt_collected": true,
+          "articles_sampled": 5,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 2,
+          "official_published": 0
         }
       }
     },
     "BRL": {
-      "articles_total": null,
+      "articles_sampled": null,
       "articles_distinct": null,
+      "articles_dup_dropped": null,
+      "articles_in_window": null,
+      "articles_outside_window": null,
+      "articles_undated": null,
       "articles_capped_days": 0,
       "articles_daily_cap": null,
       "articles_cap_assumed_days": 0,
+      "days_with_data": 0,
+      "days_gdelt_failed": 5,
       "official_sampled": null,
+      "official_distinct": null,
+      "official_dup_dropped": null,
       "official_in_window": null,
-      "official_outside_window": 0,
-      "official_undated": 0,
+      "official_outside_window": null,
+      "official_undated": null,
       "official_capped_days": 0,
       "official_daily_cap": null,
       "official_cap_assumed_days": 0,
-      "days_with_data": 0,
-      "days_gdelt_failed": 5,
       "days_official_collected": 0,
       "days_with_official": 0,
       "days": 5,
       "by_date": {
         "2026-08-07": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-08": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-09": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-10": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         },
         "2026-08-11": {
-          "articles": null,
-          "official": null
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": 0
         }
       }
     }

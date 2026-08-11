@@ -36,9 +36,11 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
 
     # 外汇周报 WEEK
 
-    > 覆盖日报:N 份(<日期列表>);缺失日期:<列表,无则写"无">
-    > (digest 的 `skipped` 非 0 时,本行须追加"另有 <skipped> 份快照因损坏被
-    >  跳过"——`days` 分母是过滤后的份数,不说明会让读者把削过的分母当全周)
+    > 覆盖日报:N 份(<日期列表>);覆盖区间 <window_from> 至 <window_to>;
+    > 缺失日期:<列表,无则写"无">;<digest 的 `skipped` 非 0 时追加
+    > "另有 <skipped> 份快照因损坏被跳过">
+    > (`days` 分母与"本周"口径都以覆盖区间为准。区间短于整周时,凡"本周 N 条"
+    >  一律改写成"覆盖区间内 N 条";`skipped` 不说明会让读者把削过的分母当全周)
     > 复盘图例:命中/未命中=触发发生且方向核对有果;无法判定=已复盘但触发
     > 条件未发生或证据不足;未判定=尚未复盘。本行不含数字。
 
@@ -48,33 +50,49 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
     ## 各币种一周归因
     (五币种各一小段:USD/EUR/PHP/THB/BRL,基于日报内容做一周归因;
      跨日数字逐字引 digest:周涨跌 <chg_pct_week>%、周区间 <range_low>–<range_high>
-     (基于 <fixings> 次不同定盘)、GDELT 事件 <articles_distinct> 条去重后
+     (基于 <fixings> 次不同定盘)、区间内 GDELT 事件 <articles_in_window> 条
      (<days_gdelt_failed>/<days> 天采集失败;<articles_capped_days> 天顶到每日上限
-     <articles_daily_cap> 条,那些天的实际条数只多不少)、本周官方公告
-     <official_in_window> 条(<days_official_collected>/<days> 天采到该通道)。
+     <articles_daily_cap> 条,那些天的实际条数只多不少)、区间内官方公告
+     <official_in_window> 条(<days_official_collected>/<days> 天采到该通道;
+     <official_capped_days> 天顶到上限 <official_daily_cap> 条)。
 
-     **事件计数的三条硬规则** —— 前四轮审查连续五次栽在这里:
-     1. 官方公告只准引 `official_in_window`(已按发布日过滤到覆盖区间、并跨日
-        去重)。**禁止引用 `official_sampled`** ——RSS 只给"最新 N 条"、不按日期
-        过滤,该字段实测混着上个月的公告(2026-08-11 抓到的三条 Fed 公告全部
-        发布于 7 月)。`official_outside_window` 非零时须写明"另有 N 条为窗口外
-        (更早发布)的公告"。`official_in_window` 为 0 而 `days_official_collected`
-        非零 = 本周该央行确实没发公告,不是采集失败,必须这样写。
-     2. GDELT 的 `articles_distinct` 同样是**封顶样本**,不是"本周新闻总数":
-        `articles_capped_days` 非零的那些天被上限截断了。任何一处引用都要带上
-        截断披露,与官方通道同等对待。
-     3. `days_official_collected`(采到该通道)与 `days_with_official`(采到且非空)
-        是两件事。写"仅 N/M 天有采集"只准用前者;把后者说成"没采到"就是把
-        "央行本周没发公告"这个市场事实伪装成管道故障。
-     `*_cap_assumed_days` 非零表示那几天的快照没记录采集上限、是按当前代码推定的,
-     引用触顶结论时须注明"上限为推定"。
+     **事件计数的硬规则** —— 前四轮审查连续六次栽在这里。两个通道用同一套字段名
+     (`articles_*` / `official_*`),规则对两者同等适用:
 
-     两个通道口径不同,禁止相加,也禁止把 GDELT 失败说成"该币种无事件";
-     **禁止在未逐日核对的情况下断言"官方通道在限流日提供了兜底"** ——
-     `days_with_official` 与 `days_gdelt_failed` 都非零也不等于两者是同几天。
-     要做这个判断,逐字读 digest 的 `by_date`:每个日期下 `articles` 为 null
-     即当日 GDELT 失败,`official` 为正即当日有公告。只有两者在同一天成立,
-     才能说兜底发生过;`by_date` 是唯一可引的依据,不得翻原始快照自行推断。)
+     1. 只准引 `*_in_window`(已按发布日/采见日过滤到覆盖区间、并跨日去重)。
+        **禁止引用 `*_sampled`** ——RSS 与 GDELT 都只给"最新 N 条"、不按日期过滤,
+        `official_sampled` 实测混着上个月的公告(2026-08-11 抓到的三条 Fed 公告
+        全部发布于 7 月)。`*_outside_window` 非零时须写明"另有 N 条发布于区间外"。
+     2. **`*_undated` 非零时,不得作出任何"确实没有"的结论。** 该字段计的是
+        时间戳缺失或无法解析的条目——它们既不在窗内也不在窗外,是**未知**。
+        `official_in_window` 为 0 只有在 `official_undated` 也为 0 时,才能读作
+        "本周该发布方确实没发公告";`official_undated` 非零就必须写成
+        "另有 N 条时间戳无法解析,本周有无公告无法判定"。把解析失败读成"没有",
+        就是把管道故障断言成市场事实。
+     3. 封顶披露对两个通道同等适用:`*_capped_days` 非零的那些天被上限截断,
+        任何一处引用都要带上截断披露。`*_cap_assumed_days` 非零表示那几天的快照
+        没记录采集上限、是按当前代码推定的,须注明"上限为推定"。
+     4. 三个"天数"字段是三件事,不得互换:
+        - `days_official_collected` = 采到该通道的天数。**为 0 表示该币种没有
+          接入官方通道**(或全周探测失败),此时只准写"未接入/无数据,本周有无
+          公告无法判定",**禁止**写成"0 天采到"式的采集失败叙述。
+        - `days_with_official` = 采到且非空的天数。把它说成"没采到"就是把
+          "央行本周没发公告"这个市场事实伪装成管道故障。
+        - `days_gdelt_failed` = GDELT 当天没采到的天数。它**不等于**"那几天没有
+          新闻":GDELT 查询窗是 48h,前一天的采集会覆盖当天,见 `by_date`。
+     5. **禁止任何减法。** 需要"去重掉了几条"直接引 `*_dup_dropped`;digest 没有
+        的差值就不要写(违反数字纪律禁令 2)。
+
+     两个通道口径不同,禁止相加,也禁止把 GDELT 失败说成"该币种无事件"。
+     **禁止在未逐日核对的情况下断言"官方通道在限流日提供了兜底"。** 要做这个判断,
+     逐字读 digest 的 `by_date`,每个日期下:
+     - `gdelt_collected` 为 false = 当日 GDELT 没采到
+     - `official_published` 为正 = **当日确实有公告发布**(已按发布日归位并去重)
+     - `official_sampled` 只是当日 RSS 回了几条,**含旧公告,禁止用它判定兜底**
+     只有 `gdelt_collected: false` 与 `official_published` 为正落在同一天,
+     才能说兜底发生过。`by_date` 是唯一可引的依据,不得翻原始快照自行推断。
+     注意 `official_published` 记在**发布日**、`official_sampled` 记在**采集日**,
+     同一条公告的这两个日期可以不同。)
 
     ## 复盘汇总
     - <digest verdicts 的四项计数,原样照抄>

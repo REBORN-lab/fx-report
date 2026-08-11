@@ -5,6 +5,8 @@ import unittest
 from unittest import mock
 
 from scripts.collect import __main__ as entry
+from scripts.collect import events as events_mod
+from scripts.collect import feeds
 from tests.helpers import DEAD_URL, FixtureServer, make_test_root
 
 FRANK = {"rates": {"PHP": 60.843, "THB": 35.2, "BRL": 5.43, "EUR": 0.921}}
@@ -47,6 +49,11 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(snap["calendar_hits"][0]["bank"], "BCB")
         self.assertEqual(snap["gaps"], [])
         self.assertIn("collector_version", snap["meta"])
+        # 采集上限随快照落盘:常量一改,聚合器拿新上限判旧快照会静默错判触顶
+        self.assertEqual(snap["meta"]["caps"],
+                         {"official_daily": feeds.MAX_ITEMS,
+                          "gdelt_records": events_mod.MAX_RECORDS})
+        self.assertNotEqual(feeds.MAX_ITEMS, events_mod.MAX_RECORDS)  # 互换可被发现
         self.assertNotIn("us_release_dates", snap)   # 零 key 不出现该键
 
     def test_one_source_down_others_intact(self):

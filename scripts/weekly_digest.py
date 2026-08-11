@@ -27,6 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERDICTS = ["命中", "未命中", "无法判定", "未判定"]
 SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 WEEK_RE = re.compile(r"\d{4}-W\d{2}")
+SEEN_DATE_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})T")
 
 
 def _rate_entries(snapshots, currency):
@@ -72,19 +73,46 @@ def _rates_digest(snapshots, currencies):
 def _pub_date(item):
     """RSS pubDate → YYYY-MM-DD。解析不了返回 None,绝不猜——猜错会把上个月的
     公告算进本周。"""
-    raw = item.get("published") if isinstance(item, dict) else None
+    raw = item.get("published")
     if not isinstance(raw, str) or not raw:
         return None
     try:
         dt = parsedate_to_datetime(raw)
     except (TypeError, ValueError, IndexError, OverflowError):
         return None
-    if dt is None:      # 3.9 及更早版本对无法解析的串返回 None 而非抛错
+    if dt is None:      # 3.9 及更早对无法解析的串返回 None 而非抛错
         return None
     try:
         return dt.date().isoformat()
     except (AttributeError, ValueError, OverflowError):
         return None
+
+
+def _seen_date(item):
+    """GDELT seendate(20260809T120000Z)→ YYYY-MM-DD。解析不了返回 None。"""
+    raw = item.get("seendate")
+    if not isinstance(raw, str):
+        return None
+    m = SEEN_DATE_RE.match(raw)
+    if m is None:
+        return None
+    try:
+        return date(*(int(g) for g in m.groups())).isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _official_key(item):
+    """同一条公告的身份。不含 pubDate:RSS 改一次时间戳渲染就会让同一条
+    公告变成两条,而 (发行方, 标题) 在一周内重复的概率远低于这个。"""
+    return (item.get("issuer"), item.get("title"))
+
+
+def _article_key(item):
+    """同一条新闻的身份。多家媒体同标题转述视为同一条(这正是我们想合并的);
+    标题缺失时退回 url。"""
+    title = item.get("title")
+    return ("t", title) if isinstance(title, str) else ("u", item.get("url"))
 
 
 def _cap(snap, key, fallback):
@@ -104,107 +132,146 @@ def _one_cap(caps):
     return next(iter(caps)) if len(caps) == 1 else None
 
 
-def _events_one(snapshot_dates, snapshots, currency, lo, hi):
-    arts_total = arts_distinct = arts_days = gdelt_failed = 0
-    arts_capped = arts_assumed = 0
-    arts_titles, arts_caps = set(), set()
-    off_sampled = off_collected = off_nonempty = off_capped = off_assumed = 0
-    in_window = outside = undated = 0
-    off_seen, off_caps = set(), set()
-    by_date = {}
-    for date_, snap in zip(snapshot_dates, snapshots):
+def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
+    """一个事件通道的跨日统计。两个通道**共用这一份实现** —— official 与 GDELT
+    曾各写一份,于是 official 有截断披露而 GDELT 没有(第三轮 I10);同一个
+    change 里已经因为"复制粘贴判定逻辑"栽过一次(见 scripts/fixings.py)。
+
+    observations: [(snap, items | None)] 按日期序;items 为 None 表示当日该通道
+    无数据(采集失败,或该币种压根没接这个通道)。
+
+    三个量必须分开,混用就是本 change 反复出现的那个失败模式:
+    - sampled:采到几条。上限截断过、跨日重复过、含窗口外的旧条目 —— 管道读数
+    - distinct:跨日去重后几条。仍含窗口外的旧条目
+    - in_window:去重且发布日落在覆盖区间内。唯一能当"本周发生了几件事"读的量
+
+    返回 (stats, per_day, published_by_date)。
+    """
+    sampled = distinct = in_win = outside = undated = 0
+    days_collected = days_nonempty = capped = assumed = 0
+    seen, caps = set(), set()
+    per_day, published_by_date = [], {}
+    for snap, items in observations:
+        if items is None:
+            per_day.append((False, None))
+            continue
+        days_collected += 1
+        sampled += len(items)
+        per_day.append((True, len(items)))
+        if items:
+            days_nonempty += 1
+            cap, was_assumed = _cap(snap, cap_key, cap_fallback)
+            caps.add(cap)
+            assumed += 1 if was_assumed else 0
+            if len(items) >= cap:
+                capped += 1
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            try:
+                key = key_of(item)
+                if key in seen:
+                    continue        # 同一条连采数日,不得按天累加
+                seen.add(key)
+            except TypeError:
+                pass                # 成员不可哈希 → 无从判重,各算一条
+            distinct += 1
+            when = date_of(item)
+            if when is None:
+                # 时间戳缺失或改版:既不是"窗内"也不是"窗外",必须单列。
+                # 并进任何一边都会让 in_window 变成一个不能读的数
+                undated += 1
+            elif lo is not None and lo <= when <= hi:
+                in_win += 1
+                published_by_date[when] = published_by_date.get(when, 0) + 1
+            else:
+                # RSS/GDELT 都只给"最新 N 条"、不按日期过滤:实测 2026-08-11
+                # 抓到的三条 Fed 公告全部发布于 7 月
+                outside += 1
+    got = days_collected > 0
+    stats = {
+        # 一天都没采到 → null:0 会被读成"确实没有新闻"
+        "sampled": sampled if got else None,
+        "distinct": distinct if got else None,
+        # 差值由脚本给出,报告不必自己减(LLM 禁算)
+        "dup_dropped": (sampled - distinct) if got else None,
+        "in_window": in_win if got else None,
+        "outside_window": outside if got else None,
+        "undated": undated if got else None,
+        "capped_days": capped,
+        "daily_cap": _one_cap(caps),
+        "cap_assumed_days": assumed,
+        "days_collected": days_collected,
+        "days_nonempty": days_nonempty,
+    }
+    return stats, per_day, published_by_date
+
+
+def _events_one(snapshots, currency, lo, hi):
+    art_obs, off_obs = [], []
+    for snap in snapshots:
         events = snap.get("events")
         entry = events.get(currency) if isinstance(events, dict) else None
         arts = entry.get("articles") if isinstance(entry, dict) else None
         official = entry.get("official") if isinstance(entry, dict) else None
-        day = {"articles": None, "official": None}
-        if isinstance(arts, list):
-            arts_total += len(arts)
-            arts_days += 1
-            day["articles"] = len(arts)
-            for a in arts:
-                title = a.get("title") if isinstance(a, dict) else None
-                # GDELT 查询窗 48h、每日跑一次 → 相邻两天重叠约 24h,同一条
-                # 新闻会被数两遍。按标题跨日去重;无标题者无从判重,各算一条
-                if isinstance(title, str):
-                    if title in arts_titles:
-                        continue
-                    arts_titles.add(title)
-                arts_distinct += 1
-            cap, assumed = _cap(snap, "gdelt_records", GDELT_DAILY_CAP)
-            arts_caps.add(cap)
-            arts_assumed += 1 if assumed else 0
-            if len(arts) >= cap:
-                arts_capped += 1
-        else:
-            gdelt_failed += 1
-        if isinstance(official, list):
-            off_collected += 1
-            day["official"] = len(official)
-            if official:
-                off_nonempty += 1
-                off_sampled += len(official)
-                cap, assumed = _cap(snap, "official_daily", OFFICIAL_DAILY_CAP)
-                off_caps.add(cap)
-                off_assumed += 1 if assumed else 0
-                if len(official) >= cap:
-                    off_capped += 1
-            for item in official:
-                if not isinstance(item, dict):
-                    continue
-                key = (item.get("issuer"), item.get("title"), item.get("published"))
-                try:
-                    if key in off_seen:
-                        continue    # 同一条公告连采数日,不得按天累加
-                    off_seen.add(key)
-                except TypeError:
-                    pass            # 成员不可哈希 → 无从判重,各算一条
-                pub = _pub_date(item)
-                if pub is None:
-                    undated += 1
-                elif lo is not None and lo <= pub <= hi:
-                    in_window += 1
-                else:
-                    # RSS 只给"最新 N 条",不按日期过滤:实测 2026-08-11 抓到的
-                    # 三条 Fed 公告全部发布于 7 月。不分窗就会把它们当本周公告
-                    outside += 1
-        if isinstance(date_, str):
-            by_date[date_] = day
+        art_obs.append((snap, arts if isinstance(arts, list) else None))
+        off_obs.append((snap, official if isinstance(official, list) else None))
+    a, a_days, a_pub = _channel(art_obs, "gdelt_records", GDELT_DAILY_CAP,
+                                _seen_date, _article_key, lo, hi)
+    o, o_days, o_pub = _channel(off_obs, "official_daily", OFFICIAL_DAILY_CAP,
+                                _pub_date, _official_key, lo, hi)
+    by_date = {}
+    for i, snap in enumerate(snapshots):
+        date_ = snap.get("date")
+        if not isinstance(date_, str):
+            continue
+        a_ok, a_n = a_days[i]
+        o_ok, o_n = o_days[i]
+        by_date[date_] = {
+            # 管道读数:当日采到没有、采到几条
+            "gdelt_collected": a_ok, "articles_sampled": a_n,
+            "official_collected": o_ok, "official_sampled": o_n,
+            # 市场事实:发布日为当天的去重条数。判"官方在限流日兜底"只准用
+            # official_published —— 用 official_sampled 就是把"当天 RSS 回了
+            # 三条七月旧公告"读成"当天央行发了三条"(第六次同型)
+            "articles_seen": a_pub.get(date_, 0),
+            "official_published": o_pub.get(date_, 0),
+        }
     return {
-        # 一天都没采到 → null:0 会被读成"确实没有新闻"
-        "articles_total": arts_total if arts_days else None,
-        "articles_distinct": arts_distinct if arts_days else None,
-        "articles_capped_days": arts_capped,
-        "articles_daily_cap": _one_cap(arts_caps),
-        "articles_cap_assumed_days": arts_assumed,
-        # 采到的原始条数;不是"本周公告数",两者差着日期过滤与跨日去重
-        "official_sampled": off_sampled if off_collected else None,
-        # 唯一可以当"本周公告数"引用的字段
-        "official_in_window": in_window if off_collected else None,
-        "official_outside_window": outside,
-        "official_undated": undated,
-        "official_capped_days": off_capped,
-        "official_daily_cap": _one_cap(off_caps),
-        "official_cap_assumed_days": off_assumed,
-        "days_with_data": arts_days,
-        "days_gdelt_failed": gdelt_failed,
-        # 采到 ≠ 有内容:前者说管道通,后者说央行确实发了东西。混用会把
-        # "央行本周没发公告"写成"我们没采到"
-        "days_official_collected": off_collected,
-        "days_with_official": off_nonempty,
+        "articles_sampled": a["sampled"], "articles_distinct": a["distinct"],
+        "articles_dup_dropped": a["dup_dropped"],
+        "articles_in_window": a["in_window"],
+        "articles_outside_window": a["outside_window"],
+        "articles_undated": a["undated"],
+        "articles_capped_days": a["capped_days"],
+        "articles_daily_cap": a["daily_cap"],
+        "articles_cap_assumed_days": a["cap_assumed_days"],
+        "days_with_data": a["days_collected"],
+        "days_gdelt_failed": len(snapshots) - a["days_collected"],
+        "official_sampled": o["sampled"], "official_distinct": o["distinct"],
+        "official_dup_dropped": o["dup_dropped"],
+        "official_in_window": o["in_window"],
+        "official_outside_window": o["outside_window"],
+        "official_undated": o["undated"],
+        "official_capped_days": o["capped_days"],
+        "official_daily_cap": o["daily_cap"],
+        "official_cap_assumed_days": o["cap_assumed_days"],
+        # 采到 ≠ 有内容:前者说管道通,后者说发布方确实发了东西。混用会把
+        # "央行本周没发公告"这个市场事实伪装成管道故障
+        "days_official_collected": o["days_collected"],
+        "days_with_official": o["days_nonempty"],
         "days": len(snapshots),
-        # 逐日交叉表:让"官方只在某日有、当日 GDELT 是否正常"成为可逐字引用的
-        # 事实,而不是写报告时临时翻原始快照得出的、下次无法复现的结论
+        # 逐日交叉表:让"哪天 GDELT 失败、哪天真有公告发布"成为可逐字引用的
+        # 事实,而不是写报告时翻原始快照得出的、下次无法复现的结论
         "by_date": by_date,
     }
 
 
-def _events_digest(snapshot_dates, snapshots, currencies, lo, hi):
+def _events_digest(snapshots, currencies, lo, hi):
     """两个通道分别计数:GDELT articles 与官方 RSS official 口径不同,
     合并会让计数不可比;而只数 articles 又会让"GDELT 挂了但 RSS 成功"
     被记成纯粹的采集失败,夸大停摆。"""
-    return {c: _events_one(snapshot_dates, snapshots, c, lo, hi)
-            for c in currencies}
+    return {c: _events_one(snapshots, c, lo, hi) for c in currencies}
 
 
 def _gaps_by_source(snapshots):
@@ -295,7 +362,9 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
         "generated_from": dates,
         "skipped": skipped_snapshots,
         "rates": _rates_digest(good, currencies),
-        "events": (_events_digest(dates, good, currencies,
+        "window_from": min(dates) if dates else None,
+        "window_to": max(dates) if dates else None,
+        "events": (_events_digest(good, currencies,
                                   min(dates) if dates else None,
                                   max(dates) if dates else None)
                    if good else {}),
