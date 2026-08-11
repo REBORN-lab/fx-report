@@ -1,6 +1,6 @@
 {
   "date": "2026-08-11",
-  "run_at": "2026-08-11T04:19:56+00:00",
+  "run_at": "2026-08-11T05:20:09+00:00",
   "schema_version": 1,
   "rates": {
     "PHP": {
@@ -46,13 +46,16 @@
   },
   "macro": [
     {
+      "value": 3.531,
+      "prev": 4.249,
+      "period": "2026-06",
+      "source": "bls",
+      "series_id": "BLS/CUUR0000SA0",
       "economy": "US",
       "indicator": "CPI 同比",
-      "series_id": "IMF/CPI/M.US.PCPI_PC_CP_A_PT",
-      "value": 2.70490239715136,
-      "prev": 2.66921301822231,
-      "period": "2025-07",
-      "is_new_release": false
+      "is_new_release": false,
+      "lag_months": 2,
+      "source_changed_from": "dbnomics"
     },
     {
       "economy": "EA",
@@ -61,7 +64,9 @@
       "value": 1.9,
       "prev": 2.1,
       "period": "2025-12",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 8
     },
     {
       "economy": "PH",
@@ -70,7 +75,9 @@
       "value": 1.27388535031847,
       "prev": 1.43426294820717,
       "period": "2025-05",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 15
     },
     {
       "economy": "TH",
@@ -79,7 +86,9 @@
       "value": 0.235355011152928,
       "prev": 0.463228123163358,
       "period": "2025-03",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 17
     },
     {
       "economy": "BR",
@@ -88,7 +97,9 @@
       "value": 5.22525470407828,
       "prev": 5.35128523909063,
       "period": "2025-07",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 13
     },
     {
       "economy": "US",
@@ -97,7 +108,9 @@
       "value": 4.375,
       "prev": 4.375,
       "period": "2025-07-08",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 13
     },
     {
       "economy": "EA",
@@ -106,7 +119,9 @@
       "value": 2.0,
       "prev": 2.0,
       "period": "2025-07-08",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 13
     },
     {
       "economy": "PH",
@@ -115,7 +130,9 @@
       "value": 5.25,
       "prev": 5.25,
       "period": "2025-07-04",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 13
     },
     {
       "economy": "TH",
@@ -124,7 +141,20 @@
       "value": 1.75,
       "prev": 1.75,
       "period": "2025-07-03",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 13
+    },
+    {
+      "economy": "BR",
+      "indicator": "政策利率",
+      "series_id": "BIS/WS_CBPOL/D.BR",
+      "value": 15.0,
+      "prev": 15.0,
+      "period": "2025-07-07",
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": 13
     },
     {
       "economy": "US",
@@ -133,16 +163,9 @@
       "value": -410248.0,
       "prev": -306510.0,
       "period": "2025-Q1",
-      "is_new_release": false
-    },
-    {
-      "economy": "EA",
-      "indicator": "经常账户",
-      "series_id": "IMF/BOP/Q.U2.BCA_BP6_USD",
-      "value": 68149.5680178591,
-      "prev": 107943.668573,
-      "period": "2025-Q1",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": null
     },
     {
       "economy": "PH",
@@ -151,7 +174,9 @@
       "value": -4247.6822065757,
       "prev": -4572.33498631775,
       "period": "2025-Q1",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": null
     },
     {
       "economy": "TH",
@@ -160,7 +185,9 @@
       "value": 11081.8905202786,
       "prev": 4480.78427177536,
       "period": "2025-Q1",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": null
     },
     {
       "economy": "BR",
@@ -169,59 +196,81 @@
       "value": -10522.85858349,
       "prev": -22285.1435033,
       "period": "2025-Q2",
-      "is_new_release": false
+      "source": "dbnomics",
+      "is_new_release": false,
+      "lag_months": null
     }
   ],
   "events": {
-    "BRL": {
+    "USD": {
       "articles": [
         {
-          "title": "Banco Central detalha hoje corte da Selic para 14 % em ata do Copom",
-          "url": "https://oglobo.globo.com/economia/financas/noticia/2026/08/11/banco-central-detalha-hoje-corte-da-selic-para-14percent-em-ata-do-copom.ghtml",
-          "domain": "oglobo.globo.com",
-          "seendate": "20260811T033000Z"
+          "title": "Gold , Silver Rally May Extend Next Week , Inflation Data And West Asia Tensions In Focus",
+          "url": "https://www.freepressjournal.in/business/gold-silver-rally-may-extend-next-week-inflation-data-and-west-asia-tensions-in-focus",
+          "domain": "freepressjournal.in",
+          "seendate": "20260809T120000Z"
         },
         {
-          "title": " ¿ Qué puede pasar con las tasas en el próximo Copom ? ",
-          "url": "https://www.ambito.com/uruguay/que-puede-pasar-las-tasas-el-proximo-copom-n6309037",
-          "domain": "ambito.com",
+          "title": "INR stays pressured by firm greenback and uptick in global oil prices",
+          "url": "https://www.business-standard.com/markets/capital-market-news/inr-stays-pressured-by-firm-greenback-and-uptick-in-global-oil-prices-126081001257_1.html",
+          "domain": "business-standard.com",
+          "seendate": "20260810T130000Z"
+        },
+        {
+          "title": "Gold , silver futures surge nearly 6 - 7 % in a week ; gold hits ₹1 . 51 lakh , silver ₹2 . 31 lakh on MCX ; prices set to rise further next week",
+          "url": "https://www.ibtimes.co.in/gold-silver-futures-surge-nearly-6-7-week-gold-hits-1-51-lakh-silver-2-31-lakh-mcx-904589",
+          "domain": "ibtimes.co.in",
+          "seendate": "20260809T170000Z"
+        },
+        {
+          "title": "Gold price drops after four days , know today rate - KERALA - GENERAL",
+          "url": "https://keralakaumudi.com/en/en/kerala/general/gold-price-drops-after-four-days-know-today%e2%80%99s-rate-1790085",
+          "domain": "keralakaumudi.com",
+          "seendate": "20260810T083000Z"
+        },
+        {
+          "title": "Gold Prices Prediction : Gold , silver prices seen rising next week as US inflation data , West Asia tensions guide markets",
+          "url": "https://timesofindia.indiatimes.com/business/india-business/gold-silver-prices-seen-rising-next-week-as-us-inflation-data-west-asia-tensions-guide-markets/articleshow/133067433.cms",
+          "domain": "timesofindia.indiatimes.com",
+          "seendate": "20260809T124500Z"
+        },
+        {
+          "title": "Gold , silver prices today , 10 August : Check retail rates of 24K , 22K gold , 999 silver in Delhi , Mumbai and Kolkata",
+          "url": "https://www.livemint.com/money/personal-finance/gold-silver-prices-today-10-august-check-retail-rates-of-24k-22k-gold-999-silver-in-delhi-mumbai-and-kolkata-11786315314690.html",
+          "domain": "livemint.com",
+          "seendate": "20260810T053000Z"
+        },
+        {
+          "title": "Weekly Forecast 10 to 14 / 08 : Global Markets Split",
+          "url": "https://www.dailyforex.com/forex-technical-analysis/2026/08/weekly-market-forecast-10th-to-14th-august-2026/248487",
+          "domain": "dailyforex.com",
           "seendate": "20260810T164500Z"
         },
         {
-          "title": "Dupla é presa após ameaçar pedestre com faca durante roubo em PG",
-          "url": "https://arede.info/ponta-grossa/665705/dupla-e-presa-apos-ameacar-pedestre-com-faca-durante-roubo-em-pg",
-          "domain": "arede.info",
-          "seendate": "20260810T151500Z"
+          "title": "Yen steadies as intervention boost fades ahead of US data",
+          "url": "https://www.freemalaysiatoday.com/category/business/2026/08/11/yen-steadies-as-intervention-boost-fades-ahead-of-us-data",
+          "domain": "freemalaysiatoday.com",
+          "seendate": "20260811T043000Z"
+        }
+      ],
+      "official": [
+        {
+          "title": "Federal Reserve issues FOMC statement",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+          "published": "Wed, 29 Jul 2026 18:00:00 GMT",
+          "issuer": "Fed"
         },
         {
-          "title": "Expectativa do mercado para inflao de 2026 cai para 5 , 02 % ",
-          "url": "https://www.hojeemdia.com.br/economiaefinancas/expectativa-do-mercado-para-inflac-o-de-2026-cai-para-5-02-1.1128485",
-          "domain": "hojeemdia.com.br",
-          "seendate": "20260810T141500Z"
+          "title": "Minutes of the Board's discount rate meetings on June 8 and June 17, 2026",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260714a.htm",
+          "published": "Tue, 14 Jul 2026 18:00:00 GMT",
+          "issuer": "Fed"
         },
         {
-          "title": "Calendário econômico semanal : Ata do Copom , IPCA e inflao nos EUA no foco da agenda",
-          "url": "https://www.infomoney.com.br/mercados/calendario-economico-semanal-ata-do-copom-ipca-e-inflacao-nos-eua-no-foco-da-agenda/",
-          "domain": "infomoney.com.br",
-          "seendate": "20260809T230000Z"
-        },
-        {
-          "title": "Furto em Arapiraca : Imóvel É Invadido e Tem itens Furtados",
-          "url": "https://www.alagoas24horas.com.br/1755017/ladrao-invade-imovel-furta-fios-de-cobre-e-bomba-dagua-e-foge-em-arapiraca/",
-          "domain": "alagoas24horas.com.br",
-          "seendate": "20260809T174500Z"
-        },
-        {
-          "title": "Expectativa do mercado para inflao de 2026 cai para 5 , 02 % - O que é notícia em Sergipe",
-          "url": "https://infonet.com.br/noticias/economia/expectativa-do-mercado-para-inflacao-de-2026-cai-para-502/",
-          "domain": "infonet.com.br",
-          "seendate": "20260810T164500Z"
-        },
-        {
-          "title": "Homem É Preso por Ameaça e Violência Doméstica em Arapiraca",
-          "url": "https://www.alagoas24horas.com.br/1754991/homem-e-preso-apos-agredir-e-ameacar-esposa-de-morte-filho-do-casal-acionou-a-pm/",
-          "domain": "alagoas24horas.com.br",
-          "seendate": "20260809T131500Z"
+          "title": "Federal Reserve announces the leadership and objectives of its task forces to advance the conduct of monetary policy",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260709a.htm",
+          "published": "Thu, 9 Jul 2026 19:00:00 GMT",
+          "issuer": "Fed"
         }
       ]
     },
@@ -274,6 +323,26 @@
           "url": "http://www.econotimes.com/FxWirePro-EUR-NZD-neutral-in-the-near-term-scope-for-downward-resumption-1749103",
           "domain": "econotimes.com",
           "seendate": "20260811T021500Z"
+        }
+      ],
+      "official": [
+        {
+          "title": "ECB publishes consolidated banking data for end-March 2026",
+          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260807~58eb5109ce.en.html",
+          "published": "Fri, 07 Aug 2026 10:00:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "Digital euro app to incorporate highest accessibility standards",
+          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260730~3b3bfbb565.en.html",
+          "published": "Thu, 30 Jul 2026 10:00:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "ECB wage tracker at 2.7% in Q1 2027, indicating stable negotiated wage pressures",
+          "link": "https://www.ecb.europa.eu//press/pr/date/2026/html/ecb.pr260729~4ad7508d8a.en.html",
+          "published": "Wed, 29 Jul 2026 10:00:00 +0200",
+          "issuer": "ECB"
         }
       ]
     },
@@ -344,12 +413,6 @@
           "seendate": "20260811T021500Z"
         },
         {
-          "title": "Ringgit to remain range - bound at 4 . 07 - 4 . 09 against US dollar next week",
-          "url": "https://www.thestar.com.my/business/business-news/2026/08/09/ringgit-to-remain-range-bound-at-407-409-against-us-dollar-next-week",
-          "domain": "thestar.com.my",
-          "seendate": "20260809T050000Z"
-        },
-        {
           "title": "Market exchange rates in China -- Aug . 10 - Xinhua",
           "url": "https://english.news.cn/20260810/1f5f63e3558943429981161ab769cfeb/c.html",
           "domain": "english.news.cn",
@@ -374,15 +437,15 @@
   "gaps": [
     {
       "source": "dbnomics",
-      "scope": "BIS/WS_CBPOL/D.BR",
-      "reason": "URLError: <urlopen error [Errno 101] Network is unreachable>",
-      "at": "2026-08-11T04:14:45+00:00"
+      "scope": "IMF/BOP/Q.U2.BCA_BP6_USD",
+      "reason": "TimeoutError: The read operation timed out",
+      "at": "2026-08-11T05:15:36+00:00"
     },
     {
       "source": "gdelt",
-      "scope": "USD",
+      "scope": "BRL",
       "reason": "rate-limited after retry (hard-rate-limited-429, first: hard-rate-limited-429)",
-      "at": "2026-08-11T04:17:21+00:00"
+      "at": "2026-08-11T05:16:45+00:00"
     }
   ],
   "meta": {
@@ -427,12 +490,12 @@
         "count_delta": null
       },
       "THB": {
-        "count": 6,
+        "count": 5,
         "count_prev": null,
         "count_delta": null
       },
       "BRL": {
-        "count": 8,
+        "count": null,
         "count_prev": null,
         "count_delta": null
       },
@@ -442,18 +505,18 @@
         "count_delta": 0
       },
       "USD": {
-        "count": null,
+        "count": 8,
         "count_prev": null,
         "count_delta": null
       }
     },
     "real_rate": {
       "US": {
-        "value": 1.67,
+        "value": 0.844,
         "policy_rate": 4.375,
         "policy_period": "2025-07-08",
-        "cpi": 2.70490239715136,
-        "cpi_period": "2025-07"
+        "cpi": 3.531,
+        "cpi_period": "2026-06"
       },
       "EA": {
         "value": 0.1,
@@ -477,9 +540,9 @@
         "cpi_period": "2025-03"
       },
       "BR": {
-        "value": null,
-        "policy_rate": null,
-        "policy_period": null,
+        "value": 9.775,
+        "policy_rate": 15.0,
+        "policy_period": "2025-07-07",
         "cpi": 5.22525470407828,
         "cpi_period": "2025-07"
       }
