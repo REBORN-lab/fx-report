@@ -10,4 +10,4 @@
 
 ## 3. 回归确认
 
-- [ ] 3.1 全量测试套件通过;用既有真实产物重跑 `check_report.py`(daily 与 weekly 各一份)确认退出码不变——实证 prompt 改动未破坏校验器兼容
+- [x] 3.1 全量测试套件通过;用既有真实产物重跑 `check_report.py`(daily 与 weekly 各一份)确认退出码不变——实证 prompt 改动未破坏校验器兼容
