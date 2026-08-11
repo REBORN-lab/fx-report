@@ -1,29 +1,262 @@
 {
   "valid_until": "2026-12-31",
-  "updated_at": "2026-08-10",
+  "updated_at": "2026-08-11",
   "sources": [
-    {"bank": "Fed", "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"},
-    {"bank": "ECB", "url": "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"},
-    {"bank": "BSP", "url": "https://www.bsp.gov.ph/Pages/PriceStability/ScheduleOfMeetingsOfTheAdvisoryCommitteeAndMonetaryBoardOnMonetaryPolicy.aspx"},
-    {"bank": "BOT", "url": "https://www.bot.or.th/en/our-roles/monetary-policy/mpc-meeting.html"},
-    {"bank": "BCB", "url": "https://www.bcb.gov.br/htms/copom_normas/copomcalend.asp"}
+    {
+      "bank": "Fed",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+    },
+    {
+      "bank": "ECB",
+      "url": "https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html"
+    },
+    {
+      "bank": "BSP",
+      "url": "https://www.bsp.gov.ph/Pages/PriceStability/ScheduleOfMeetingsOfTheAdvisoryCommitteeAndMonetaryBoardOnMonetaryPolicy.aspx"
+    },
+    {
+      "bank": "BOT",
+      "url": "https://www.bot.or.th/en/our-roles/monetary-policy/mpc-meeting.html"
+    },
+    {
+      "bank": "BCB",
+      "url": "https://www.bcb.gov.br/htms/copom_normas/copomcalend.asp"
+    },
+    {
+      "bank": "BLS",
+      "series": "CPI 发布日程",
+      "url": "https://www.bls.gov/schedule/news_release/cpi.htm",
+      "fetched_at": "2026-08-11"
+    },
+    {
+      "bank": "BLS",
+      "series": "Employment Situation(非农)发布日程",
+      "url": "https://www.bls.gov/schedule/news_release/empsit.htm",
+      "fetched_at": "2026-08-11"
+    },
+    {
+      "bank": "Fed",
+      "series": "FOMC 会议与纪要日程",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "fetched_at": "2026-08-11"
+    }
   ],
-  "maintenance": "每年 12 月创建新文件 state/calendar-<次年>.json(不修改本文件),写入该年五行 events 与对应 valid_until;采集入口自动取字典序最大的 state/calendar-*.json,无需改代码;旧文件保留存档。",
+  "maintenance": "每年 12 月创建新文件 state/calendar-<次年>.json(不修改本文件),写入该年 events 与对应 valid_until;采集入口自动取字典序最大的 state/calendar-*.json,无需改代码;旧文件保留存档。\n字段说明:`bank` 复用为「发布方」——央行议息填央行代码,统计发布填统计机构代码(如 BLS)。\n已知缺口(2026-08-11):PH(PSA)、BR(IBGE)、TH(MOC)、EA(Eurostat)的统计发布日历官网对本机返回 HTTP 403,未能验证,因此**未录入任何该四经济体的数据发布日期**——年历的价值全在可信,宁缺勿编。补录方式:人工访问各官网年度发布日历,按 {date, bank, event} 追加。\n未公布的 FOMC 纪要日期不按「决议后三周」规则外推:规则值与官方公布值可能差一天,而本文件的用途是给报告写「具体哪天」,错一天即误导。官方公布后再补录。",
   "events": [
-    {"date": "2026-08-26", "bank": "BOT", "event": "MPC 货币政策会议(2026年第4次,决议公布日)"},
-    {"date": "2026-08-27", "bank": "BSP", "event": "Monetary Board 货币政策会议(2026年第4次)"},
-    {"date": "2026-09-10", "bank": "ECB", "event": "Governing Council 货币政策会议(9/9-10 两日会议,决议与新闻发布会为9/10)"},
-    {"date": "2026-09-16", "bank": "Fed", "event": "FOMC 议息会议(9/15-16 两日会议,声明公布日为9/16)"},
-    {"date": "2026-09-16", "bank": "BCB", "event": "COPOM 第281次货币政策会议(9/15-16 两日会议,决议公布日为9/16)"},
-    {"date": "2026-10-22", "bank": "BSP", "event": "Monetary Board 货币政策会议(2026年第5次)"},
-    {"date": "2026-10-28", "bank": "Fed", "event": "FOMC 议息会议(10/27-28 两日会议,声明公布日为10/28)"},
-    {"date": "2026-10-28", "bank": "BOT", "event": "MPC 货币政策会议(2026年第5次,决议公布日)"},
-    {"date": "2026-10-29", "bank": "ECB", "event": "Governing Council 货币政策会议(10/28-29 两日会议,决议与新闻发布会为10/29)"},
-    {"date": "2026-11-04", "bank": "BCB", "event": "COPOM 第282次货币政策会议(11/3-4 两日会议,决议公布日为11/4)"},
-    {"date": "2026-12-09", "bank": "Fed", "event": "FOMC 议息会议(12/8-9 两日会议,声明公布日为12/9)"},
-    {"date": "2026-12-09", "bank": "BCB", "event": "COPOM 第283次货币政策会议(12/8-9 两日会议,决议公布日为12/9)"},
-    {"date": "2026-12-17", "bank": "ECB", "event": "Governing Council 货币政策会议(12/16-17 两日会议,决议与新闻发布会为12/17)"},
-    {"date": "2026-12-17", "bank": "BSP", "event": "Monetary Board 货币政策会议(2026年第6次,年内最后一次)"},
-    {"date": "2026-12-23", "bank": "BOT", "event": "MPC 货币政策会议(2026年第6次,年内最后一次,决议公布日)"}
+    {
+      "date": "2026-01-09",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2025-12)"
+    },
+    {
+      "date": "2026-01-13",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2025-12)"
+    },
+    {
+      "date": "2026-02-11",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-01)"
+    },
+    {
+      "date": "2026-02-13",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-01)"
+    },
+    {
+      "date": "2026-02-18",
+      "bank": "Fed",
+      "event": "FOMC 会议纪要发布(2026-01-27/28 会议)"
+    },
+    {
+      "date": "2026-03-06",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-02)"
+    },
+    {
+      "date": "2026-03-11",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-02)"
+    },
+    {
+      "date": "2026-04-03",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-03)"
+    },
+    {
+      "date": "2026-04-08",
+      "bank": "Fed",
+      "event": "FOMC 会议纪要发布(2026-03-17/18 会议)"
+    },
+    {
+      "date": "2026-04-10",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-03)"
+    },
+    {
+      "date": "2026-05-08",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-04)"
+    },
+    {
+      "date": "2026-05-12",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-04)"
+    },
+    {
+      "date": "2026-05-20",
+      "bank": "Fed",
+      "event": "FOMC 会议纪要发布(2026-04-28/29 会议)"
+    },
+    {
+      "date": "2026-06-05",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-05)"
+    },
+    {
+      "date": "2026-06-10",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-05)"
+    },
+    {
+      "date": "2026-07-02",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-06)"
+    },
+    {
+      "date": "2026-07-08",
+      "bank": "Fed",
+      "event": "FOMC 会议纪要发布(2026-06-16/17 会议)"
+    },
+    {
+      "date": "2026-07-14",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-06)"
+    },
+    {
+      "date": "2026-08-07",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-07)"
+    },
+    {
+      "date": "2026-08-12",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-07)"
+    },
+    {
+      "date": "2026-08-26",
+      "bank": "BOT",
+      "event": "MPC 货币政策会议(2026年第4次,决议公布日)"
+    },
+    {
+      "date": "2026-08-27",
+      "bank": "BSP",
+      "event": "Monetary Board 货币政策会议(2026年第4次)"
+    },
+    {
+      "date": "2026-09-04",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-08)"
+    },
+    {
+      "date": "2026-09-10",
+      "bank": "ECB",
+      "event": "Governing Council 货币政策会议(9/9-10 两日会议,决议与新闻发布会为9/10)"
+    },
+    {
+      "date": "2026-09-11",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-08)"
+    },
+    {
+      "date": "2026-09-16",
+      "bank": "BCB",
+      "event": "COPOM 第281次货币政策会议(9/15-16 两日会议,决议公布日为9/16)"
+    },
+    {
+      "date": "2026-09-16",
+      "bank": "Fed",
+      "event": "FOMC 议息会议(9/15-16 两日会议,声明公布日为9/16)"
+    },
+    {
+      "date": "2026-10-02",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-09)"
+    },
+    {
+      "date": "2026-10-14",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-09)"
+    },
+    {
+      "date": "2026-10-22",
+      "bank": "BSP",
+      "event": "Monetary Board 货币政策会议(2026年第5次)"
+    },
+    {
+      "date": "2026-10-28",
+      "bank": "BOT",
+      "event": "MPC 货币政策会议(2026年第5次,决议公布日)"
+    },
+    {
+      "date": "2026-10-28",
+      "bank": "Fed",
+      "event": "FOMC 议息会议(10/27-28 两日会议,声明公布日为10/28)"
+    },
+    {
+      "date": "2026-10-29",
+      "bank": "ECB",
+      "event": "Governing Council 货币政策会议(10/28-29 两日会议,决议与新闻发布会为10/29)"
+    },
+    {
+      "date": "2026-11-04",
+      "bank": "BCB",
+      "event": "COPOM 第282次货币政策会议(11/3-4 两日会议,决议公布日为11/4)"
+    },
+    {
+      "date": "2026-11-06",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-10)"
+    },
+    {
+      "date": "2026-11-10",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-10)"
+    },
+    {
+      "date": "2026-12-04",
+      "bank": "BLS",
+      "event": "美国非农就业报告发布(参考月 2026-11)"
+    },
+    {
+      "date": "2026-12-09",
+      "bank": "BCB",
+      "event": "COPOM 第283次货币政策会议(12/8-9 两日会议,决议公布日为12/9)"
+    },
+    {
+      "date": "2026-12-09",
+      "bank": "Fed",
+      "event": "FOMC 议息会议(12/8-9 两日会议,声明公布日为12/9)"
+    },
+    {
+      "date": "2026-12-10",
+      "bank": "BLS",
+      "event": "美国 CPI 发布(参考月 2026-11)"
+    },
+    {
+      "date": "2026-12-17",
+      "bank": "BSP",
+      "event": "Monetary Board 货币政策会议(2026年第6次,年内最后一次)"
+    },
+    {
+      "date": "2026-12-17",
+      "bank": "ECB",
+      "event": "Governing Council 货币政策会议(12/16-17 两日会议,决议与新闻发布会为12/17)"
+    },
+    {
+      "date": "2026-12-23",
+      "bank": "BOT",
+      "event": "MPC 货币政策会议(2026年第6次,年内最后一次,决议公布日)"
+    }
   ]
 }
