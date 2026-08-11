@@ -14,10 +14,12 @@ import os
 import re
 import sys
 from datetime import date
+from email.utils import parsedate_to_datetime
 
 if __package__ in (None, ""):   # 直接 `python3 scripts/weekly_digest.py` 时补 path
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from scripts.collect.events import MAX_RECORDS as GDELT_DAILY_CAP
 from scripts.collect.feeds import MAX_ITEMS as OFFICIAL_DAILY_CAP
 from scripts.fixings import distinct_fixings, num as _num
 
@@ -67,44 +69,142 @@ def _rates_digest(snapshots, currencies):
     return out
 
 
-def _events_digest(snapshots, currencies):
+def _pub_date(item):
+    """RSS pubDate → YYYY-MM-DD。解析不了返回 None,绝不猜——猜错会把上个月的
+    公告算进本周。"""
+    raw = item.get("published") if isinstance(item, dict) else None
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        dt = parsedate_to_datetime(raw)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if dt is None:      # 3.9 及更早版本对无法解析的串返回 None 而非抛错
+        return None
+    try:
+        return dt.date().isoformat()
+    except (AttributeError, ValueError, OverflowError):
+        return None
+
+
+def _cap(snap, key, fallback):
+    """当日采集上限。优先读快照 meta.caps(采集当时的真值);缺失则按当前代码
+    常量推定并告知调用方——上限一旦改动,拿新常量去判旧快照会静默错判触顶。
+    返回 (cap, assumed)。"""
+    meta = snap.get("meta")
+    caps = meta.get("caps") if isinstance(meta, dict) else None
+    value = caps.get(key) if isinstance(caps, dict) else None
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value, False
+    return fallback, True
+
+
+def _one_cap(caps):
+    """全周上限一致才给单值;不一致(期间改过上限)给 null,不取任一个充数。"""
+    return next(iter(caps)) if len(caps) == 1 else None
+
+
+def _events_one(snapshot_dates, snapshots, currency, lo, hi):
+    arts_total = arts_distinct = arts_days = gdelt_failed = 0
+    arts_capped = arts_assumed = 0
+    arts_titles, arts_caps = set(), set()
+    off_sampled = off_collected = off_nonempty = off_capped = off_assumed = 0
+    in_window = outside = undated = 0
+    off_seen, off_caps = set(), set()
+    by_date = {}
+    for date_, snap in zip(snapshot_dates, snapshots):
+        events = snap.get("events")
+        entry = events.get(currency) if isinstance(events, dict) else None
+        arts = entry.get("articles") if isinstance(entry, dict) else None
+        official = entry.get("official") if isinstance(entry, dict) else None
+        day = {"articles": None, "official": None}
+        if isinstance(arts, list):
+            arts_total += len(arts)
+            arts_days += 1
+            day["articles"] = len(arts)
+            for a in arts:
+                title = a.get("title") if isinstance(a, dict) else None
+                # GDELT 查询窗 48h、每日跑一次 → 相邻两天重叠约 24h,同一条
+                # 新闻会被数两遍。按标题跨日去重;无标题者无从判重,各算一条
+                if isinstance(title, str):
+                    if title in arts_titles:
+                        continue
+                    arts_titles.add(title)
+                arts_distinct += 1
+            cap, assumed = _cap(snap, "gdelt_records", GDELT_DAILY_CAP)
+            arts_caps.add(cap)
+            arts_assumed += 1 if assumed else 0
+            if len(arts) >= cap:
+                arts_capped += 1
+        else:
+            gdelt_failed += 1
+        if isinstance(official, list):
+            off_collected += 1
+            day["official"] = len(official)
+            if official:
+                off_nonempty += 1
+                off_sampled += len(official)
+                cap, assumed = _cap(snap, "official_daily", OFFICIAL_DAILY_CAP)
+                off_caps.add(cap)
+                off_assumed += 1 if assumed else 0
+                if len(official) >= cap:
+                    off_capped += 1
+            for item in official:
+                if not isinstance(item, dict):
+                    continue
+                key = (item.get("issuer"), item.get("title"), item.get("published"))
+                try:
+                    if key in off_seen:
+                        continue    # 同一条公告连采数日,不得按天累加
+                    off_seen.add(key)
+                except TypeError:
+                    pass            # 成员不可哈希 → 无从判重,各算一条
+                pub = _pub_date(item)
+                if pub is None:
+                    undated += 1
+                elif lo is not None and lo <= pub <= hi:
+                    in_window += 1
+                else:
+                    # RSS 只给"最新 N 条",不按日期过滤:实测 2026-08-11 抓到的
+                    # 三条 Fed 公告全部发布于 7 月。不分窗就会把它们当本周公告
+                    outside += 1
+        if isinstance(date_, str):
+            by_date[date_] = day
+    return {
+        # 一天都没采到 → null:0 会被读成"确实没有新闻"
+        "articles_total": arts_total if arts_days else None,
+        "articles_distinct": arts_distinct if arts_days else None,
+        "articles_capped_days": arts_capped,
+        "articles_daily_cap": _one_cap(arts_caps),
+        "articles_cap_assumed_days": arts_assumed,
+        # 采到的原始条数;不是"本周公告数",两者差着日期过滤与跨日去重
+        "official_sampled": off_sampled if off_collected else None,
+        # 唯一可以当"本周公告数"引用的字段
+        "official_in_window": in_window if off_collected else None,
+        "official_outside_window": outside,
+        "official_undated": undated,
+        "official_capped_days": off_capped,
+        "official_daily_cap": _one_cap(off_caps),
+        "official_cap_assumed_days": off_assumed,
+        "days_with_data": arts_days,
+        "days_gdelt_failed": gdelt_failed,
+        # 采到 ≠ 有内容:前者说管道通,后者说央行确实发了东西。混用会把
+        # "央行本周没发公告"写成"我们没采到"
+        "days_official_collected": off_collected,
+        "days_with_official": off_nonempty,
+        "days": len(snapshots),
+        # 逐日交叉表:让"官方只在某日有、当日 GDELT 是否正常"成为可逐字引用的
+        # 事实,而不是写报告时临时翻原始快照得出的、下次无法复现的结论
+        "by_date": by_date,
+    }
+
+
+def _events_digest(snapshot_dates, snapshots, currencies, lo, hi):
     """两个通道分别计数:GDELT articles 与官方 RSS official 口径不同,
     合并会让计数不可比;而只数 articles 又会让"GDELT 挂了但 RSS 成功"
     被记成纯粹的采集失败,夸大停摆。"""
-    out = {}
-    for currency in currencies:
-        arts_total, official_total = 0, 0
-        with_data, failed, official_days, capped_days = 0, 0, 0, 0
-        for snap in snapshots:
-            events = snap.get("events")
-            entry = events.get(currency) if isinstance(events, dict) else None
-            arts = entry.get("articles") if isinstance(entry, dict) else None
-            official = entry.get("official") if isinstance(entry, dict) else None
-            if isinstance(arts, list):
-                arts_total += len(arts)
-                with_data += 1
-            else:
-                failed += 1
-            if isinstance(official, list) and official:
-                official_total += len(official)
-                official_days += 1
-                if len(official) >= OFFICIAL_DAILY_CAP:
-                    capped_days += 1
-        out[currency] = {
-            # 一天都没采到 → null:0 会被读成"确实没有新闻"
-            "articles_total": arts_total if with_data else None,
-            "official_total": official_total if official_days else None,
-            # official 每日有上限,顶到上限的天数说明"至少这么多",不是计数;
-            # 覆盖天数说明这个和是几天的样本 —— 两者不给,读者会把
-            # "一天采到 3 条(上限)" 读成 "本周共 3 条公告"
-            "official_capped_days": capped_days,
-            "official_daily_cap": OFFICIAL_DAILY_CAP,
-            "days_with_data": with_data,
-            "days_gdelt_failed": failed,
-            "days_with_official": official_days,
-            "days": len(snapshots),
-        }
-    return out
+    return {c: _events_one(snapshot_dates, snapshots, c, lo, hi)
+            for c in currencies}
 
 
 def _gaps_by_source(snapshots):
@@ -195,7 +295,10 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
         "generated_from": dates,
         "skipped": skipped_snapshots,
         "rates": _rates_digest(good, currencies),
-        "events": _events_digest(good, currencies) if good else {},
+        "events": (_events_digest(dates, good, currencies,
+                                  min(dates) if dates else None,
+                                  max(dates) if dates else None)
+                   if good else {}),
         "gaps_by_source": _gaps_by_source(good),
         "verdicts": verdicts,
         "verdict_details": verdict_details,

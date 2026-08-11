@@ -4,7 +4,8 @@ import unittest
 from scripts import weekly_digest as wd
 
 
-def snap(date, php=None, ref=None, articles=None, gaps=None, official=None):
+def snap(date, php=None, ref=None, articles=None, gaps=None, official=None,
+         published=None, meta=None):
     s = {"date": date, "rates": {}, "events": {}, "gaps": gaps or []}
     if php is not None:
         s["rates"]["PHP"] = {"primary": php, "ref_date": ref}
@@ -12,8 +13,11 @@ def snap(date, php=None, ref=None, articles=None, gaps=None, official=None):
         s["events"].setdefault("PHP", {})["articles"] = \
             [{"title": "t%d" % i} for i in range(articles)]
     if official is not None:
-        s["events"].setdefault("PHP", {})["official"] = \
-            [{"title": "o%d" % i, "issuer": "X"} for i in range(official)]
+        s["events"].setdefault("PHP", {})["official"] = [
+            {"title": "o%d" % i, "issuer": "X", "published": published}
+            for i in range(official)]
+    if meta is not None:
+        s["meta"] = meta
     return s
 
 
@@ -80,14 +84,14 @@ class EventsAndGapsTest(unittest.TestCase):
         d, _ = wd.build(snaps, [], "2026-W33")
         e = d["events"]["PHP"]
         self.assertEqual(e["articles_total"], 6)
-        self.assertEqual(e["official_total"], 5)
+        self.assertEqual(e["official_sampled"], 5)
         self.assertEqual(e["days_gdelt_failed"], 1)
         self.assertEqual(e["days_with_official"], 2)
 
     def test_official_null_when_never_collected(self):
         d, _ = wd.build([snap("2026-08-10", 60.75, "2026-08-10", articles=6)],
                         [], "2026-W33")
-        self.assertIsNone(d["events"]["PHP"]["official_total"])
+        self.assertIsNone(d["events"]["PHP"]["official_sampled"])
 
     def test_gaps_counted_by_source(self):
         d, _ = wd.build(WEEK_SNAPS, [], "2026-W33")
@@ -174,9 +178,6 @@ class RobustnessTest(unittest.TestCase):
         self.assertEqual(d["generated_from"],
                          ["2026-08-07", "2026-08-08", "2026-08-10"])
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class CrossGenerationFixingTest(unittest.TestCase):
@@ -271,7 +272,7 @@ class OfficialDisclosureTest(unittest.TestCase):
                  snap("2026-08-11", 60.75, "2026-08-10", official=cap)]
         d, _ = wd.build(snaps, [], "2026-W33")
         e = d["events"]["PHP"]
-        self.assertEqual(e["official_total"], cap)
+        self.assertEqual(e["official_sampled"], cap)
         self.assertEqual(e["official_capped_days"], 1)   # 顶到上限 → "至少这么多"
         self.assertEqual(e["days_with_official"], 1)
         self.assertEqual(e["days"], 2)
@@ -378,3 +379,146 @@ class SnapshotFileFilterTest(unittest.TestCase):
                 d = _json.load(f)
         self.assertEqual(d["generated_from"], ["2026-08-10"])
         self.assertEqual(d["rates"]["PHP"]["range_high"], 60.75)   # 999/500/1 全部未进
+class OfficialWindowTest(unittest.TestCase):
+    """RSS 只给"最新 N 条"、不按发布日过滤:2026-08-11 实测抓到的三条 Fed 公告
+    全部发布于 7 月。把 sampled 当"本周公告数"是第五次同型事故。"""
+
+    def test_published_before_window_is_not_this_week(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", official=3,
+                 published="Wed, 29 Jul 2026 15:00:00 -0400")
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["official_in_window"], 0)        # 本周该发行方 0 条
+        self.assertEqual(e["official_outside_window"], 3)
+        self.assertEqual(e["official_sampled"], 3)          # 原始样本仍是 3
+
+    def test_published_inside_window_counted(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10"),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=1,
+                      published="Mon, 10 Aug 2026 09:00:00 +0200")]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["official_in_window"], 1)
+        self.assertEqual(e["official_outside_window"], 0)
+
+    def test_same_announcement_collected_daily_counted_once(self):
+        """同一条公告连采五日:sampled 按天累加,in_window 必须只算一次。"""
+        pub = "Fri, 07 Aug 2026 10:00:00 +0200"
+        snaps = [snap(d_, 60.75, "2026-08-07", official=1, published=pub)
+                 for d_ in ("2026-08-07", "2026-08-08", "2026-08-09",
+                            "2026-08-10", "2026-08-11")]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["official_sampled"], 5)
+        self.assertEqual(e["official_in_window"], 1)
+
+    def test_unparseable_published_is_undated_not_in_window(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", official=1, published="昨天")
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["official_undated"], 1)
+        self.assertEqual(e["official_in_window"], 0)
+
+
+class OfficialCollectionSemanticsTest(unittest.TestCase):
+    """采到 ≠ 有内容:把"央行本周没发公告"写成"我们没采到"是同型事故的反向。"""
+
+    def test_empty_official_counts_as_collected(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", official=0),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=0)]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["days_official_collected"], 2)   # 管道通
+        self.assertEqual(e["days_with_official"], 0)        # 央行确实没发
+        self.assertEqual(e["official_in_window"], 0)        # 0,不是 null
+        self.assertEqual(e["official_sampled"], 0)
+
+    def test_never_collected_yields_null_not_zero(self):
+        e = wd.build([snap("2026-08-10", 60.75, "2026-08-10")],
+                     [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["days_official_collected"], 0)
+        self.assertIsNone(e["official_in_window"])
+        self.assertIsNone(e["official_sampled"])
+
+
+class CapProvenanceTest(unittest.TestCase):
+    """上限随快照落盘;拿当前常量判旧快照会静默错判"是否触顶"。"""
+
+    def test_cap_read_from_snapshot_meta(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", official=2,
+                 meta={"caps": {"official_daily": 2, "gdelt_records": 8}})
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["official_daily_cap"], 2)
+        self.assertEqual(e["official_capped_days"], 1)
+        self.assertEqual(e["official_cap_assumed_days"], 0)
+
+    def test_missing_meta_marks_cap_assumed(self):
+        s = snap("2026-08-11", 60.75, "2026-08-10", official=1)
+        e = wd.build([s], [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["official_cap_assumed_days"], 1)
+        self.assertEqual(e["official_daily_cap"], wd.OFFICIAL_DAILY_CAP)
+
+    def test_cap_changed_midweek_yields_null_not_a_pick(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", official=1,
+                      meta={"caps": {"official_daily": 3}}),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=1,
+                      meta={"caps": {"official_daily": 5}})]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertIsNone(e["official_daily_cap"])
+
+
+class ArticlesDisclosureTest(unittest.TestCase):
+    """GDELT 与官方通道同等披露:它同样按上限截断,且 48h 查询窗令相邻两日
+    重叠约 24h,同一条新闻会被数两遍。"""
+
+    def test_capped_days_reported_for_gdelt(self):
+        cap = wd.GDELT_DAILY_CAP
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", articles=cap),
+                 snap("2026-08-11", 60.75, "2026-08-10", articles=1)]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_capped_days"], 1)
+        self.assertEqual(e["articles_daily_cap"], cap)
+
+    def test_titles_repeated_across_days_deduped(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", articles=3),
+                 snap("2026-08-11", 60.75, "2026-08-10", articles=3)]
+        e = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]
+        self.assertEqual(e["articles_total"], 6)        # 原始按天累加
+        self.assertEqual(e["articles_distinct"], 3)     # 跨日去重后
+
+
+class ByDateTest(unittest.TestCase):
+    """"兜底"断言的唯一可引依据:哪天 GDELT 失败、哪天有公告。"""
+
+    def test_failed_gdelt_day_is_null_not_zero(self):
+        snaps = [snap("2026-08-10", 60.75, "2026-08-10", articles=4),
+                 snap("2026-08-11", 60.75, "2026-08-10", official=2)]
+        by = wd.build(snaps, [], "2026-W33")[0]["events"]["PHP"]["by_date"]
+        self.assertEqual(by["2026-08-10"], {"articles": 4, "official": None})
+        self.assertEqual(by["2026-08-11"], {"articles": None, "official": 2})
+
+
+class VerdictDetailGuardTest(unittest.TestCase):
+    """明细行的守卫必须与 _verdicts 同规格,否则明细与计数会互相矛盾。"""
+
+    def _run(self, entries):
+        d, _ = wd.build(WEEK_SNAPS, entries, "2026-W33")
+        return d["verdict_details"], d["verdicts"]
+
+    def test_out_of_vocabulary_verdict_normalised(self):
+        det, counts = self._run([{"date": "2026-08-08", "currency": "PHP",
+                                  "review": {"verdict": "大致命中"}}])
+        self.assertEqual([r["verdict"] for r in det], ["未判定"])
+        self.assertEqual(counts["未判定"], 1)
+
+    def test_entry_outside_coverage_window_excluded(self):
+        det, counts = self._run([{"date": "2026-07-01", "currency": "PHP",
+                                  "review": {"verdict": "命中"}}])
+        self.assertEqual(det, [])
+        self.assertEqual(sum(counts.values()), 0)   # 明细条数 == 计数之和
+
+    def test_non_str_currency_does_not_crash_sort(self):
+        det, _ = self._run([{"date": "2026-08-08", "currency": {"x": 1},
+                             "review": {"verdict": "命中"}},
+                            {"date": "2026-08-08", "currency": "PHP",
+                             "review": {"verdict": "命中"}}])
+        self.assertEqual(len(det), 2)
+        self.assertIsNone(det[0]["currency"])
+
+if __name__ == "__main__":
+    unittest.main()

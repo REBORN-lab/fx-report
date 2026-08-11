@@ -29,7 +29,11 @@ def same_fixing(a_ref, a_value, b_ref, b_value):
 
 
 def distinct_fixings(observations):
-    """observations: 按时间升序的 (ref_date, value);返回去重后的同序列表。
+    """observations: 按时间排列的 (ref_date, value);返回去重后的同序列表。
+
+    只要求"按时间排列",不要求升序:derive 按今日在前、history 由新到旧喂入,
+    weekly_digest 按日期升序喂入,两者都合法。首末元素的语义随之不同(前者的
+    out[0] 是最新一次定盘,后者的 out[0] 是最早一次),由调用方负责解释。
 
     合并时"升级"已知定盘日:先来的观测若 ref 未知、后来的同值观测 ref 已知,
     把已知的那个记下来——否则 first/last 定盘日会全变 null,读者无从知道

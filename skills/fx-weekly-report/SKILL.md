@@ -37,6 +37,8 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
     # 外汇周报 WEEK
 
     > 覆盖日报:N 份(<日期列表>);缺失日期:<列表,无则写"无">
+    > (digest 的 `skipped` 非 0 时,本行须追加"另有 <skipped> 份快照因损坏被
+    >  跳过"——`days` 分母是过滤后的份数,不说明会让读者把削过的分母当全周)
     > 复盘图例:命中/未命中=触发发生且方向核对有果;无法判定=已复盘但触发
     > 条件未发生或证据不足;未判定=尚未复盘。本行不含数字。
 
@@ -46,13 +48,33 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
     ## 各币种一周归因
     (五币种各一小段:USD/EUR/PHP/THB/BRL,基于日报内容做一周归因;
      跨日数字逐字引 digest:周涨跌 <chg_pct_week>%、周区间 <range_low>–<range_high>
-     (基于 <fixings> 次不同定盘)、GDELT 事件 <articles_total> 条
-     (<days_gdelt_failed> 天采集失败)、官方公告 <official_total> 条
-     (仅 <days_with_official>/<days> 天有采集;<official_capped_days> 天顶到
-     每日上限 <official_daily_cap> 条,那些天的实际条数只多不少);
+     (基于 <fixings> 次不同定盘)、GDELT 事件 <articles_distinct> 条去重后
+     (<days_gdelt_failed>/<days> 天采集失败;<articles_capped_days> 天顶到每日上限
+     <articles_daily_cap> 条,那些天的实际条数只多不少)、本周官方公告
+     <official_in_window> 条(<days_official_collected>/<days> 天采到该通道)。
+
+     **事件计数的三条硬规则** —— 前四轮审查连续五次栽在这里:
+     1. 官方公告只准引 `official_in_window`(已按发布日过滤到覆盖区间、并跨日
+        去重)。**禁止引用 `official_sampled`** ——RSS 只给"最新 N 条"、不按日期
+        过滤,该字段实测混着上个月的公告(2026-08-11 抓到的三条 Fed 公告全部
+        发布于 7 月)。`official_outside_window` 非零时须写明"另有 N 条为窗口外
+        (更早发布)的公告"。`official_in_window` 为 0 而 `days_official_collected`
+        非零 = 本周该央行确实没发公告,不是采集失败,必须这样写。
+     2. GDELT 的 `articles_distinct` 同样是**封顶样本**,不是"本周新闻总数":
+        `articles_capped_days` 非零的那些天被上限截断了。任何一处引用都要带上
+        截断披露,与官方通道同等对待。
+     3. `days_official_collected`(采到该通道)与 `days_with_official`(采到且非空)
+        是两件事。写"仅 N/M 天有采集"只准用前者;把后者说成"没采到"就是把
+        "央行本周没发公告"这个市场事实伪装成管道故障。
+     `*_cap_assumed_days` 非零表示那几天的快照没记录采集上限、是按当前代码推定的,
+     引用触顶结论时须注明"上限为推定"。
+
      两个通道口径不同,禁止相加,也禁止把 GDELT 失败说成"该币种无事件";
      **禁止在未逐日核对的情况下断言"官方通道在限流日提供了兜底"** ——
-     `days_with_official` 与 `days_gdelt_failed` 都非零也不等于两者是同几天。)
+     `days_with_official` 与 `days_gdelt_failed` 都非零也不等于两者是同几天。
+     要做这个判断,逐字读 digest 的 `by_date`:每个日期下 `articles` 为 null
+     即当日 GDELT 失败,`official` 为正即当日有公告。只有两者在同一天成立,
+     才能说兜底发生过;`by_date` 是唯一可引的依据,不得翻原始快照自行推断。)
 
     ## 复盘汇总
     - <digest verdicts 的四项计数,原样照抄>
