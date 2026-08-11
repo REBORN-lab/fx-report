@@ -16,7 +16,7 @@ verification_report: docs/superpowers/reports/2026-08-11-fx-bis-macro-direct-ver
 branch_status: handled
 created_at: 2026-08-11
 verified_at: 2026-08-11
-archived: false
+archived: true
 handoff_context: openspec/changes/fx-bis-macro-direct/.super-coding/handoff/design-context.json
 handoff_hash: 8324719df824aa28a11b9d269eab2cc6fcc3beed62c87de71c43a21ddcb262d6
 bound_branch: feature/20260811/fx-bis-macro-direct

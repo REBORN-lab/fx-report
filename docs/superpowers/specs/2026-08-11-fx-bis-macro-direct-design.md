@@ -2,6 +2,8 @@
 super_coding_change: fx-bis-macro-direct
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-08-11-fx-bis-macro-direct
+status: final
 ---
 
 # 技术设计:BIS 宏观直连 + HTTP 取数封装加固
@@ -179,6 +181,8 @@ def fetch_text(url, timeout_s=20, headers=None):
 > **verify 阶段更正**:delta spec 最终为 **25** 个场景(build 阶段按审查发现补了 4 个,
 > 见 §9.2);本节写下"16 个"时是设计时的计数,保留原文并在此更正,不静默改。
 
+archived-with: 2026-08-11-fx-bis-macro-direct
+status: final
 ---
 
 # 9. Implementation Divergence(verify 阶段记录)

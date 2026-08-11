@@ -2,6 +2,7 @@
 change: fx-bis-macro-direct
 design-doc: docs/superpowers/specs/2026-08-11-fx-bis-macro-direct-design.md
 base-ref: 7fa78d8941184714caa31853c0d5740f84469449
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 # BIS 宏观直连 + HTTP 取数封装加固 实施计划
@@ -37,6 +38,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 >/dev/
 | `skills/fx-daily-report/SKILL.md` | 数据发布行加 `prev_period` | 改 |
 | `README.md` | 数据源一节 | 改 |
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 1: FixtureServer 支持 bytes 响应体
@@ -99,6 +101,7 @@ git add tests/helpers.py tests/test_util.py
 git commit -m "test(helpers): FixtureServer 支持 bytes 响应体,为 gzip 兜底测试铺路"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 2: `util.fetch_text` 的 gzip 魔数兜底
@@ -185,6 +188,7 @@ errors=replace 在解压之前就把压缩体变成乱码,使"压缩没解开"�
 而发 Accept-Encoding: identity 无效(同一 URL 连测 4 次 4/4 仍 gzip)。"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 3: `util.fetch_*` 的可选 headers 参数
@@ -252,6 +256,7 @@ git add scripts/collect/util.py tests/test_util.py
 git commit -m "feat(util): fetch_text/fetch_json 接受可选 headers,默认 UA 打底"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 4: `_bis_parse` —— CSV 按列名解析
@@ -376,6 +381,7 @@ git add scripts/collect/macro.py tests/test_macro.py
 git commit -m "feat(macro): BIS CSV 按列名解析,NaN 在转 float 前按字符串判掉"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 5: 两种前值口径
@@ -474,6 +480,7 @@ git commit -m "feat(macro): 政策利率前值取上一个不同水平,CPI 取�
 窗口内无变动时 prev 为 null 而非等于 value——等值会被读成"持平"。"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 6: `_bis_table` 与配置
@@ -653,6 +660,7 @@ detail=dataonly 让 CBPOL 从 891KB 降到 40KB(22 倍);lastNObservations=400
 约 19 个月,覆盖实测最深的回溯需求(美国上次变动 2025-12-10,约 170 个观测)。"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 7: `collect()` 接成三级优先级
@@ -767,6 +775,7 @@ git add scripts/collect/macro.py tests/test_macro.py
 git commit -m "feat(macro): 三级优先级 BLS > BIS > DBnomics,逐指标回落"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 8: 畸形输入不崩
@@ -844,6 +853,7 @@ git add scripts/collect/macro.py tests/test_macro.py
 git commit -m "test(macro): BIS 畸形输入不得抛出,只转 gap"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 9: 日报 SKILL 的 `prev_period`
@@ -888,6 +898,7 @@ git add skills/fx-daily-report/SKILL.md
 git commit -m "docs(skill): 数据发布行加 prev_period,日频前值不带日期即歧义"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ### Task 10: 真实采集核对与 README
@@ -934,6 +945,7 @@ git add README.md data/ briefs/ reports/
 git commit -m "chore(fx-bis-macro-direct): 真实采集核对 + README 数据源更新"
 ```
 
+archived-with: 2026-08-11-fx-bis-macro-direct
 ---
 
 ## 自检
