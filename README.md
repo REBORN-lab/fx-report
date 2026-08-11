@@ -20,6 +20,12 @@ Slack 推送与 cron 调度由使用者自行接线(范围外)。
     claude -p "/fx-daily-report" --permission-mode acceptEdits --allowedTools "Bash(python3 *)" "Bash(python3*)"
     # 指定日期回填: claude -p "/fx-daily-report 2026-08-08" --permission-mode acceptEdits --allowedTools "Bash(python3 *)" "Bash(python3*)"
 
+**定时时点(重要)**:主汇率源 Frankfurter 转发的是 ECB 参考价,每工作日约
+16:00 CET(夏令时 14:00 UTC / 冬令时 15:00 UTC)才定盘一次,周末与欧盟假日不发布。
+cron **须排在 17:00 UTC 之后**;早于定盘时点跑会取到前一日的价,连续多日"汇率没动"
+其实是同一次定盘被重复读取(2026-08 试运行即因 03:04 UTC 的时点产生 12/12 连平)。
+快照逐币种记录 `ref_date`,报告层据此区分"参考价未更新"与"价格持平"。
+
 周报(建议每周一跑,聚合最近 7 天;另需放宽 ls/date):
 
     claude -p "/fx-weekly-report" --permission-mode acceptEdits --allowedTools "Bash(python3 *)" "Bash(python3*)" "Bash(ls *)" "Bash(date *)"
