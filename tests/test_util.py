@@ -1,5 +1,6 @@
 """util 取数封装:压缩兜底与自定义请求头。"""
 import gzip
+import json
 import unittest
 
 from scripts.collect import util
@@ -39,6 +40,33 @@ class GzipFallbackTest(unittest.TestCase):
     def test_empty_body_does_not_crash(self):
         with FixtureServer({"/e": (200, b"")}) as srv:
             self.assertEqual(util.fetch_text(srv.base_url + "/e"), "")
+class HeadersTest(unittest.TestCase):
+    """后续 Eurostat 需 Referer + X-Requested-With,BSP 需 Accept 头。
+    默认 UA 打底、调用方可覆盖。"""
+
+    def _echo_server(self):
+        def handler(req):
+            seen = {k.lower(): v for k, v in req.headers.items()}
+            return 200, json.dumps({"ua": seen.get("user-agent"),
+                                    "referer": seen.get("referer")})
+        return FixtureServer({"/h": handler})
+
+    def test_default_ua_when_no_headers(self):
+        with self._echo_server() as srv:
+            got = util.fetch_json(srv.base_url + "/h")
+        self.assertEqual(got["ua"], util.DEFAULT_UA)
+        self.assertIsNone(got["referer"])
+
+    def test_extra_headers_are_sent(self):
+        with self._echo_server() as srv:
+            got = util.fetch_json(srv.base_url + "/h", headers={"Referer": "https://x/"})
+        self.assertEqual(got["ua"], util.DEFAULT_UA)      # 默认 UA 仍在
+        self.assertEqual(got["referer"], "https://x/")
+
+    def test_caller_can_override_ua(self):
+        with self._echo_server() as srv:
+            got = util.fetch_json(srv.base_url + "/h", headers={"User-Agent": "probe/9"})
+        self.assertEqual(got["ua"], "probe/9")
 
 
 if __name__ == "__main__":

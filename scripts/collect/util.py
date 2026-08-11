@@ -11,8 +11,10 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def fetch_text(url, timeout_s=20):
-    req = urllib.request.Request(url, headers={"User-Agent": DEFAULT_UA})
+def fetch_text(url, timeout_s=20, headers=None):
+    hdrs = {"User-Agent": DEFAULT_UA}
+    hdrs.update(headers or {})          # 调用方可覆盖 UA,语义明确
+    req = urllib.request.Request(url, headers=hdrs)
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         raw = resp.read()
     # 先解压再 decode。反过来会让 errors="replace" 把压缩体变成乱码,使
@@ -24,8 +26,8 @@ def fetch_text(url, timeout_s=20):
     return raw.decode("utf-8", errors="replace")
 
 
-def fetch_json(url, timeout_s=20):
-    return json.loads(fetch_text(url, timeout_s))
+def fetch_json(url, timeout_s=20, headers=None):
+    return json.loads(fetch_text(url, timeout_s, headers))
 
 
 def make_gap(source, scope, reason):
