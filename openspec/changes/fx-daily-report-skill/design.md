@@ -19,7 +19,7 @@
 
 1. **两段式管线,快照文件为唯一接口**:数据采集是确定性 Python 脚本(标准库,无第三方依赖),产出 `data/YYYY-MM-DD.json` 快照;报告生成是 Claude skill,只读快照写叙事。理由:FinRobot 验证过的"数字代码算、LLM 只叙事"纪律,是防幻觉的结构性保障。备选"LLM 直接调 API 采数"被否:数字纪律无法保证,GDELT 串行限速在对话式调用里难以控制。
 2. **skill 组织仿 claude-trading-skills**:`skills/fx-daily-report/SKILL.md` 与 `skills/fx-weekly-report/SKILL.md` 各自独立,skill 内先跑采集脚本再生成报告,`claude -p "/fx-daily-report"` 即完整一轮。备选"单一 Python 脚本直调 Anthropic API"被否:用户明确选择 Claude Code CLI 形态。
-3. **数据源按调研定案**:Frankfurter(主,无 key)+ exchange-api 版本化端点(交叉校验,CC0)/ DBnomics(五经济体宏观)+ FRED release dates(可选 key,缺失降级)+ BCB / GDELT DOC 2.0(串行 ≥5s,识别 200 软限速)/ 五央行议息静态年历(仓库内维护的数据文件)。全部免费,零爬虫。
+3. **数据源按调研定案**:Frankfurter(主,无 key)+ exchange-api 版本化端点(交叉校验,CC0)/ DBnomics(五经济体宏观,provider 实测定案为 IMF/BIS/ECB)+ FRED release dates(可选 key,缺失降级)/ GDELT DOC 2.0(串行 ≥5s,识别 200 软限速)/ 五央行议息静态年历(仓库内维护的数据文件)。全部免费,零爬虫。
 4. **决策日志 append-only**:`state/decision-log.jsonl`,每日追加各币种情景观点;次日读取并对照快照汇率变动生成一句话复盘(借鉴 TradingAgents decision log 机制)。
 5. **叙事模板取 ING 三段链条**:事件→定价含义→情景与触发条件;观点一律"若 X 则关注 Y"形态。周报按主题重聚类,禁止按日流水。
 

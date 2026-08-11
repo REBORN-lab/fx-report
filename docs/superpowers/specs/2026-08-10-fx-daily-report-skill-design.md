@@ -93,3 +93,9 @@ cron(用户自理)
 ## Spec Patch(已回写)
 
 `specs/fx-data-collection/spec.md`·"宏观数据增量采集":零 key 改为默认路径(静态年历+GDELT 承担发布判定,不记缺漏);`FRED_API_KEY` 存在时 release dates 增强,增强路径失败才记缺漏。Scenario 相应改写为 零 key 默认路径/FRED 增强路径失败 两个场景。
+
+## 实现勘误(2026-08-11,归档前补记)
+
+- Architecture 图中 `python3 scripts/collect.py` 实为包入口 `python3 -m scripts.collect`(scripts/collect/__main__.py)。
+- rates 端点实测定案为 Frankfurter v1(`/v1/{date}?base=USD&symbols=…`,dict 形态),非本文预估的 v2 数组形态;v2 已验证存在但未采用。选型依据见 change 检查点"端点实测结论"。
+- 需求规格以 OpenSpec delta spec 为准(canonical_spec: openspec),本节仅为历史设计与实现的对照勘误。

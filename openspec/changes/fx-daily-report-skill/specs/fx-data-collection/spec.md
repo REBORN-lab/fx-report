@@ -18,7 +18,7 @@
 - **THEN** 快照标记该币种"数据可疑"并保留两源数值,日报层可引用该标记
 
 ### Requirement: 宏观数据增量采集
-系统 SHALL 从 DBnomics(五经济体,IMF/BCB 口径)采集关键宏观指标的最新值与前值。零 key 为默认运行路径:"前一日发布了哪些数据"的判定 SHALL 由静态年历与 GDELT 事件流承担,该路径 MUST NOT 记为缺漏;当环境变量 FRED_API_KEY 存在时,系统 SHALL 额外调用 FRED release dates 端点增强前一日美国数据发布判定,该增强调用失败时记入缺漏但不中断其余采集。
+系统 SHALL 从 DBnomics(五经济体;provider 以实测可用为准,当前为 IMF/BIS/ECB 口径)采集关键宏观指标的最新值与前值。零 key 为默认运行路径:"前一日发布了哪些数据"的判定 SHALL 由静态年历与 GDELT 事件流承担,该路径 MUST NOT 记为缺漏;当环境变量 FRED_API_KEY 存在时,系统 SHALL 额外调用 FRED release dates 端点增强前一日美国数据发布判定,该增强调用失败时记入缺漏但不中断其余采集。
 
 #### Scenario: 有新数据发布
 - **WHEN** 前一日某跟踪指标发布了新值
