@@ -2,6 +2,7 @@
 change: fx-data-quality-derived
 design-doc: docs/superpowers/specs/2026-08-11-fx-data-quality-derived-design.md
 base-ref: e19541d2e4d3b2e368c35620f595a862bde36bb3
+archived-with: 2026-08-11-fx-data-quality-derived
 ---
 
 # 实施计划:fx-data-quality-derived

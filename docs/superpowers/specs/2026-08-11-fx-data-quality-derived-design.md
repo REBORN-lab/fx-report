@@ -2,6 +2,8 @@
 super_coding_change: fx-data-quality-derived
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-08-11-fx-data-quality-derived
+status: final
 ---
 
 # Technical Design: fx-data-quality-derived

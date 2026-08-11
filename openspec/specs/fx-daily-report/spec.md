@@ -15,11 +15,19 @@ TBD - created by archiving change fx-daily-report-skill. Update Purpose after ar
 - **THEN** 该节如实写明"昨日无明确驱动",不编造事件归因
 
 ### Requirement: 数字纪律
-日报中的全部汇率与指标数字 MUST 逐字来自数据快照文件;LLM MUST NOT 自行计算、估算或回忆任何行情数字。
+日报中的全部汇率与指标数字 MUST 逐字来自数据快照文件;LLM MUST NOT 自行计算、估算或回忆任何行情数字。派生定量(涨跌百分比、区间、实际利率等)SHALL 由采集层脚本确定性计算并落入快照 `derived` 节,日报与要点表 MAY 逐字引用该节数值——该路径不构成 LLM 计算;快照未提供的派生量 MUST NOT 由 LLM 补算。
 
 #### Scenario: 数字可溯源
 - **WHEN** 日报正文引用某汇率或指标值
 - **THEN** 该数值能在当日快照文件中逐字找到
+
+#### Scenario: 引用派生指标
+- **WHEN** 日报引用日涨跌百分比、近 5 运行日区间或实际利率
+- **THEN** 该数值逐字取自快照 `derived` 节,且实际利率同时给出政策利率与 CPI 的期号
+
+#### Scenario: 派生量缺失时不补算
+- **WHEN** 快照 `derived` 中某项为 null
+- **THEN** 日报如实说明该派生量不可得,MUST NOT 由 LLM 自行计算替代
 
 ### Requirement: 数据缺漏显式披露
 日报 SHALL 含"数据缺漏"节:快照 gaps 非空时逐条列出缺失数据源、失败原因与对当日结论可信度的影响;gaps 为空时该节写"无"。
@@ -33,7 +41,7 @@ TBD - created by archiving change fx-daily-report-skill. Update Purpose after ar
 - **THEN** "数据缺漏"节内容为"无"
 
 ### Requirement: 决策日志与次日复盘
-系统 SHALL 把每日各币种的情景观点追加写入决策日志;生成第 N+1 天日报时,SHALL 对照第 N 天观点与实际汇率变动,在日报中给出每币种一句话复盘。
+系统 SHALL 把每日各币种的情景观点追加写入决策日志;生成第 N+1 天日报时,SHALL 对照第 N 天观点与实际汇率变动,在日报中给出每币种一句话复盘。当当日与被复盘日的汇率参考价定盘日期(`ref_date`)相同时,复盘 SHALL 说明"参考价未更新(非工作日)",MUST NOT 将其表述为价格持平的市场观察。
 
 #### Scenario: 存在前日日志
 - **WHEN** 生成日报时决策日志含前一运行日的观点记录
@@ -42,6 +50,14 @@ TBD - created by archiving change fx-daily-report-skill. Update Purpose after ar
 #### Scenario: 首次运行无日志
 - **WHEN** 决策日志不存在或为空
 - **THEN** 日报跳过复盘小节并注明"首次运行,无历史观点可复盘"
+
+#### Scenario: 参考价未更新
+- **WHEN** 当日快照与被复盘日快照对应币种的 `ref_date` 相同
+- **THEN** 复盘材料与日报复盘节写明"参考价未更新(非工作日)",不据此得出价格持平的结论
+
+#### Scenario: 参考日期缺失退回旧行为
+- **WHEN** 任一侧快照不含参考日期字段
+- **THEN** 复盘按既有的数值比较逻辑进行
 
 ### Requirement: 简明扼要约束
 执行摘要 MUST 不超过 6 条;每币种节正文 MUST 不超过约 300 中文字;报告 MUST NOT 逐条罗列快照原始数据(流水账),仅呈现驱动结论的关键数字。
