@@ -2,6 +2,8 @@
 super_coding_change: fx-source-upgrade
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-08-11-fx-source-upgrade
+status: final
 ---
 
 # Technical Design: fx-source-upgrade

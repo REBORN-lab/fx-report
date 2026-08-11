@@ -2,6 +2,7 @@
 change: fx-source-upgrade
 design-doc: docs/superpowers/specs/2026-08-11-fx-source-upgrade-design.md
 base-ref: a5dccf025225ff91391e47a4320ceeec66eff35e
+archived-with: 2026-08-11-fx-source-upgrade
 ---
 
 # 实施计划:fx-source-upgrade
