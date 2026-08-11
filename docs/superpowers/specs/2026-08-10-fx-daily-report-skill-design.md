@@ -2,6 +2,8 @@
 super_coding_change: fx-daily-report-skill
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-08-11-fx-daily-report-skill
+status: final
 ---
 
 # Technical Design: fx-daily-report-skill

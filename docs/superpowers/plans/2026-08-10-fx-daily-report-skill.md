@@ -2,6 +2,7 @@
 change: fx-daily-report-skill
 design-doc: docs/superpowers/specs/2026-08-10-fx-daily-report-skill-design.md
 base-ref: 2c7603481407e66b0666b8762d714a4d2e68b700
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 # fx-daily-report-skill 实施计划
@@ -14,6 +15,7 @@ base-ref: 2c7603481407e66b0666b8762d714a4d2e68b700
 
 **Tech Stack:** Python 3 标准库 only(urllib/json/unittest/http.server),Claude Code skill(SKILL.md),无任何 pip 依赖。
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ## 全局约束(每个任务都必须遵守,不可协商)
@@ -90,6 +92,7 @@ data/  briefs/  reports/daily/  reports/weekly/   输出目录(.gitkeep 占位)
 | 2.4 快照聚合 | Task 7、Task 8 | | 5.1 README | Task 16 |
 | 2.5 故障注入测试 | Task 3(基建)、Task 9 | | 5.2 Scenario 核对 | Task 17 |
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 1: 仓库骨架与目录(tasks.md 1.1)
@@ -144,6 +147,7 @@ git add .gitignore README.md scripts tests data briefs reports config state skil
 git commit -m "chore(fx): 仓库骨架与输出目录(tasks 1.1)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 2: 五央行静态年历(tasks.md 1.2)
@@ -192,6 +196,7 @@ git add state/calendar-2026.json
 git commit -m "feat(fx): 五央行 2026 静态议息年历(tasks 1.2)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 3: 测试基建 FixtureServer(tasks.md 2.5 前置)
@@ -334,6 +339,7 @@ git add tests/helpers.py tests/test_helpers.py
 git commit -m "test(fx): 本地 fixture HTTP 服务器测试基建(tasks 2.5 前置)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 4: endpoints.json + 汇率双源采集(tasks.md 2.1)
@@ -578,6 +584,7 @@ git add config/endpoints.json scripts/collect/util.py scripts/collect/rates.py t
 git commit -m "feat(fx): 汇率双源采集与交叉校验(tasks 2.1)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 5: 指标清单固化 + 宏观采集(tasks.md 2.2)
@@ -805,6 +812,7 @@ git add config/indicators.json scripts/collect/macro.py tests/test_macro.py
 git commit -m "feat(fx): DBnomics 宏观采集 + FRED 可选增强,series 清单实测固化(tasks 2.2)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 6: GDELT 事件采集(tasks.md 2.3)
@@ -1044,6 +1052,7 @@ git add scripts/collect/events.py tests/test_events.py tests/fixtures/gdelt_artl
 git commit -m "feat(fx): GDELT 事件采集,软限速退避与串行间隔(tasks 2.3)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 7: 年历命中模块(tasks.md 2.4 的年历部分)
@@ -1158,6 +1167,7 @@ git add scripts/collect/calendar.py tests/test_calendar.py
 git commit -m "feat(fx): 年历命中判定与过期告警(tasks 2.4 部分)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 8: 快照聚合主入口(tasks.md 2.4)
@@ -1376,6 +1386,7 @@ git add scripts/collect/__main__.py tests/test_snapshot.py
 git commit -m "feat(fx): 快照聚合主入口,单源失败不中断(tasks 2.4)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 9: 采集层故障注入矩阵测试(tasks.md 2.5)
@@ -1494,6 +1505,7 @@ git add tests/test_fault_injection.py
 git commit -m "test(fx): 聚合层逐源故障注入矩阵(tasks 2.5)——unittest 实测 N 项全过(N 抄自输出)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 10: 决策日志脚本 + 复盘脚本(tasks.md 3.2)
@@ -1931,6 +1943,7 @@ git add scripts/log_decision.py scripts/review.py tests/test_log_decision.py tes
 git commit -m "feat(fx): 决策日志脚本代笔 + 两日快照方向复盘(tasks 3.2)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 11: 日报 skill(tasks.md 3.1)
@@ -1944,9 +1957,11 @@ git commit -m "feat(fx): 决策日志脚本代笔 + 两日快照方向复盘(tas
 - [x] **Step 1: 写 `skills/fx-daily-report/SKILL.md`(以下为完整内容)**
 
 ````markdown
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 name: fx-daily-report
 description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采集脚本得数据快照,再两步生成(快照→要点表→叙事),数字强制溯源校验。可选参数:日期 YYYY-MM-DD,默认今天(UTC)。
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 # 外汇日报生成
@@ -2083,6 +2098,7 @@ git add skills/fx-daily-report/SKILL.md .claude/skills/fx-daily-report
 git commit -m "feat(fx): 日报 skill 五步编排,模板+禁令+数字纪律(tasks 3.1)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 12: 报告校验器 daily 模式(tasks.md 3.1/3.3 支撑;Design"校验器")
@@ -2362,6 +2378,7 @@ git add scripts/check_report.py tests/test_check_report.py
 git commit -m "feat(fx): 报告校验器 daily 模式,结构+数字逐字溯源(design 校验器)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 13: 日报端到端验收(tasks.md 3.3)
@@ -2419,6 +2436,7 @@ git add data/$D.json briefs/$D-brief.md reports/daily/$D.md state/decision-log.j
 git commit -m "feat(fx): 首次端到端日报验收通过(tasks 3.3)——抽查结果:<逐项实测结果>"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 14: 周报 skill + 校验器 weekly 模式(tasks.md 4.1)
@@ -2539,9 +2557,11 @@ Run: `python3 -m unittest tests.test_check_report -v` — Expected: 17 tests, `O
 - [x] **Step 5: 写 `skills/fx-weekly-report/SKILL.md`(完整内容)**
 
 ````markdown
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 name: fx-weekly-report
 description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题重聚类生成中文周报(本周主线/各币种归因/复盘汇总/下周关注/缺漏汇总),结构强制校验。
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 # 外汇周报生成
@@ -2611,6 +2631,7 @@ git add skills/fx-weekly-report/SKILL.md .claude/skills/fx-weekly-report \
 git commit -m "feat(fx): 周报 skill 主题聚类模板 + 校验器 weekly 模式(tasks 4.1)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 15: 周报端到端验收(tasks.md 4.2)
@@ -2663,6 +2684,7 @@ git add data briefs reports state/decision-log.jsonl
 git commit -m "feat(fx): 周报端到端验收通过(tasks 4.2)——复核结果:<逐项实测结果>"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 16: README 运行文档(tasks.md 5.1)
@@ -2737,6 +2759,7 @@ git add README.md
 git commit -m "docs(fx): 运行文档与年历维护说明(tasks 5.1)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ### Task 17: Scenario 全量核对(tasks.md 5.2)
@@ -2795,6 +2818,7 @@ git add openspec/changes/fx-daily-report-skill/.super-coding/scenario-coverage.m
 git commit -m "docs(fx): 23 个 Scenario 逐条核对记录(tasks 5.2)"
 ```
 
+archived-with: 2026-08-11-fx-daily-report-skill
 ---
 
 ## Scenario → 任务映射(计划自审用)

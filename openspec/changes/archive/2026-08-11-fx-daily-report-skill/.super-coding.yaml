@@ -16,7 +16,7 @@ verification_report: docs/superpowers/reports/2026-08-10-fx-daily-report-skill-v
 branch_status: handled
 created_at: 2026-08-10
 verified_at: 2026-08-11
-archived: false
+archived: true
 handoff_context: openspec/changes/fx-daily-report-skill/.super-coding/handoff/design-context.json
 handoff_hash: 89a9f5148f0e26da484e5dcaf2e938a322cae9104dbe7a98f9cb6999be8658c5
 bound_branch: feature/20260810/fx-daily-report-skill
