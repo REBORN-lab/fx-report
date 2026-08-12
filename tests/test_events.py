@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 import urllib.parse
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from scripts.collect import events
@@ -356,6 +357,51 @@ class GnewsParseTest(unittest.TestCase):
         got = events._gnews_parse(body)
         self.assertIsNone(got[0]["domain"])
         self.assertIsNone(got[0]["url"])
+
+
+class PubdateTest(unittest.TestCase):
+    def test_rfc2822_with_gmt(self):
+        dt = events._pubdate("Tue, 11 Aug 2026 03:37:51 GMT")
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.hour, 3)
+        self.assertIsNotNone(dt.tzinfo)
+
+    def test_offset_timezone_normalised(self):
+        a = events._pubdate("Tue, 11 Aug 2026 05:37:51 +0200")
+        b = events._pubdate("Tue, 11 Aug 2026 03:37:51 GMT")
+        self.assertEqual(a, b)
+
+    def test_naive_pubdate_assumed_utc_not_local(self):
+        """猜本地时区会让窗口边界随运行机器漂移——同一份数据换台机器结论不同。"""
+        dt = events._pubdate("Tue, 11 Aug 2026 03:37:51")
+        self.assertEqual(dt.tzinfo, timezone.utc)
+
+    def test_garbage_returns_none(self):
+        for raw in ("", "   ", None, "yesterday", "2026-08-11T03:37:51+00:00", 12345):
+            self.assertIsNone(events._pubdate(raw), repr(raw))
+
+
+class WhitelistTest(unittest.TestCase):
+    WL = ["reuters.com", "philstar.com"]
+
+    def test_exact_match(self):
+        self.assertTrue(events._in_whitelist("reuters.com", self.WL))
+
+    def test_subdomain_matches(self):
+        self.assertTrue(events._in_whitelist("interaksyon.philstar.com", self.WL))
+
+    def test_suffix_lookalike_must_not_match(self):
+        """裸 endswith 会让 notreuters.com 命中 reuters.com——白名单形同虚设,
+        且失效是静默的:噪音照进快照,计数还显示「已过滤」。"""
+        for host in ("notreuters.com", "evilreuters.com", "xphilstar.com"):
+            self.assertFalse(events._in_whitelist(host, self.WL), host)
+
+    def test_none_and_empty_host_never_match(self):
+        for host in (None, "", 123):
+            self.assertFalse(events._in_whitelist(host, self.WL), repr(host))
+
+    def test_unrelated_domain(self):
+        self.assertFalse(events._in_whitelist("bybit.com", self.WL))
 
 
 if __name__ == "__main__":

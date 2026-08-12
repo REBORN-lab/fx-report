@@ -94,6 +94,34 @@ def _gnews_parse(text):
     return out
 
 
+def _pubdate(raw):
+    """RFC 2822 → 带 tzinfo 的 datetime;解析不了返回 None。
+
+    无 tzinfo 时按 UTC 补齐,**不猜本地时区** —— 猜了会让窗口边界随运行机器
+    漂移,同一份数据换台机器就得出不同结论。
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        dt = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):     # 3.10 前抛 TypeError,之后抛 ValueError
+        return None
+    if not isinstance(dt, datetime):
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _in_whitelist(host, domains):
+    """判据必须是「完全相等 或 以点号加白名单项结尾」。
+
+    裸 `host.endswith(d)` 会让 notreuters.com 命中 reuters.com —— 白名单形同虚设,
+    而且失效方式是静默的:噪音照进快照,过滤计数还显示"已过滤"。
+    """
+    if not isinstance(host, str) or not host:
+        return False
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
 def collect(cfg):
     gaps, out = [], {}
     first = True
