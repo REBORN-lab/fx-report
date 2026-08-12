@@ -210,12 +210,17 @@ def _gnews_window(cfg):
 
 def _gnews_entry(articles, raw_count, counts):
     """gnews 条目的统一形状。source_capped 由采集层算好落盘,下游只读不比 ——
-    两条通道上限不同,下游拿单一上限去比必然错位。"""
+    两条通道上限不同,下游拿单一上限去比必然错位。
+
+    articles 为 None 表示**没采到**(观测缺口),为 [] 表示**采到了、可用的 0 条**。
+    两者绝不可混:混了之后彻底的管道停摆会被周度聚合器读成"区间内确实 0 条,
+    全区间采集完整、无截断" —— 本仓库的招牌失效形态。同理 raw_count 为 None 时
+    source_capped 也是 None(不知道),不是 False(知道没截断)。
+    """
+    known = isinstance(raw_count, int) and not isinstance(raw_count, bool)
     return {"articles": articles, "articles_raw_count": raw_count,
             "source_cap": GNEWS_SOFT_CAP,
-            "source_capped": isinstance(raw_count, int)
-                             and not isinstance(raw_count, bool)
-                             and raw_count >= GNEWS_SOFT_CAP,
+            "source_capped": (raw_count >= GNEWS_SOFT_CAP) if known else None,
             "channel": "gnews", "gnews_filter": counts}
 
 
@@ -230,7 +235,8 @@ def _gnews_one(cfg, currency, domains):
     try:
         items = _gnews_parse(util.fetch_text(url, cfg["timeout_s"]))
     except Exception as e:
-        return _gnews_entry([], None, None), "%s: %s" % (type(e).__name__, e)
+        # articles=None 而非 []:没采到与"采到了但 0 条"必须可分辨
+        return _gnews_entry(None, None, None), "%s: %s" % (type(e).__name__, e)
     lo, hi = _gnews_window(cfg)
     kept, counts = _gnews_filter(items, lo, hi, domains)
     return _gnews_entry(_dedupe_titles(kept), counts["raw"], counts), None
@@ -257,7 +263,7 @@ def collect(cfg):
             if err is not None:
                 gaps.append(util.make_gap("gnews", currency, err))
             out[currency] = entry
-            if not entry["articles"]:
+            if not entry["articles"]:   # None(没采到)与 [](全被滤掉)都算空洞
                 holes.append(currency)
 
     first = True

@@ -186,7 +186,7 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
 
     返回 (stats, per_day, published_by_date)。
     """
-    sampled = distinct = in_win = outside = undated = 0
+    sampled = distinct = in_win = outside = undated = offlist = 0
     days_collected = days_nonempty = capped = assumed = 0
     seen, caps = set(), set()
     per_day, published_by_date = [], {}
@@ -197,6 +197,13 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         days_collected += 1
         sampled += len(items)
         per_day.append((True, len(items)))
+        # 相关性闸门滤掉的条数:它既不是"没采到"也不是"确实没有",而是
+        # "看到了但都不可署名"。不折进结论,整周 700 条被滤光会被断言成
+        # "本周确实没有事件"(审查复现)
+        gf = entry.get("gnews_filter") if isinstance(entry, dict) else None
+        n_off = gf.get("offlist") if isinstance(gf, dict) else None
+        if isinstance(n_off, int) and not isinstance(n_off, bool) and n_off > 0:
+            offlist += n_off
         if items:
             days_nonempty += 1
             # 采集层给出的权威布尔优先:两条事件通道上限不同(gnews 99 /
@@ -249,6 +256,7 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         "outside_window": outside if got else None,
         "undated": undated if got else None,
         "capped_days": capped,
+        "offlist": offlist,
         "daily_cap": _one_cap(caps),
         "cap_assumed_days": assumed,
         "days_collected": days_collected,
@@ -299,8 +307,15 @@ def _verdict(stats, window_days, skipped, unit):
     if stats["undated"]:
         caveats.append("%d 条时间戳无法解析" % stats["undated"])
     if stats["capped_days"]:
-        caveats.append("%d 天顶到每日上限 %s 条"
-                       % (stats["capped_days"], stats["daily_cap"]))
+        # daily_cap 为 None = 区间内上限不唯一(两条通道混用)。直接插值会把
+        # 字面量 None 印进中文结论句
+        cap = stats["daily_cap"]
+        caveats.append("%d 天顶到每日上限 %s"
+                       % (stats["capped_days"],
+                          ("%s 条" % cap) if cap is not None else "(上限随通道不同,不给单值)"))
+    if stats.get("offlist"):
+        caveats.append("另有 %d 条被相关性闸门滤除(抓到了但来源不可署名)"
+                       % stats["offlist"])
     if stats["in_window"]:
         head = "区间内至少 %d 条" % stats["in_window"]
         return head if not caveats else "%s(%s)" % (head, "、".join(caveats))

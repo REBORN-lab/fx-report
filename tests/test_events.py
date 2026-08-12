@@ -590,7 +590,11 @@ class GnewsOneTest(unittest.TestCase):
         entry, err = events._gnews_one(gnews_cfg_dead(), "PHP", self.WL)
         self.assertIsNotNone(err)
         self.assertIsNone(entry["gnews_filter"])
-        self.assertEqual(entry["articles"], [])
+        # articles 为 None 而非 []:没采到与"采到了、可用的 0 条"必须可分辨,
+        # 否则周度聚合器会把管道停摆读成"区间内确实 0 条"
+        self.assertIsNone(entry["articles"])
+        self.assertIsNone(entry["articles_raw_count"])
+        self.assertIsNone(entry["source_capped"])   # 不知道 ≠ 知道没截断
         self.assertEqual(entry["channel"], "gnews")
 
     def test_query_is_urlencoded_keywords_plus_window(self):
@@ -766,6 +770,77 @@ class GnewsRobustnessTest(unittest.TestCase):
         body = '<?xml version="1.0"?><rss><channel><item/></channel></rss>'
         payload, _ = self._collect(body)
         self.assertEqual(payload["PHP"]["gnews_filter"]["undated"], 1)
+
+
+class ObservationGapTest(unittest.TestCase):
+    """审查发现的两条同型 Critical:articles: [] 同时意味着三件事——
+    真的没有 / 全被白名单滤掉 / 两条通道都没采到。周度聚合器把三者都读成第一种,
+    于是彻底的管道停摆被断言成「区间内确实 0 条,全区间采集完整、无截断」。
+
+    纪律:采到了才写列表,没采到写 null(缺输入写 null 不写 0 的列表版)。
+    """
+
+    def _wl(self, tmp, doms='["philstar.com"]'):
+        path = os.path.join(tmp, "wl.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"domains": %s}' % doms)
+        return path
+
+    def test_both_channels_fail_articles_is_null_not_empty_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = make_test_cfg(
+                endpoints={"gnews_rss_url": DEAD_URL + "/gn?q={query}",
+                           "gdelt_doc_url": DEAD_URL + "/doc"},
+                news_sources_path=self._wl(tmp))
+            out, gaps = events.collect(cfg)
+        self.assertIsNone(out["PHP"]["articles"])
+        self.assertIsNone(out["PHP"]["articles_raw_count"])
+        self.assertTrue(gaps)
+
+    def test_weekly_verdict_cannot_claim_zero_when_nothing_collected(self):
+        from scripts import weekly_digest as wd
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = make_test_cfg(
+                endpoints={"gnews_rss_url": DEAD_URL + "/gn?q={query}",
+                           "gdelt_doc_url": DEAD_URL + "/doc"},
+                news_sources_path=self._wl(tmp))
+            out, _ = events.collect(cfg)
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"PHP": dict(out["PHP"])},
+                  "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+                 for d in range(10, 17)]
+        got = wd._events_one(snaps, "PHP", "2026-08-10", "2026-08-16", 0)
+        self.assertNotIn("确实 0 条", got["articles_verdict"])
+        self.assertEqual(got["days_with_data"], 0)
+
+    def test_all_filtered_out_is_not_confirmed_zero(self):
+        """整周抓到 700 条全被白名单滤掉,不等于「本周确实没有事件」。"""
+        from scripts import weekly_digest as wd
+        entry = {"articles": [], "articles_raw_count": 100, "source_cap": 99,
+                 "source_capped": True, "channel": "gnews",
+                 "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
+                                  "offlist": 100, "kept": 0}}
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"PHP": dict(entry)},
+                  "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+                 for d in range(10, 17)]
+        got = wd._events_one(snaps, "PHP", "2026-08-10", "2026-08-16", 0)
+        self.assertNotIn("确实 0 条", got["articles_verdict"])
+        self.assertIn("700", got["articles_verdict"])   # 滤除量必须出现在结论里
+
+    def test_verdict_never_renders_literal_none(self):
+        """两条通道上限不同的一周,daily_cap 为 null,结论句不得出现字面量 None。"""
+        from scripts import weekly_digest as wd
+        def snap(d, cap, capped):
+            return {"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                    "events": {"PHP": {"articles": [{"title": "a",
+                                                     "seendate": "202608%02dT000000Z" % d}],
+                                       "articles_raw_count": cap, "source_cap": cap,
+                                       "source_capped": capped, "channel": "x"}},
+                    "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+        got = wd._events_one([snap(10, 99, True), snap(11, 8, True)],
+                             "PHP", "2026-08-10", "2026-08-11", 0)
+        self.assertNotIn("None", got["articles_verdict"])
 
 
 if __name__ == "__main__":
