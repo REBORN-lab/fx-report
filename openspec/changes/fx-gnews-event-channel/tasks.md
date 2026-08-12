@@ -33,6 +33,6 @@
 
 ## 6. 报告层与文档
 
-- [ ] 6.1 `skills/fx-daily-report/SKILL.md` 事件行标注:gnews 条目的 `url` 是 Google 跳转链、来源以 `domain` 为准;核对 `check_report.py` 白名单与结构检查不受影响
-- [ ] 6.2 跑一次真实采集,逐条核对五币种的通道标注、过滤计数与截断标记与直查一致
-- [ ] 6.3 README 数据源一节补 Google News RSS(含 100 条上限、无 API 契约、白名单闸门与回滚方式)
+- [x] 6.1 `skills/fx-daily-report/SKILL.md` 事件行标注:gnews 条目的 `url` 是 Google 跳转链、来源以 `domain` 为准;核对 `check_report.py` 白名单与结构检查不受影响
+- [x] 6.2 跑一次真实采集,逐条核对五币种的通道标注、过滤计数与截断标记与直查一致
+- [x] 6.3 README 数据源一节补 Google News RSS(含 100 条上限、无 API 契约、白名单闸门与回滚方式)

@@ -6,7 +6,7 @@ base-ref: 5e1bba91b507fc6b1182ed44f14053e8e55b7ff2
 
 # Google News 事件主通道 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把事件通道从 GDELT-only(实测 2/5 币种)换成 Google News RSS 主通道 + 域名白名单闸门 + GDELT 空洞补位,覆盖到 5/5 且不引入噪音。
 
@@ -38,7 +38,7 @@ base-ref: 5e1bba91b507fc6b1182ed44f14053e8e55b7ff2
 - Modify: `config/endpoints.json`
 - Create: `config/news_sources.json`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_events.py` 末尾的 `if __name__` **之前**插入:
 
@@ -74,12 +74,12 @@ class GnewsConfigTest(unittest.TestCase):
         self.assertTrue(url.startswith("https://news.google.com/rss/search"))
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsConfigTest -v`
 Expected: 3 个用例全 FAIL(`KeyError: 'news_sources_path'` / `FileNotFoundError` / `KeyError: 'gnews_rss_url'`)
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `tests/helpers.py` 的 `make_test_cfg` 里,在 `"calendar_path": None,` 之后加一行:
 
@@ -113,12 +113,12 @@ Expected: 3 个用例全 FAIL(`KeyError: 'news_sources_path'` / `FileNotFoundErr
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsConfigTest -v`
 Expected: OK (3 tests)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add tests/helpers.py config/endpoints.json config/news_sources.json tests/test_events.py
@@ -129,7 +129,7 @@ git commit -m "feat(config): gnews 端点模板 + 域名白名单(缺任一即�
 
 **Files:** Modify `scripts/collect/events.py`, `tests/test_events.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 GNEWS_XML = """<?xml version="1.0"?><rss version="2.0"><channel>
@@ -175,12 +175,12 @@ class GnewsParseTest(unittest.TestCase):
         self.assertIsNone(got[0]["url"])
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsParseTest -v`
 Expected: FAIL — `AttributeError: module 'scripts.collect.events' has no attribute '_gnews_parse'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `scripts/collect/events.py` 顶部 import 区加:
 
@@ -231,12 +231,12 @@ def _gnews_parse(text):
     return out
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsParseTest -v`
 Expected: OK (4 tests)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py
@@ -247,7 +247,7 @@ git commit -m "feat(events): _gnews_parse —— 解析失败抛错,绝不返空
 
 **Files:** Modify `scripts/collect/events.py`, `tests/test_events.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class PubdateTest(unittest.TestCase):
@@ -296,12 +296,12 @@ class WhitelistTest(unittest.TestCase):
 
 `tests/test_events.py` 顶部 import 区加 `from datetime import datetime, timedelta, timezone`。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.PubdateTest tests.test_events.WhitelistTest -v`
 Expected: FAIL — `AttributeError: ... has no attribute '_pubdate'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 在 `_gnews_parse` 之后加:
 
@@ -334,12 +334,12 @@ def _in_whitelist(host, domains):
     return any(host == d or host.endswith("." + d) for d in domains)
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.PubdateTest tests.test_events.WhitelistTest -v`
 Expected: OK (9 tests)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py
@@ -350,7 +350,7 @@ git commit -m "feat(events): _pubdate 与 _in_whitelist(后缀匹配须防 notre
 
 **Files:** Modify `scripts/collect/events.py`, `tests/test_events.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class GnewsFilterTest(unittest.TestCase):
@@ -419,12 +419,12 @@ class GnewsFilterTest(unittest.TestCase):
         self.assertEqual(c["kept"], 2)
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsFilterTest -v`
 Expected: FAIL — `AttributeError: ... has no attribute '_gnews_filter'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 ```python
 def _gnews_filter(items, lo, hi, domains):
@@ -463,12 +463,12 @@ def _gnews_filter(items, lo, hi, domains):
     return kept, counts
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsFilterTest -v`
 Expected: OK (7 tests)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py
@@ -479,7 +479,7 @@ git commit -m "feat(events): _gnews_filter 四层账闭合,seendate 沿用 GDELT
 
 **Files:** Modify `scripts/collect/events.py`, `tests/test_events.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class WhitelistLoadTest(unittest.TestCase):
@@ -533,12 +533,12 @@ class WhitelistLoadTest(unittest.TestCase):
 
 `tests/test_events.py` 顶部加 `import tempfile`。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.WhitelistLoadTest -v`
 Expected: FAIL — `AttributeError: ... has no attribute '_load_domains'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `events.py` 顶部 import 加 `import os`。然后:
 
@@ -576,12 +576,12 @@ def _load_domains(cfg, gaps):
     return clean
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.WhitelistLoadTest -v`
 Expected: OK (5 tests)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py
@@ -592,7 +592,7 @@ git commit -m "feat(events): 白名单三级加载,空名单记 gap 拒绝启用
 
 **Files:** Modify `scripts/collect/events.py`, `tests/test_events.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 def gnews_body(n, domain="interaksyon.philstar.com", pub=None):
@@ -679,12 +679,12 @@ def gnews_cfg_dead():
                                     "gdelt_doc_url": DEAD_URL + "/doc"})
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsOneTest -v`
 Expected: FAIL — `AttributeError: ... has no attribute '_gnews_one'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 在 `MAX_RECORDS = 8` 附近加常量:
 
@@ -734,12 +734,12 @@ def _gnews_one(cfg, currency, domains):
     return _gnews_entry(_dedupe_titles(kept), counts["raw"], counts), None
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsOneTest -v`
 Expected: OK (6 tests)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py
@@ -750,7 +750,7 @@ git commit -m "feat(events): _gnews_one 组装条目,失败时 gnews_filter 写 
 
 **Files:** Modify `scripts/collect/events.py`, `tests/test_events.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class TwoPassCollectTest(unittest.TestCase):
@@ -847,12 +847,12 @@ class TwoPassCollectTest(unittest.TestCase):
         self.assertIsNone(out["PHP"]["gnews_filter"])       # 靶点 M13
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.TwoPassCollectTest -v`
 Expected: 多数 FAIL(`collect` 尚未走 gnews)
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 把 `collect` 整体替换为:
 
@@ -910,12 +910,12 @@ def collect(cfg):
     return out, gaps
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events -v 2>&1 | tail -5`
 Expected: OK(含既有全部 GDELT 用例)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/events.py tests/test_events.py
@@ -926,7 +926,7 @@ git commit -m "feat(events): collect 改两趟,GDELT 只补空洞"
 
 **Files:** Modify `scripts/collect/__main__.py`, `tests/test_snapshot.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_snapshot.py` 末尾的 `if __name__` 之前加:
 
@@ -946,12 +946,12 @@ class GnewsCapsTest(unittest.TestCase):
 
 > 若 `__main__` 的函数名与上面不同,按实际名字调整;跑 `grep -n "^def " scripts/collect/__main__.py` 确认。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_snapshot.GnewsCapsTest -v`
 Expected: FAIL — `KeyError: 'gnews_records'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `scripts/collect/__main__.py`:`caps` 字典加一项:
 
@@ -967,12 +967,12 @@ Expected: FAIL — `KeyError: 'gnews_records'`
         "news_sources_path": os.path.join(root, "config", "news_sources.json"),
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_snapshot -v 2>&1 | tail -4`
 Expected: OK
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/__main__.py tests/test_snapshot.py
@@ -983,7 +983,7 @@ git commit -m "feat(collect): 传 news_sources_path,meta.caps 增 gnews_records"
 
 **Files:** Modify `scripts/collect/derive.py`, `scripts/weekly_digest.py`, `tests/test_derive.py`, `tests/test_weekly_digest.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_derive.py` 末尾加:
 
@@ -1031,12 +1031,12 @@ class ChannelSourceCappedTest(unittest.TestCase):
 
 > 跑 `grep -n "capped_days" scripts/weekly_digest.py` 确认返回结构里该键的确切位置,按实际调整断言路径。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_derive.SourceCappedTest tests.test_weekly_digest.ChannelSourceCappedTest -v`
 Expected: `test_false_boolean_respected_even_when_raw_exceeds_gdelt_cap` FAIL(旧路径按 50>=8 判成 True)
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `derive.py:_count_capped` 开头(取到 `entry` 之后、读 `articles_raw_count` 之前)插入:
 
@@ -1079,12 +1079,12 @@ Expected: `test_false_boolean_respected_even_when_raw_exceeds_gdelt_cap` FAIL(�
 
 > 按 `_channel` 内实际的 `capped` / `assumed` / `caps.add(cap)` 代码调整;原则是**有权威布尔就用它,没有才退回比较**,且权威路径不得往 `caps` 集合里塞不属于该条目的上限。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail -4`
 Expected: OK
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/collect/derive.py scripts/weekly_digest.py tests/test_derive.py tests/test_weekly_digest.py
@@ -1095,7 +1095,7 @@ git commit -m "fix(derive,digest): 截断判定优先读采集层的 source_capp
 
 **Files:** Modify `tests/test_events.py`
 
-- [ ] **Step 1: 写健壮性测试**
+- [x] **Step 1: 写健壮性测试**
 
 ```python
 class GnewsRobustnessTest(unittest.TestCase):
@@ -1126,12 +1126,12 @@ class GnewsRobustnessTest(unittest.TestCase):
         self.assertEqual(payload["PHP"]["gnews_filter"]["undated"], 1)
 ```
 
-- [ ] **Step 2: 跑测试确认通过(实现已就绪,此步只补覆盖)**
+- [x] **Step 2: 跑测试确认通过(实现已就绪,此步只补覆盖)**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_events.GnewsRobustnessTest -v`
 Expected: OK。失败则按 systematic-debugging 定位后再改实现。
 
-- [ ] **Step 3: 跑变异电池**
+- [x] **Step 3: 跑变异电池**
 
 把 Design Doc 第 6 节 M1–M15 逐条做成变异,每条应用后跑全量、确认 FAIL、还原。
 命令模板(逐条替换 `OLD` / `NEW`):
@@ -1152,12 +1152,12 @@ cp /tmp/ev.bak scripts/collect/events.py
 **每条变异必须被至少一个用例杀掉。存活即未测住 —— 补测试,不要放过。**
 清 `__pycache__` 是硬要求:同长度替换后 `.pyc` 复用曾骗过审查者一次。
 
-- [ ] **Step 4: 跑全量回归**
+- [x] **Step 4: 跑全量回归**
 
 Run: `find . -name __pycache__ -type d -exec rm -rf {} + && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail -3`
 Expected: OK,总数 > 421(基线)。**实跑数字为准,不要预填。**
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add tests/
@@ -1168,7 +1168,7 @@ git commit -m "test(events): 健壮性 + M1-M15 变异电池"
 
 **Files:** Modify `skills/fx-daily-report/SKILL.md`, `README.md`
 
-- [ ] **Step 1: 改 SKILL 模板**
+- [x] **Step 1: 改 SKILL 模板**
 
 `skills/fx-daily-report/SKILL.md` 的「昨日事件 top」行之后补一段:
 
@@ -1181,12 +1181,12 @@ git commit -m "test(events): 健壮性 + M1-M15 变异电池"
       正文不得写成后者。
 ```
 
-- [ ] **Step 2: 核对校验器兼容**
+- [x] **Step 2: 核对校验器兼容**
 
 Run: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report 2>&1 | tail -3`
 Expected: OK。若 `check_report.py` 的数字白名单未收录嵌套 `gnews_filter` 里的数字,补进白名单收集逻辑并加用例。
 
-- [ ] **Step 3: 跑一次真实采集并逐条核对**
+- [x] **Step 3: 跑一次真实采集并逐条核对**
 
 ```bash
 python3 -m scripts.collect --date $(date -u +%F)
@@ -1205,13 +1205,13 @@ PY
 (`undated + out_window + offlist + kept == raw`)、`source_capped` 与 `raw` 的关系。
 **数字先跑后抄,不得预填。**
 
-- [ ] **Step 4: 更新 README**
+- [x] **Step 4: 更新 README**
 
 `README.md` 数据源一节补 Google News RSS:主通道地位、`when:2d` + 本地窗口双重过滤、
 域名白名单闸门(`config/news_sources.json`)、实测 99–100 条上限、无正式 API 契约、
 `<link>` 是跳转链原文不可得、删掉 `gnews_rss_url` 或白名单文件即整通道回滚。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add skills/fx-daily-report/SKILL.md README.md
