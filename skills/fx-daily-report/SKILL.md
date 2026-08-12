@@ -76,10 +76,11 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       变化 <count_delta>;<count_capped> 为 true 时追加"已达当日采集上限,
       实际篇数只多不少",<count_prev_capped> 亦为 true 时改写为"两日均达采集
       上限,变化 0 是上限造成的,不表示事件面持平";
-      **`main_channel_capped` 与 `count_capped` 是两件事,不得互相代用**:前者说
-      主通道**滤除前**的原始样本触顶(上限 99),此时当日条目可能来自补位通道、
-      离它自己的上限还远。`main_channel_capped` 为 true 时只追加"主通道当日返回
-      条数触顶,被滤除的原始条数是下界",**禁止**据它写上面那两句关于 count 的话;
+      **`sample_capped` 与 `count_capped` 是两件事,不得互相代用**:前者说源返回的
+      **滤除前**原始样本触顶(gnews 上限 99),此时落盘的条数可能离上限还差得远
+      ——实测 raw=100 而 count=11。`sample_capped` 为 true 时只追加"源返回的原始
+      样本触顶,滤除后的条数是下界",**禁止**据它写上面那两句关于 count 的话;
+      反之 `count_capped` 为 true 才是"这个数被上限钉住";
       **`channel_changed_from` 非 null 时**,两日取自不同事件通道(上限与筛选口径
       都不同),`count_delta` 已由脚本置 null,该处改写为"前一日取自
       <channel_changed_from> 通道,口径不可比,不给变化量",

@@ -402,7 +402,7 @@ class ChannelChangeTest(unittest.TestCase):
         self.assertEqual(out["PHP"]["channel_changed_from"], "gdelt")
 
 
-class MainChannelCappedTest(unittest.TestCase):
+class SampleCappedTest(unittest.TestCase):
     """第三轮(F3):主通道的截断必须**另立字段**,不能「或」进 count_capped。
 
     合并后,两天各 3 条、上限 8、谁也没触顶的补位日给出双 true,而
@@ -421,7 +421,7 @@ class MainChannelCappedTest(unittest.TestCase):
         # count 这个数来自补位通道,3 < 8,它没有触顶
         self.assertIs(derive._count_capped(snap, "PHP"), False)
         # 主通道那份截断仍可读出,只是换了字段
-        self.assertIs(derive._main_channel_capped(snap, "PHP"), True)
+        self.assertIs(derive._sample_capped(snap, "PHP"), True)
 
     def test_no_truncation_anywhere_is_false(self):
         snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3,
@@ -429,19 +429,65 @@ class MainChannelCappedTest(unittest.TestCase):
                            "gnews_filter": {"raw": 5, "undated": 0, "out_window": 0,
                                             "offlist": 4, "kept": 1, "capped": False}})
         self.assertIs(derive._count_capped(snap, "PHP"), False)
-        self.assertIs(derive._main_channel_capped(snap, "PHP"), False)
+        self.assertIs(derive._sample_capped(snap, "PHP"), False)
+
+    def test_dev_era_gnews_snapshot_without_count_at_cap(self):
+        """本 change 开发期落的 gnews 快照只有 source_capped(说的是滤除前
+        raw=100>=99)而无 count_at_cap。按通道回退:该比的是滤后的 kept。
+        直接读 source_capped 会把「事件数 11」渲染成「已达当日采集上限」——
+        实测 data/2026-08-12.json 的 USD 就是这个形态。"""
+        base = {"articles": [{"title": "g"}] * 11, "articles_raw_count": 100,
+                "source_cap": 99, "source_capped": True, "channel": "gnews"}
+        snap = self._snap(dict(base, gnews_filter={"raw": 100, "undated": 0,
+                                                   "out_window": 0, "offlist": 89,
+                                                   "kept": 11, "capped": True}))
+        self.assertIs(derive._count_capped(snap, "PHP"), False)
+        self.assertIs(derive._sample_capped(snap, "PHP"), True)
+        # 滤后仍然顶到 99 → 这时 count 确实被钉住了
+        full = self._snap(dict(base, gnews_filter={"raw": 100, "undated": 0,
+                                                   "out_window": 0, "offlist": 0,
+                                                   "kept": 100, "capped": True}))
+        self.assertIs(derive._count_capped(full, "PHP"), True)
+
+    def test_pure_gdelt_truncation_is_a_sample_truncation_too(self):
+        """纯 GDELT 触顶(条目没有 gnews_filter):原始样本触顶这件事对两条通道
+        都成立。判据只读 gnews_filter 会把它漏掉(变异 M61 存活实测)。"""
+        snap = self._snap({"articles": [{"title": "g%d" % i} for i in range(8)],
+                           "articles_raw_count": 8, "source_cap": 8,
+                           "source_capped": True, "count_at_cap": True,
+                           "channel": "gdelt"})
+        self.assertIs(derive._sample_capped(snap, "PHP"), True)
+        self.assertIs(derive._count_capped(snap, "PHP"), True)
 
     def test_legacy_entry_without_main_channel_ledger_is_null(self):
         """存量快照没跑过主通道 → 不知道有没有截断,不得写 false。"""
         snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3})
-        self.assertIsNone(derive._main_channel_capped(snap, "PHP"))
+        self.assertIsNone(derive._sample_capped(snap, "PHP"))
+
+    def test_sample_capped_reaches_derive_output(self):
+        """第四轮 S8:四个用例全部直接调私有函数,把整行从 _events_derived 里
+        删掉、或改成硬编码 None,532 用例照样全绿。对照 count_capped —— 它既有
+        私有断言又有端到端断言,删掉会立刻红。"""
+        entry = {"articles": [{"title": "g"}] * 11, "articles_raw_count": 100,
+                 "source_cap": 99, "source_capped": True, "count_at_cap": False,
+                 "channel": "gnews",
+                 "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
+                                  "offlist": 89, "kept": 11, "capped": True}}
+        snap = {"date": "2026-08-12", "rates": {"PHP": rate_entry(56.0)},
+                "events": {"PHP": entry},
+                "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+        got = derive.derive(snap, [])[0]["events"]["PHP"]
+        self.assertIs(got["sample_capped"], True)
+        self.assertIs(got["count_capped"], False)   # 落盘的 11 条离 99 差 88
+        # 正常分支与异常分支的键集漂移也要红
+        self.assertEqual(set(got), set(derive.EMPTY_EVENTS_DERIVED))
 
     def test_event_entry_lookup_reads_events_not_rates(self):
         """_entry_of 读 rates、_event_entry_of 读 events,名字相近而定义域不同。
         取错会静默返回 None,把已知的截断读成「未观测」(实测踩过)。"""
         snap = {"date": "2026-08-12", "rates": {"PHP": {"primary": 56.0}},
                 "events": {"PHP": {"articles": [], "gnews_filter": {"capped": True}}}}
-        self.assertIs(derive._main_channel_capped(snap, "PHP"), True)
+        self.assertIs(derive._sample_capped(snap, "PHP"), True)
 
 
 class ChannelOfEdgeTest(unittest.TestCase):

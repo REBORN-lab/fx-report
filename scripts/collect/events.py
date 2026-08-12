@@ -225,19 +225,72 @@ def _gnews_window(cfg):
 
 
 def _gnews_entry(articles, raw_count, counts):
-    """gnews 条目的统一形状。source_capped 由采集层算好落盘,下游只读不比 ——
+    """gnews 条目的统一形状。截断由采集层算好落盘,下游只读不比 ——
     两条通道上限不同,下游拿单一上限去比必然错位。
+
+    **两个截断是两个问题,不可共用一个布尔**:
+    - `source_capped`:源返回的**原始样本**触顶(raw >= 99)。含义是"被滤除的
+      原始条数是下界",与最终留下几条无关。
+    - `count_at_cap`:**落盘条数**被上限钉住(kept >= 99)。只有它才允许下游说
+      "已达当日采集上限,实际篇数只多不少"。
+
+    GDELT 上两者恒等(不过滤),gnews 上不等:实测 data/2026-08-12.json 的 USD
+    是 raw=100、kept=11 —— 顶到 99 的是滤除**前**的样本,落盘的 11 条离 99 差 88。
+    共用一个布尔会让日报把"事件数 11"写成"已达当日采集上限"。
 
     articles 为 None 表示**没采到**(观测缺口),为 [] 表示**采到了、可用的 0 条**。
     两者绝不可混:混了之后彻底的管道停摆会被周度聚合器读成"区间内确实 0 条,
     全区间采集完整、无截断" —— 本仓库的招牌失效形态。同理 raw_count 为 None 时
-    source_capped 也是 None(不知道),不是 False(知道没截断)。
+    两个截断标记也都是 None(不知道),不是 False(知道没截断)。
     """
     known = isinstance(raw_count, int) and not isinstance(raw_count, bool)
+    kept = counts.get("kept") if isinstance(counts, dict) else None
+    kept_known = isinstance(kept, int) and not isinstance(kept, bool)
     return {"articles": articles, "articles_raw_count": raw_count,
             "source_cap": GNEWS_SOFT_CAP,
             "source_capped": (raw_count >= GNEWS_SOFT_CAP) if known else None,
+            "count_at_cap": (kept >= GNEWS_SOFT_CAP) if kept_known else None,
+            # 主通道自己造条目 dict,不存在"元素结构不可识别"这一路
+            "articles_dropped_malformed": 0 if articles is not None else None,
             "channel": "gnews", "gnews_filter": counts}
+
+
+def landed_count_capped(entry, caps):
+    """落盘条数是否被通道上限钉住。**两个下游消费者共用这一份**(周度聚合器与
+    派生量),复制粘贴判定逻辑后漂移是本仓库栽过的坑(见 scripts/fixings.py)。
+
+    caps: {"gnews_records": n, "gdelt_records": n} —— 采集当时的真值,缺则用常量。
+
+    存量快照没有 count_at_cap,须按通道回退:
+    - GDELT 不过滤,source_capped 与"落盘条数被钉住"恒等,直接用
+    - gnews 的 source_capped 说的是**滤除前**样本触顶(raw=100>=99),落盘的是
+      滤后的 kept 条 —— 拿它当"条数触顶"会把 11 条说成撞了 99 的上限
+    无从判断时返回 None(不知道 ≠ 知道没触顶)。
+    """
+    if not isinstance(entry, dict):
+        return None
+    flag = entry.get("count_at_cap")
+    if isinstance(flag, bool):
+        return flag
+    def _cap(key, fallback):
+        v = caps.get(key) if isinstance(caps, dict) else None
+        return v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else fallback
+    if entry.get("channel") == "gnews":
+        gf = entry.get("gnews_filter")
+        kept = gf.get("kept") if isinstance(gf, dict) else None
+        if isinstance(kept, int) and not isinstance(kept, bool):
+            return kept >= _cap("gnews_records", GNEWS_SOFT_CAP)
+        # 没有过滤账就没有"滤后条数"可比,退回条目自己的权威布尔
+    own = entry.get("source_capped")
+    if isinstance(own, bool):
+        return own
+    raw = entry.get("articles_raw_count")
+    if not (isinstance(raw, int) and not isinstance(raw, bool)):
+        arts = entry.get("articles")
+        if not isinstance(arts, list):
+            return None
+        raw = len(arts)
+    return raw >= _cap("gdelt_records", MAX_RECORDS)
 
 
 def _gnews_one(cfg, currency, domains):
@@ -305,14 +358,17 @@ def collect(cfg):
             continue
         # 去重前条数一并落盘:只留去重后的长度,下游就无法判断"是否顶到
         # 每日上限"——同一批里删掉两条重复,8 条会变成 6 条,截断被漏报
-        arts, raw_count = articles
+        arts, raw_count, dropped = articles
         prior = out.get(currency)
+        known = isinstance(raw_count, int) and not isinstance(raw_count, bool)
         entry = {
             "articles": _dedupe_titles(arts), "articles_raw_count": raw_count,
             "source_cap": MAX_RECORDS,
-            "source_capped": isinstance(raw_count, int)
-                             and not isinstance(raw_count, bool)
-                             and raw_count >= MAX_RECORDS,
+            # 本通道不过滤,故"原始样本触顶"与"落盘条数被钉住"恒等 —— 但仍分两个
+            # 字段落盘:下游不该靠"当前是哪条通道"去猜某个布尔是哪个含义
+            "source_capped": known and raw_count >= MAX_RECORDS,
+            "count_at_cap": known and raw_count >= MAX_RECORDS,
+            "articles_dropped_malformed": dropped,
             "channel": "gdelt",
         }
         # 保留主通道那一趟的账:丢了它,"gnews 抓到 88 条但白名单挡了 86 条"
@@ -415,5 +471,8 @@ def _fetch(cfg, query):
             continue
         arts.append({"title": a.get("title"), "url": a.get("url"),
                      "domain": a.get("domain"), "seendate": a.get("seendate")})
-    # 原始条数含被丢弃的元素:用过滤后的长度比每日上限会漏报截断
-    return (arts, len(raw)), None
+    # 原始条数含被丢弃的元素:用过滤后的长度比每日上限会漏报截断。
+    # dropped 必须一路落到快照:源改版成 {"articles": ["<a>", ...]} 时这里
+    # 逐个跳过、raw_count 仍是 3、gaps 为空,落盘与"确实一条都没有"完全同形,
+    # 聚合器据此断言"区间内确实 0 条、全区间采集完整"(第四轮 S1)
+    return (arts, len(raw), dropped), None

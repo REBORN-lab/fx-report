@@ -28,7 +28,7 @@ EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
 EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None,
                         "count_capped": None, "count_prev_capped": None,
                         "channel_changed_from": None,
-                        "main_channel_capped": None}
+                        "sample_capped": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
 
@@ -170,48 +170,33 @@ def _channel_of(snap, currency):
 
 
 def _count_capped(snap, currency):
-    """当日该币种的 GDELT 条数是否顶到采集上限。上限优先取快照记录的采集时真值。
-    去重前条数(articles_raw_count)缺失的存量快照退回去重后长度,方向偏保守
-    (只会漏报触顶,不会虚报)。无法判断时返回 None。"""
+    """当日该币种的**落盘条数**是否被通道上限钉住。判定与周度聚合器共用
+    events.landed_count_capped —— 两处各写一遍必然漂移。无法判断时返回 None。"""
     entry = _event_entry_of(snap, currency)
     if entry is None:
         return None
-    # 采集层给出的权威判定优先。两条事件通道上限不同(gnews 99 / GDELT 8),
-    # 下游拿单一上限去比必然错位:GDELT 补位条目 raw=8(真顶到了)去跟 99 比,
-    # 8 >= 99 为假,截断被漏报。存量快照无此字段,退回下面的旧路径。
-    #
-    # **只回答 count 这个数所在的通道有没有触顶**。第二轮把主通道那份截断
-    # "或"了进来,于是两天各 3 条、上限 8、谁也没触顶的补位日给出双 true,
-    # SKILL:74-76 的死规则据此把真实的事件面持平渲染成"上限造成的假象"。
-    # 主通道那份另走 _main_channel_capped,两个事实各有各的字段
-    authoritative = entry.get("source_capped")
-    if isinstance(authoritative, bool):
-        return authoritative
-    raw = entry.get("articles_raw_count")
-    if not (isinstance(raw, int) and not isinstance(raw, bool)):
-        arts = entry.get("articles")
-        if not isinstance(arts, list):
-            return None
-        raw = len(arts)
     meta = snap.get("meta") if isinstance(snap, dict) else None
     caps = meta.get("caps") if isinstance(meta, dict) else None
-    cap = caps.get("gdelt_records") if isinstance(caps, dict) else None
-    if not (isinstance(cap, int) and not isinstance(cap, bool) and cap > 0):
-        cap = events_mod.MAX_RECORDS
-    return raw >= cap
+    return events_mod.landed_count_capped(entry, caps)
 
 
-def _main_channel_capped(snap, currency):
-    """主通道当日返回条数是否顶到它自己的上限(gnews 99,与 GDELT 的 8 无关)。
-    主通道未跑或存量快照无此账 → None(不知道 ≠ 知道没截断)。"""
+def _sample_capped(snap, currency):
+    """当日**任一条通道**返回的原始样本是否触顶。含义是"被滤除/未取回的条数是
+    下界",与最终落盘几条无关 —— 与 _count_capped 是两个问题。
+
+    不叫 main_channel_capped:补位日里触顶的可能是主通道(gnews 的 99),也可能
+    是补位通道自己(GDELT 的 8),两者取并。两个来源都不知道时返回 None。"""
     entry = _event_entry_of(snap, currency)
     if entry is None:
         return None
+    flags = []
+    own = entry.get("source_capped")
+    if isinstance(own, bool):
+        flags.append(own)
     gf = entry.get("gnews_filter")
-    if not isinstance(gf, dict):
-        return None
-    flag = gf.get("capped")
-    return flag if isinstance(flag, bool) else None
+    if isinstance(gf, dict) and isinstance(gf.get("capped"), bool):
+        flags.append(gf["capped"])
+    return any(flags) if flags else None
 
 
 def _events_derived(payload, history, gaps):
@@ -245,10 +230,10 @@ def _events_derived(payload, history, gaps):
                 "count_capped": _count_capped(payload, currency),
                 "count_prev_capped": (_count_capped(history[0], currency)
                                       if history else None),
-                # 主通道返回条数触顶。与 count_capped 是两件事:被截断的是
-                # 滤除前的原始样本,当日 count 可能来自补位通道、离它自己的
-                # 上限还远。合并成一个布尔会让"事件面确实持平"被写成"上限假象"
-                "main_channel_capped": _main_channel_capped(payload, currency),
+                # 原始样本触顶。与 count_capped 是两件事:被截断的是滤除前的
+                # 样本,而 count 是滤后的数,可能离上限还差得远。合并成一个布尔
+                # 会让"事件面确实持平"被写成"上限假象"
+                "sample_capped": _sample_capped(payload, currency),
             }
         except Exception as e:
             out[currency] = dict(EMPTY_EVENTS_DERIVED)

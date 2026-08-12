@@ -388,3 +388,93 @@ delta spec 新增 Scenario「时间戳格式跨通道一致」与对应规范正
 是不是我以为的那个」**,包括「测试全绿」这一环本身。
 
 变异靶点累计 51 条,全部 KILLED(本轮新增 M37–M51)。
+
+## 11. 第四轮审查:一个布尔只能回答一个问题(build 阶段追加)
+
+18 条发现、11 条幸存(7 条被两名复核者推翻,其中包括一条 Critical —— 复核者证明
+真实采集器产不出它需要的输入形态)。**只剩 1 条 Critical,且是既有漏洞而非本轮
+引入**,同型缺陷的收敛方向对了。
+
+### 11.1 Critical:结构不可识别的元素没有账
+
+`_fetch` 逐个跳过非 dict 元素时已经数出了 `dropped`,却没落盘。源改版成
+`{"articles": ["<a>", ...]}` 时落盘 `articles=[]`、`articles_raw_count=3`、
+**gaps 为空** —— 与「确实一条都没有」在结构上完全同形,聚合器照旧断言
+「区间内确实 0 条、全区间采集完整」。
+
+复核者同时指出不能用 `raw_count − len(articles)` 当损耗:GDELT 落盘前跑
+`_dedupe_titles`,重复标题被删掉不是观测损失,那样改会反向误报。所以让采集层把
+它**已经数出来的**那个数落盘(`articles_dropped_malformed`),聚合器累加成账。
+
+同一现象在聚合器自己那侧也有一份:非 dict 条目被 `sampled` 计入却不进任何窗口账,
+而 `dup_dropped = sampled − distinct` 把它们说成「去重掉的重复」——周报 SKILL 正是
+让报告直接引这个数。改成 `sampled − malformed − distinct`,丢弃量单列。
+
+### 11.2 「一个布尔只能回答一个问题」
+
+第三轮把截断拆成两个字段,但只拆对了补位那一路。纯 gnews 日上,
+`entry.source_capped` 与 `gnews_filter.capped` 由**同一个** `raw >= 99` 算出:
+
+- 周报:两个计数器同时 +1,结论句把同一次截断说两遍
+- 日报:`count_capped` 为 true → SKILL 的死规则把「事件数 11」写成「已达当日
+  采集上限,实际篇数只多不少」,而 11 离 99 差 88
+
+根因是 `source_capped` 这一个布尔在两条通道上回答着**不同的问题**:GDELT 不过滤,
+「样本触顶」与「落盘条数被钉住」恒等;gnews 过滤,两者不等。下游靠「当前是哪条
+通道」去猜它是哪个含义 —— 这本身就是缺陷。
+
+改成由采集层落两个字段,各自只回答一个问题:
+- `source_capped`:源返回的原始样本触顶(滤除后的条数是下界)
+- `count_at_cap`:落盘条数被上限钉住(才允许说「实际篇数只多不少」)
+
+聚合器侧对应 `sample_capped_days` 与 `capped_days`,并用**集合**收集当日触顶的
+上限值而不是两个计数器分别累加 —— 同一次截断因此只会被记一次。
+
+`main_channel_capped` 随之改名 `sample_capped`:补位日里触顶的可能是主通道(99),
+也可能是补位通道自己(8),叫「主通道」是错的。
+
+### 11.3 测试:字段落盘了,但没有一条端到端断言
+
+- `sample_capped` 四个用例全部直接调私有函数 → 把整行从 `_events_derived` 里删掉,
+  532 用例全绿。补端到端断言 + `set(got) == set(EMPTY_EVENTS_DERIVED)` 键集断言,
+  让正常分支与异常分支的键集漂移也会红
+- `articles_filtered_days` / `articles_filtered_blank_days` 零断言,可互相顶替
+- 混合周(`0 < blank < filtered_days`)零覆盖 —— 两条只在混合周才有区别的代码
+  因此没有靶点,`if blank == n_days:` 改成 `if blank > 0:` 存活
+- 窗口层 caveat 只在 `in_window == 0` 上被测过,而真实数据走的是 `in_window > 0`
+- `test_kept_items_all_outside_window` 的 docstring 声称「挡住的必须是窗口层」,
+  实际该 fixture 上 filtered 那条也会响 —— docstring 的因果陈述与实际不符,已改
+
+### 11.4 被推翻的两条,以及为什么值得记下来
+
+- 「主通道整区间跑不成(`gnews_filter: null`)不进任何账」:机械输出属实,但两名
+  复核者独立证明真实采集器产不出那个形态 —— gnews 整体失败时条目走的是
+  `_gnews_entry(None, None, None)`,`articles` 为 None,聚合器在 `items is None`
+  处就跳过了
+- 「未截断的 latest-N 源上『另有 N 条发布于区间外』把可证的市场事实降级」:复核者
+  用仓库自己的 `feeds._fetch_feed` 给出反例 —— 缺 `<title>` 的 item 被静默 continue,
+  于是「未触顶」并不蕴含「源把全部条目都给了我们」,该发现的立论在本仓库为假
+
+两条都是「看起来成立、实跑复现、结论仍然错」。**对抗性证伪环节不是走过场**:
+本轮 18 条里有 7 条死在这一步。
+
+变异靶点累计 71 条,全部 KILLED(本轮新增 M52–M71)。
+
+首轮实跑是 **13/15**,两条存活,与本节写下预期值时不符,按仓库数字硬规则逐字入档:
+- M53(`_fetch` 不数丢弃量):新写的用例 mock 了 `_query_with_retry`,把 `_fetch`
+  里数丢弃量的那行整个绕过去了 —— 又一次「用例通过的原因不是它声称在测的那件事」
+- M61(`_sample_capped` 只读 `gnews_filter`):凡期望为真的用例都带着 `gnews_filter`,
+  纯 GDELT 触顶那一路没有靶点
+
+各补一条走真实 HTTP 路径 / 纯 GDELT 条目的用例后重跑,15/15。
+
+### 11.5 收尾时自己抓到的一条:开发期快照踩中同一个坑
+
+真实数据端到端复核时发现 `data/2026-08-12.json` 的 USD(本 change 开发期落的
+gnews 条目)只有 `source_capped: true` 而无 `count_at_cap`,回退路径把它读成
+`count_capped=True` —— 「事件数 11」又要被渲染成「已达当日采集上限」。
+
+回退判据因此必须**认通道**:gnews 条目要比的是滤后的 `kept`,不是 `source_capped`
+所说的滤除前 `raw`。这个谓词此时已有两个消费者(周度聚合器与派生量),按
+`scripts/fixings.py` 的先例抽成 `events.landed_count_capped` 共用,漂移面归零
+(靶点 M69/M70 各自钉住"哪一侧偷偷再写一遍")。

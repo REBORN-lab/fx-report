@@ -1176,8 +1176,10 @@ class PartialFilterDisclosureTest(unittest.TestCase):
 
     def test_kept_items_all_outside_window_is_not_confirmed_zero(self):
         """真实复现:5 条条目发布日全是 08-10/08-11,窗口是 08-12。
-        kept=5 故 filtered 那条不触发整日归零,capped 也不触发(34<99)——
-        挡住"确实 0 条"的必须是窗口层自己那条不变量。"""
+
+        本 fixture 上 filtered(29 条被滤)与窗口两条 caveat 都会响,靠
+        assertIn 整句区分是哪一条 —— 只有窗口层能给出的那一路见同类的
+        test_pure_gdelt_entry_outside_window(它根本没有 gnews_filter)。"""
         got = wd._events_one(
             self._snaps({"raw": 34, "undated": 0, "out_window": 0,
                          "offlist": 29, "kept": 5, "capped": False},
@@ -1224,10 +1226,59 @@ class MainChannelCapDisclosureTest(unittest.TestCase):
         got = wd._events_one(self._snaps(), "USD", "2026-08-01", "2026-08-07", 0)
         # 补位通道每天 3 条、上限 8,谁也没触顶
         self.assertEqual(got["articles_capped_days"], 0)
-        self.assertEqual(got["articles_main_capped_days"], 7)
-        self.assertEqual(got["articles_main_daily_cap"], 99)
-        self.assertIn("7 天主通道返回条数顶到其上限(99 条)", got["articles_verdict"])
+        self.assertEqual(got["articles_sample_capped_days"], 7)
+        self.assertEqual(got["articles_sample_daily_cap"], 99)
+        self.assertIn("7 天源返回的原始样本顶到其上限(99 条)", got["articles_verdict"])
         self.assertNotIn("顶到当日采集上限", got["articles_verdict"])
+        # 第四轮 S10:两个字段此前零断言,可以互相顶替也可以各自恒 0
+        self.assertEqual(got["articles_filtered_days"], 7)
+        self.assertEqual(got["articles_filtered_blank_days"], 0)
+
+    def test_pure_gnews_day_counts_one_truncation_not_two(self):
+        """第四轮 S2/S4:纯 gnews 日 entry.source_capped 与 gnews_filter.capped
+        由**同一个** raw>=99 算出。分别计数会把同一次截断记两遍,结论句把一件事
+        说两遍;而 count_at_cap(落盘的 11 条)说明那 11 条并没有撞上限。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {
+                      "articles": [{"title": "t%d-%d" % (d, i), "url": "u%d-%d" % (d, i),
+                                    "seendate": "202608%02dT120000Z" % d}
+                                   for i in range(11)],
+                      "articles_raw_count": 100, "source_cap": 99,
+                      "source_capped": True, "count_at_cap": False, "channel": "gnews",
+                      "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
+                                       "offlist": 89, "kept": 11, "capped": True}}},
+                  "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+                 for d in range(1, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_capped_days"], 0)         # 11 条没撞 99
+        self.assertEqual(got["articles_sample_capped_days"], 7)  # 一次,不是两次
+        self.assertEqual(got["articles_sample_daily_cap"], 99)
+        self.assertNotIn("顶到当日采集上限", got["articles_verdict"])
+        self.assertEqual(got["articles_verdict"].count("顶到其上限"), 1)
+
+    def test_mixed_week_distinguishes_blank_days_from_backfilled(self):
+        """第四轮 S7:0 < blank < filtered_days 这一形态此前零覆盖,于是
+        `if blank == n_days:` 改成 `if blank > 0:`、`n_days - blank` 改成
+        `n_days` 两条变异都存活。"""
+        def day(d, n):
+            return {"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                    "events": {"USD": {
+                        "articles": [{"title": "t%d-%d" % (d, i), "url": "u%d-%d" % (d, i),
+                                      "seendate": "202608%02dT120000Z" % d}
+                                     for i in range(n)],
+                        "articles_raw_count": n, "source_cap": 8,
+                        "source_capped": False, "count_at_cap": False,
+                        "channel": "gdelt" if n else "gnews",
+                        "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
+                                         "offlist": 100, "kept": 0, "capped": False}}},
+                    "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+        snaps = [day(d, 0) for d in range(1, 5)] + [day(d, 1) for d in range(5, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_filtered_days"], 7)
+        self.assertEqual(got["articles_filtered_blank_days"], 4)
+        self.assertIn("7 天主通道抓到共 700 条次未通过逐层过滤(其中 3 天当日仍有条目可用)",
+                      got["articles_verdict"])
+        self.assertNotIn("无一可用", got["articles_verdict"])
 
     def test_backfilled_day_does_not_claim_nothing_usable(self):
         """当日由补位取得条目,句子不得同时出现「至少 N 条」与「无一可用」。"""
@@ -1253,6 +1304,71 @@ class LegacySnapshotCapParityTest(unittest.TestCase):
                                   wd._article_key, "2026-08-12", "2026-08-12")
         self.assertIs(derive._count_capped(snap, "PHP"), True)
         self.assertEqual(stats["capped_days"], 1)
+
+    def test_malformed_elements_are_not_disguised_as_duplicates(self):
+        """第四轮 S5:非 dict 条目被 sampled 计入却不进任何窗口账,dup_dropped
+        把它们说成"去重掉的重复"(周报 SKILL 让报告直接引这个数),结论照旧
+        "确实 0 条"。基线与第三轮同型,属既有漏洞。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {"articles": ["junk", "junk", "junk"],
+                                     "articles_raw_count": 3}},
+                  "meta": {"caps": {"gdelt_records": 8}}} for d in range(1, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_malformed_items"], 21)
+        self.assertEqual(got["articles_dup_dropped"], 0)      # 不是 21
+        self.assertNotIn("确实 0 条", got["articles_verdict"])
+        self.assertIn("另有 21 条次落盘后结构不可识别", got["articles_verdict"])
+
+    def test_collector_dropped_malformed_blocks_zero_claim(self):
+        """第四轮 S1(Critical):源改版成 {"articles": ["<a>", ...]} 时采集层
+        逐个跳过,落盘 articles=[] 而 raw_count=3、gaps 为空 —— 与"确实一条都
+        没有"完全同形。丢弃量必须一路进结论。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {"articles": [], "articles_raw_count": 3,
+                                     "source_cap": 8, "source_capped": False,
+                                     "count_at_cap": False, "channel": "gdelt",
+                                     "articles_dropped_malformed": 3}},
+                  "meta": {"caps": {"gdelt_records": 8}}} for d in range(1, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_malformed_dropped"], 21)
+        self.assertNotIn("确实 0 条", got["articles_verdict"])
+        self.assertIn("7 天共 21 条次结构不可识别被跳过", got["articles_verdict"])
+
+    def test_sample_cap_assumption_does_not_taint_entry_cap(self):
+        """第四轮 S6/S9:主通道上限的推定并进 cap_assumed_days,会给权威的条目级
+        上限贴上"上限为推定"的假标注,还让一个"天数"超过它统计的天数。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {
+                      "articles": [{"title": "t%d" % d, "url": "u%d" % d,
+                                    "seendate": "202608%02dT120000Z" % d}],
+                      "articles_raw_count": 100, "source_cap": 99,
+                      "source_capped": True, "count_at_cap": False, "channel": "gnews",
+                      "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
+                                       "offlist": 99, "kept": 1, "capped": True}}},
+                  "meta": {"caps": {"gdelt_records": 8}}}      # 无 gnews_records
+                 for d in range(1, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_cap_assumed_days"], 0)         # 条目级上限是权威的
+        self.assertEqual(got["articles_sample_cap_assumed_days"], 7)  # 推定的是主通道那份
+        self.assertLessEqual(got["articles_cap_assumed_days"], got["days_with_data"])
+
+    def test_window_caveat_also_shows_when_some_items_are_in_window(self):
+        """第四轮 S11:两个覆盖这条 caveat 的用例 in_window 都是 0,于是
+        `if outside_window:` 改成 `if outside_window and not in_window:` 存活。
+        而真实数据(W33 的 EUR official)走的正是 in_window>0 这一支。"""
+        def day(d, seen):
+            return {"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                    "events": {"USD": {"articles": [
+                        {"title": "t%d" % d, "url": "u%d" % d, "seendate": seen}],
+                        "articles_raw_count": 1, "source_cap": 8,
+                        "source_capped": False, "count_at_cap": False,
+                        "channel": "gdelt", "articles_dropped_malformed": 0}},
+                    "meta": {"caps": {"gdelt_records": 8}}}
+        snaps = [day(1, "20260701T120000Z"), day(2, "20260802T120000Z")]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual((got["articles_in_window"], got["articles_outside_window"]), (1, 1))
+        self.assertIn("区间内至少 1 条(", got["articles_verdict"])
+        self.assertIn("另有 1 条发布于区间外", got["articles_verdict"])
 
     def test_official_channel_empty_days_unchanged(self):
         """official 一路(entry=None、raw_count=None)不得因这次放宽而改变:

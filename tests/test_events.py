@@ -279,12 +279,51 @@ class RawCountTest(unittest.TestCase):
         dupes = [{"title": "same"}] * 3 + [{"title": "other"}]
         cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
         with mock.patch.object(events, "_query_with_retry",
-                               return_value=((dupes, len(dupes)), None)):
+                               return_value=((dupes, len(dupes), 0), None)):
             out, gaps = events.collect(cfg)
         self.assertEqual(gaps, [])
         entry = out["PHP"]
         self.assertEqual(len(entry["articles"]), 2)      # 去重后
         self.assertEqual(entry["articles_raw_count"], 4)  # 去重前
+        self.assertEqual(entry["articles_dropped_malformed"], 0)
+
+    def test_malformed_elements_are_counted_into_the_snapshot(self):
+        """源改版成 {"articles": ["<a>", ...]}:逐个跳过后落盘 articles=[] 而
+        raw_count=3、gaps 为空,与"确实一条都没有"完全同形。丢弃量必须落盘,
+        否则聚合器据此断言"区间内确实 0 条、全区间采集完整"(第四轮 S1)。"""
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        with mock.patch.object(events, "_query_with_retry",
+                               return_value=(([], 3, 3), None)):
+            out, gaps = events.collect(cfg)
+        self.assertEqual(gaps, [])
+        entry = out["PHP"]
+        self.assertEqual(entry["articles"], [])
+        self.assertEqual(entry["articles_raw_count"], 3)
+        self.assertEqual(entry["articles_dropped_malformed"], 3)
+
+    def test_fetch_counts_malformed_elements_end_to_end(self):
+        """经真实 HTTP 路径走一遍:上面那条用例 mock 了 _query_with_retry,
+        把 _fetch 里数丢弃量的那行整个绕过去了(变异 M53 存活实测)。"""
+        body = json.dumps({"articles": ["<a>", "<a>", {"title": "ok", "url": "u",
+                                                       "domain": "reuters.com",
+                                                       "seendate": "20260811T000000Z"}]})
+        with FixtureServer({"/doc": (200, body)}) as srv:
+            cfg = make_test_cfg(endpoints={"gdelt_doc_url": srv.base_url + "/doc"})
+            cfg["gdelt_delay_s"] = 0
+            out, gaps = events.collect(cfg)
+        self.assertEqual(gaps, [])
+        entry = out["PHP"]
+        self.assertEqual(len(entry["articles"]), 1)
+        self.assertEqual(entry["articles_raw_count"], 3)
+        self.assertEqual(entry["articles_dropped_malformed"], 2)
+
+    def test_count_at_cap_and_source_capped_split_on_gnews(self):
+        """gnews 上「原始样本触顶」与「落盘条数被钉住」不是同一件事。"""
+        counts = {"raw": 100, "undated": 0, "out_window": 0,
+                  "offlist": 89, "kept": 11, "capped": True}
+        entry = events._gnews_entry([{"title": "t"}] * 11, 100, counts)
+        self.assertIs(entry["source_capped"], True)    # 滤除前的 100 顶到 99
+        self.assertIs(entry["count_at_cap"], False)    # 落盘的 11 条离 99 差 88
 
 class GnewsConfigTest(unittest.TestCase):
     """gnews 需要端点与白名单两者都配齐才启用;缺任一即静默停用(现状行为)。"""
