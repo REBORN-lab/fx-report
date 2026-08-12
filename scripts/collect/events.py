@@ -323,15 +323,18 @@ def collect(cfg):
     # 「有没有拿到可署名来源的报道」由脚本给结论,SKILL 只引用这个布尔。
     # 让 LLM 自己组合「gnews_filter.kept == 0 且 articles 为空」两个条件,
     # 补位成功那天就会一边列着 GDELT 条目、一边写"未取得可署名来源",自相矛盾
+    #
+    # 三态陈述在 articles 自己的定义域上,与它的三态一一对应:
+    #   None(没采到)  → None,不知道
+    #   []  (采到了、可用 0 条) → True,确实一条可署名来源都没有
+    #   非空                    → False,取得了
+    # 第二轮把它挂在 gnews_filter 上,于是 README 写明的整通道回滚(删掉
+    # config/news_sources.json、gnews 静默停用、GDELT 正常取回条目、零 gap)
+    # 下五币种恒为 null —— 完全健康的形态被写成"没观测过"。
     for currency, entry in out.items():
-        gf = entry.get("gnews_filter")
-        if not isinstance(gf, dict):
-            # 主通道压根没跑成(或未启用)→ 不知道有没有可署名来源。
-            # 写 false 等于断言"取得了",而事实是没观测过
-            entry["attributable_source_absent"] = None
-        else:
-            entry["attributable_source_absent"] = bool(
-                not gf.get("kept") and not entry.get("articles"))
+        arts = entry.get("articles")
+        entry["attributable_source_absent"] = (
+            None if not isinstance(arts, list) else not arts)
     return out, gaps
 
 

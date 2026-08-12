@@ -403,26 +403,45 @@ class ChannelChangeTest(unittest.TestCase):
 
 
 class MainChannelCappedTest(unittest.TestCase):
-    """截断是「或」关系:主通道被截断时当日条数同样是下界,哪怕最终条目来自补位。
-    补位覆写条目级 source_capped 后,主通道那份只剩 gnews_filter.capped 一个落点。"""
+    """第三轮(F3):主通道的截断必须**另立字段**,不能「或」进 count_capped。
+
+    合并后,两天各 3 条、上限 8、谁也没触顶的补位日给出双 true,而
+    skills/fx-daily-report/SKILL.md 对双 true 的渲染是死规则「变化 0 是上限造成
+    的,不表示事件面持平」—— 真实的事件面持平被写成了上限假象。"""
 
     def _snap(self, entry):
         return {"date": "2026-08-12", "events": {"PHP": entry},
                 "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
 
-    def test_main_channel_truncation_survives_backfill(self):
+    def test_main_channel_truncation_does_not_pollute_count_capped(self):
         snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3,
                            "source_cap": 8, "source_capped": False, "channel": "gdelt",
                            "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
                                             "offlist": 100, "kept": 0, "capped": True}})
-        self.assertTrue(derive._count_capped(snap, "PHP"))
+        # count 这个数来自补位通道,3 < 8,它没有触顶
+        self.assertIs(derive._count_capped(snap, "PHP"), False)
+        # 主通道那份截断仍可读出,只是换了字段
+        self.assertIs(derive._main_channel_capped(snap, "PHP"), True)
 
     def test_no_truncation_anywhere_is_false(self):
         snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3,
                            "source_cap": 8, "source_capped": False, "channel": "gdelt",
                            "gnews_filter": {"raw": 5, "undated": 0, "out_window": 0,
                                             "offlist": 4, "kept": 1, "capped": False}})
-        self.assertFalse(derive._count_capped(snap, "PHP"))
+        self.assertIs(derive._count_capped(snap, "PHP"), False)
+        self.assertIs(derive._main_channel_capped(snap, "PHP"), False)
+
+    def test_legacy_entry_without_main_channel_ledger_is_null(self):
+        """存量快照没跑过主通道 → 不知道有没有截断,不得写 false。"""
+        snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3})
+        self.assertIsNone(derive._main_channel_capped(snap, "PHP"))
+
+    def test_event_entry_lookup_reads_events_not_rates(self):
+        """_entry_of 读 rates、_event_entry_of 读 events,名字相近而定义域不同。
+        取错会静默返回 None,把已知的截断读成「未观测」(实测踩过)。"""
+        snap = {"date": "2026-08-12", "rates": {"PHP": {"primary": 56.0}},
+                "events": {"PHP": {"articles": [], "gnews_filter": {"capped": True}}}}
+        self.assertIs(derive._main_channel_capped(snap, "PHP"), True)
 
 
 class ChannelOfEdgeTest(unittest.TestCase):
@@ -443,6 +462,28 @@ class ChannelOfEdgeTest(unittest.TestCase):
     def test_articles_null_means_no_channel(self):
         snap = {"date": "2026-08-11", "events": {"EUR": {"articles": None}}}
         self.assertIsNone(derive._channel_of(snap, "EUR"))
+
+    def test_empty_list_still_has_a_channel(self):
+        """第三轮(F15):`articles: []` 是「采到了、可用 0 条」,通道仍然成立。
+        判据写成真值判断(`if not entry.get("articles")`)会把它当成没有通道,
+        跨通道相减随之复活 —— 该形态由 events.collect() 真实产出:
+        gnews 抓 33 条全部落白名单外、GDELT 补位失败。"""
+        snap = {"date": "2026-08-11",
+                "events": {"EUR": {"articles": [], "articles_raw_count": 33,
+                                   "source_cap": 99, "source_capped": False,
+                                   "channel": "gnews"}}}
+        self.assertEqual(derive._channel_of(snap, "EUR"), "gnews")
+
+    def test_switch_from_empty_gnews_day_refuses_delta(self):
+        prev = {"date": "2026-08-11", "rates": {"EUR": {"primary": 1.1}},
+                "events": {"EUR": {"articles": [], "articles_raw_count": 33,
+                                   "channel": "gnews"}}}
+        today = {"date": "2026-08-12", "rates": {"EUR": {"primary": 1.1}},
+                 "events": {"EUR": {"articles": [{"title": "t%d" % i} for i in range(8)],
+                                    "articles_raw_count": 8, "channel": "gdelt"}}}
+        got = derive.derive(today, [prev])[0]["events"]["EUR"]
+        self.assertIsNone(got["count_delta"])
+        self.assertEqual(got["channel_changed_from"], "gnews")
 
 
 if __name__ == "__main__":

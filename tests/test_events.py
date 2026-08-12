@@ -913,7 +913,38 @@ class ReviewRoundTwoTest(unittest.TestCase):
                                "/doc": (200, few)}) as srv:
             out, _ = events.collect(gnews_cfg(srv, news_sources_path=self._wl(tmp)))
         self.assertTrue(out["PHP"]["articles"])
-        self.assertFalse(out["PHP"]["attributable_source_absent"])
+        # assertIs 而非 assertFalse:第三轮(F14)实测,assertFalse(None) 恒真,
+        # 「知道取得了」与「没观测过」这两种含义在断言里完全同形
+        self.assertIs(out["PHP"]["attributable_source_absent"], False)
+
+    def test_attributable_flag_false_when_main_channel_disabled(self):
+        """README 记载的整通道回滚:删掉白名单文件 → gnews 静默停用、GDELT 正常
+        取回条目、零 gap。这是完全健康的形态,该字段必须是 false 而不是 null ——
+        第二轮把它挂在 gnews_filter 上,于是五币种恒为 null(F10)。"""
+        with FixtureServer({"/doc": (200, SAMPLE)}) as srv:
+            cfg = make_test_cfg(
+                endpoints={"gdelt_doc_url": srv.base_url + "/doc",
+                           "gnews_rss_url": srv.base_url + "/gn?q={query}"},
+                news_sources_path="/nonexistent/news-sources.json")
+            cfg["gdelt_delay_s"] = 0
+            out, gaps = events.collect(cfg)
+        self.assertEqual(gaps, [])
+        for currency in out:
+            self.assertTrue(out[currency]["articles"], currency)
+            self.assertIs(out[currency]["attributable_source_absent"], False, currency)
+
+    def test_attributable_flag_null_only_when_nothing_collected(self):
+        """两条通道都没跑成 → articles 为 None → 不知道,写 null。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = make_test_cfg(
+                endpoints={"gdelt_doc_url": DEAD_URL + "/doc",
+                           "gnews_rss_url": DEAD_URL + "/gn?q={query}"},
+                news_sources_path=self._wl(tmp))
+            cfg["gdelt_delay_s"] = 0
+            out, _ = events.collect(cfg)
+        for currency in out:
+            self.assertIsNone(out[currency]["articles"], currency)
+            self.assertIsNone(out[currency]["attributable_source_absent"], currency)
 
     # I7/I13:模板写坏不得让 collect() 上抛(采集层硬契约)
     def test_broken_url_template_records_gap_not_raise(self):

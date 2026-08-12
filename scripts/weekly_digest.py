@@ -19,6 +19,7 @@ from email.utils import parsedate_to_datetime
 if __package__ in (None, ""):   # 直接 `python3 scripts/weekly_digest.py` 时补 path
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from scripts.collect.events import GNEWS_SOFT_CAP
 from scripts.collect.events import MAX_RECORDS as GDELT_DAILY_CAP
 from scripts.collect.feeds import MAX_ITEMS as OFFICIAL_DAILY_CAP
 from scripts.fixings import distinct_fixings, num as _num
@@ -167,6 +168,12 @@ def _one_cap(caps):
     return next(iter(caps)) if len(caps) == 1 else None
 
 
+def _cap_phrase(cap):
+    """上限的中文括注。cap 为 None = 区间内上限不唯一,此时**不给数值** ——
+    直接插值会把字面量 None 印进结论句。"""
+    return ("(%s 条)" % cap) if cap is not None else "(区间内上限随通道不同,不给单值)"
+
+
 def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     """一个事件通道的跨日统计。两个通道**共用这一份实现** —— official 与 GDELT
     曾各写一份,于是 official 有截断披露而 GDELT 没有(第三轮 I10);同一个
@@ -187,9 +194,9 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     返回 (stats, per_day, published_by_date)。
     """
     sampled = distinct = in_win = outside = undated = 0
-    dropped_days = dropped_items = 0
-    days_collected = days_nonempty = capped = assumed = 0
-    seen, caps = set(), set()
+    filtered_days = filtered_items = filtered_blank_days = 0
+    days_collected = days_nonempty = capped = assumed = main_capped = 0
+    seen, caps, main_caps = set(), set(), set()
     per_day, published_by_date = [], {}
     for snap, items, raw_count, entry in observations:
         if items is None:
@@ -198,29 +205,31 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         days_collected += 1
         sampled += len(items)
         per_day.append((True, len(items)))
-        # 主通道看到过条目却一条都没留下的那一天,**不算观测完整**。
+        # 源侧闸门滤掉的条次。判据是 raw - kept,对**每个两数皆知的日子**成立。
         #
-        # 这一条是不变量,不是补丁:第一轮修复只把 offlist 折进结论,窗口层与
-        # 时间戳层原样敞着,于是"回填 3 天前"(README 写明的运维动作)会让
-        # 100 条全落窗口外、零 gap,而结论照旧断言"确实 0 条、全区间采集完整"。
-        # 正是本文件 _verdict docstring 警告的「枚举补丁永远差一条」。
-        # 判据只看 raw>0 且 kept==0,故日后新增任何一层过滤都自动被覆盖。
+        # 第二轮写的是 `raw > 0 且 kept == 0`,只在整日归零时才响;真实数据里
+        # 绝大多数天 kept > 0,于是整层滤除量退出了结论判定 —— 实测
+        # data/2026-08-12.json 的 BRL(raw=34、offlist=29、kept=5)由"无法判定"
+        # 翻成"确实 0 条"。同一个错误第四次:不变量陈述在了太窄的定义域上。
         gf = entry.get("gnews_filter") if isinstance(entry, dict) else None
+        lost = 0
         if isinstance(gf, dict):
             n_raw, n_kept = gf.get("raw"), gf.get("kept")
-            if (isinstance(n_raw, int) and not isinstance(n_raw, bool) and n_raw > 0
-                    and not n_kept):
-                dropped_days += 1
-                dropped_items += n_raw
+            if (isinstance(n_raw, int) and not isinstance(n_raw, bool)
+                    and isinstance(n_kept, int) and not isinstance(n_kept, bool)
+                    and n_raw > n_kept):
+                lost = n_raw - n_kept
+        if lost:
+            filtered_days += 1
+            filtered_items += lost
+            if not items:
+                # 当日最终一条可用条目都没有。与"补位补上了"必须分开措辞:
+                # 后者写"无一可用"会和同句的"区间内至少 N 条"自相矛盾
+                filtered_blank_days += 1
         # 截断是"源返回了多少条"的属性,与最终留下几条无关 —— 这段必须在
         # `if items:` 之外,否则滤空的日子会一边 derive 说触顶、一边周报说无截断
         flag = entry.get("source_capped") if isinstance(entry, dict) else None
         own_cap = entry.get("source_cap") if isinstance(entry, dict) else None
-        # 截断是"或"关系:主通道被截断时,当日条数同样只是下界,哪怕最终
-        # 条目来自补位通道。补位覆写条目级 source_capped 后,主通道那份截断
-        # 只剩 gnews_filter.capped 一个落点,不读它等于把它写了个寂寞
-        if isinstance(gf, dict) and gf.get("capped") is True:
-            flag = True
         if isinstance(flag, bool):
             # 采集层给出的权威布尔优先:两条通道上限不同(gnews 99 / GDELT 8),
             # 在这里拿单一 cap_key 去比必然错位
@@ -228,12 +237,25 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
                     and own_cap > 0):
                 caps.add(own_cap)
             capped += 1 if flag else 0
-        elif items:
-            cap, was_assumed = _cap(snap, cap_key, cap_fallback)
-            caps.add(cap)
-            assumed += 1 if was_assumed else 0
-            if (raw_count if raw_count is not None else len(items)) >= cap:
-                capped += 1
+        else:
+            # 存量快照没有采集层的权威布尔。判据不能门在 `items` 上:GDELT 返回
+            # 8 个畸形元素时落盘是 articles=[] 而 raw_count=8,门在 items 上会让
+            # derive 说触顶、周报说无截断,两份产物对同一份快照说相反的话
+            n = raw_count if raw_count is not None else (len(items) if items else None)
+            if n is not None:
+                cap, was_assumed = _cap(snap, cap_key, cap_fallback)
+                caps.add(cap)
+                assumed += 1 if was_assumed else 0
+                if n >= cap:
+                    capped += 1
+        # 主通道的截断是**另一件事**,有自己的上限(99),不能与条目级截断压成
+        # 一个数:第二轮把两者"或"在一起,于是补位日印出"顶到当日采集上限
+        # (8 条)"——而当天只采到 3 条,真正触顶的是被滤空的主通道
+        if isinstance(gf, dict) and gf.get("capped") is True:
+            main_capped += 1
+            mcap, m_assumed = _cap(snap, "gnews_records", GNEWS_SOFT_CAP)
+            main_caps.add(mcap)
+            assumed += 1 if m_assumed else 0
         if items:
             days_nonempty += 1
         for item in items:
@@ -270,8 +292,11 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         "outside_window": outside if got else None,
         "undated": undated if got else None,
         "capped_days": capped,
-        "dropped_days": dropped_days,
-        "dropped_items": dropped_items,
+        "main_capped_days": main_capped,
+        "main_daily_cap": _one_cap(main_caps),
+        "filtered_days": filtered_days,
+        "filtered_items": filtered_items,
+        "filtered_blank_days": filtered_blank_days,
         "daily_cap": _one_cap(caps),
         "cap_assumed_days": assumed,
         "days_collected": days_collected,
@@ -324,16 +349,33 @@ def _verdict(stats, window_days, skipped, unit):
     if stats["capped_days"]:
         # daily_cap 为 None = 区间内上限不唯一(两条通道混用)。直接插值会把
         # 字面量 None 印进中文结论句
-        cap = stats["daily_cap"]
         caveats.append("%d 天顶到当日采集上限%s"
-                       % (stats["capped_days"],
-                          ("(%s 条)" % cap) if cap is not None
-                          else "(区间内上限随通道不同,不给单值)"))
-    if stats.get("dropped_days"):
+                       % (stats["capped_days"], _cap_phrase(stats["daily_cap"])))
+    if stats.get("main_capped_days"):
+        # 与上一条分开:被截断的是主通道,上限是它自己的那个数
+        caveats.append("%d 天主通道返回条数顶到其上限%s,被滤除的原始条数是下界"
+                       % (stats["main_capped_days"],
+                          _cap_phrase(stats.get("main_daily_cap"))))
+    if stats.get("filtered_items"):
         # 说"条次"不说"条":同一批条目连采数日会被每天数一遍,700 条次可能
         # 只是 100 条新闻被数了 7 遍。落盘的是逐日计数,去重信息不存在
-        caveats.append("%d 天抓到共 %d 条次但无一可用(窗口外/时间戳不可解析/"
-                       "来源不可署名)" % (stats["dropped_days"], stats["dropped_items"]))
+        n_days, n_items = stats["filtered_days"], stats["filtered_items"]
+        blank = stats.get("filtered_blank_days") or 0
+        if blank == n_days:
+            caveats.append("%d 天抓到共 %d 条次但无一可用(窗口外/时间戳不可解析/"
+                           "来源不可署名)" % (n_days, n_items))
+        else:
+            # 不能写"由补位通道取得条目":kept > 0 的日子条目来自主通道自己,
+            # 补位压根没触发。这里只陈述能从账上读出来的事 —— 当日仍有条目
+            caveats.append("%d 天主通道抓到共 %d 条次未通过逐层过滤(其中 %d 天"
+                           "当日仍有条目可用)" % (n_days, n_items, n_days - blank))
+    if stats["outside_window"]:
+        # 采到了、却一条都放不进区间 —— 这不是"区间内确实没有",是我们压根
+        # 没观测到区间内那几天。实测 data/2026-08-12.json 的 BRL:5 条真实条目
+        # 发布日全是 08-10/08-11,窗口是 08-12,六条 caveat 一条不响,直接断言
+        # "确实 0 条、全区间采集完整"。判据陈述在 _channel 自己的窗口账上,
+        # 纯 GDELT 条目(根本没有 gnews_filter)同样被覆盖
+        caveats.append("另有 %d 条发布于区间外" % stats["outside_window"])
     if stats["in_window"]:
         head = "区间内至少 %d 条" % stats["in_window"]
         return head if not caveats else "%s(%s)" % (head, "、".join(caveats))
@@ -398,6 +440,15 @@ def _events_one(snapshots, currency, lo, hi, skipped):
         "articles_capped_days": a["capped_days"],
         "articles_daily_cap": a["daily_cap"],
         "articles_cap_assumed_days": a["cap_assumed_days"],
+        # 主通道自己的截断账:上限与条目级那份不同(99 / 8),压成一个数就会
+        # 印出"顶到当日采集上限(8 条)"而当天只采到 3 条
+        "articles_main_capped_days": a["main_capped_days"],
+        "articles_main_daily_cap": a["main_daily_cap"],
+        # 源侧闸门逐层滤除的条次(raw - kept 逐日累加)。整日归零的天数单列:
+        # 补位成功的日子不能写"无一可用"
+        "articles_filtered_days": a["filtered_days"],
+        "articles_filtered_items": a["filtered_items"],
+        "articles_filtered_blank_days": a["filtered_blank_days"],
         "days_with_data": a["days_collected"],
         "days_gdelt_failed": (_window_days(lo, hi) or len(snapshots))
                              - a["days_collected"],

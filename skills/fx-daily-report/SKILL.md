@@ -36,10 +36,12 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       **`channel` 为 `gnews` 时**:`url` 是 Google 跳转链、**不是原文直链**,
       引用一律以 `domain` 标出处,禁止把跳转链当原文地址写进报告;该通道的
       seendate 是**发布时间**(比采见时间更准),`channel` 为 `gdelt` 时才是采见时间。
-      **`attributable_source_absent` 为 true 时**(脚本算好的布尔:主通道抓到 raw 条
-      但全部落在白名单外,且补位也没拿到条目),含义是"未取得可署名来源的报道",
-      **不是"该国昨日无新闻"**——写成后者即违反禁令 5。该布尔为 false 时不得使用
-      这句话,哪怕 `gnews_filter.kept` 为 0(那说明补位拿到了条目,正列在上面)。
+      **`attributable_source_absent`**(脚本算好,三态,与 `articles` 一一对应):
+      为 **true** 时含义是"未取得可署名来源的报道",**不是"该国昨日无新闻"**
+      ——写成后者即违反禁令 5;为 **false** 时不得使用这句话,哪怕
+      `gnews_filter.kept` 为 0(那说明补位拿到了条目,正列在上面);为 **null**
+      时(`articles` 为 null,两条通道当日都没跑成)两句话都不准写,只按
+      缺漏节如实陈述该币种事件采集失败。
       `source_capped` 为 true 时,该币种条目取自被截断的样本,任何条数都是下界。
     - 官方公告:<title>(<issuer>,发布于 <published>)……至多 3 条,取自
       events.<币种>.official(央行官方 RSS,可署名高可信;该币种无 official 键
@@ -74,6 +76,10 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       变化 <count_delta>;<count_capped> 为 true 时追加"已达当日采集上限,
       实际篇数只多不少",<count_prev_capped> 亦为 true 时改写为"两日均达采集
       上限,变化 0 是上限造成的,不表示事件面持平";
+      **`main_channel_capped` 与 `count_capped` 是两件事,不得互相代用**:前者说
+      主通道**滤除前**的原始样本触顶(上限 99),此时当日条目可能来自补位通道、
+      离它自己的上限还远。`main_channel_capped` 为 true 时只追加"主通道当日返回
+      条数触顶,被滤除的原始条数是下界",**禁止**据它写上面那两句关于 count 的话;
       **`channel_changed_from` 非 null 时**,两日取自不同事件通道(上限与筛选口径
       都不同),`count_delta` 已由脚本置 null,该处改写为"前一日取自
       <channel_changed_from> 通道,口径不可比,不给变化量",
