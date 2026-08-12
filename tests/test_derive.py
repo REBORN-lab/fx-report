@@ -336,5 +336,33 @@ class CountCappedGuardTest(unittest.TestCase):
         self.assertFalse(e["count_capped"])          # 今天按当前常量,2 < 8
         self.assertTrue(e["count_prev_capped"])      # 昨天上限就是 2
 
+class SourceCappedTest(unittest.TestCase):
+    """两条通道混用后,拿单一上限去比必然错位:GDELT 补位条目 raw=8(真顶到)
+    去跟 gnews 的 99 比,8 >= 99 为假,截断漏报。权威判定由采集层给出。"""
+
+    def _snap(self, entry):
+        return {"date": "2026-08-11", "events": {"PHP": entry},
+                "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+
+    def test_authoritative_boolean_wins(self):
+        snap = self._snap({"articles": [], "articles_raw_count": 8, "source_cap": 8,
+                           "source_capped": True, "channel": "gdelt"})
+        self.assertTrue(derive._count_capped(snap, "PHP"))
+
+    def test_false_boolean_respected_even_when_raw_exceeds_gdelt_cap(self):
+        snap = self._snap({"articles": [], "articles_raw_count": 50, "source_cap": 99,
+                           "source_capped": False, "channel": "gnews"})
+        self.assertFalse(derive._count_capped(snap, "PHP"))
+
+    def test_legacy_snapshot_without_boolean_uses_old_path(self):
+        snap = self._snap({"articles": [{"title": "t"}] * 8, "articles_raw_count": 8})
+        self.assertTrue(derive._count_capped(snap, "PHP"))
+
+    def test_non_bool_source_capped_ignored(self):
+        snap = self._snap({"articles": [], "articles_raw_count": 8,
+                           "source_capped": "yes"})
+        self.assertTrue(derive._count_capped(snap, "PHP"))   # 退回旧路径
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -143,6 +143,12 @@ def _count_capped(snap, currency):
     entry = events.get(currency) if isinstance(events, dict) else None
     if not isinstance(entry, dict):
         return None
+    # 采集层给出的权威判定优先。两条事件通道上限不同(gnews 99 / GDELT 8),
+    # 下游拿单一上限去比必然错位:GDELT 补位条目 raw=8(真顶到了)去跟 99 比,
+    # 8 >= 99 为假,截断被漏报。存量快照无此字段,退回下面的旧路径。
+    authoritative = entry.get("source_capped")
+    if isinstance(authoritative, bool):
+        return authoritative
     raw = entry.get("articles_raw_count")
     if not (isinstance(raw, int) and not isinstance(raw, bool)):
         arts = entry.get("articles")

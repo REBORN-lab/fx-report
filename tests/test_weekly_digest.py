@@ -1010,5 +1010,49 @@ class FixingsVerdictTest(unittest.TestCase):
         r = wd.build(snaps, [], "2026-W33")[0]["rates"]["PHP"]
         self.assertIn("1 份快照损坏被跳过", r["fixings_verdict"])
 
+
+class ChannelSourceCappedTest(unittest.TestCase):
+    """周度聚合器同样必须认采集层的权威布尔,而不是拿单一 cap_key 去比。"""
+
+    def _snaps(self, entry):
+        return [{"date": "2026-08-10", "rates": {}, "gaps": [],
+                 "events": {"PHP": entry},
+                 "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}]
+
+    def test_capped_days_counts_authoritative_boolean(self):
+        got = wd._events_one(self._snaps(
+            {"articles": [{"title": "a", "seendate": "20260810T000000Z"}],
+             "articles_raw_count": 8, "source_cap": 8, "source_capped": True,
+             "channel": "gdelt"}), "PHP", "2026-08-10", "2026-08-10", 0)
+        self.assertEqual(got["articles_capped_days"], 1)
+
+    def test_false_boolean_not_counted_even_when_raw_exceeds_gdelt_cap(self):
+        got = wd._events_one(self._snaps(
+            {"articles": [{"title": "a", "seendate": "20260810T000000Z"}],
+             "articles_raw_count": 50, "source_cap": 99, "source_capped": False,
+             "channel": "gnews"}), "PHP", "2026-08-10", "2026-08-10", 0)
+        self.assertEqual(got["articles_capped_days"], 0)
+
+    def test_mixed_channel_caps_yield_null_daily_cap(self):
+        """一周内两条通道各自的上限不同 → 不给单值,不取任一个充数。"""
+        snaps = self._snaps({"articles": [{"title": "a", "seendate": "20260810T000000Z"}],
+                             "articles_raw_count": 3, "source_cap": 99,
+                             "source_capped": False, "channel": "gnews"})
+        snaps.append({"date": "2026-08-11", "rates": {}, "gaps": [],
+                      "events": {"PHP": {"articles": [{"title": "b",
+                                                       "seendate": "20260811T000000Z"}],
+                                         "articles_raw_count": 3, "source_cap": 8,
+                                         "source_capped": False, "channel": "gdelt"}},
+                      "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}})
+        got = wd._events_one(snaps, "PHP", "2026-08-10", "2026-08-11", 0)
+        self.assertIsNone(got["articles_daily_cap"])
+
+    def test_legacy_snapshot_without_boolean_uses_old_path(self):
+        got = wd._events_one(self._snaps(
+            {"articles": [{"title": "a", "seendate": "20260810T000000Z"}],
+             "articles_raw_count": 8}), "PHP", "2026-08-10", "2026-08-10", 0)
+        self.assertEqual(got["articles_capped_days"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

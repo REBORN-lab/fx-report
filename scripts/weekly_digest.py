@@ -172,7 +172,9 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     曾各写一份,于是 official 有截断披露而 GDELT 没有(第三轮 I10);同一个
     change 里已经因为"复制粘贴判定逻辑"栽过一次(见 scripts/fixings.py)。
 
-    observations: [(snap, items | None, raw_count | None)] 按日期序;items 为 None
+    observations: [(snap, items | None, raw_count | None, entry | None)] 按日期序;
+    entry 是该币种的快照条目,用于读取采集层算好的 source_capped/source_cap;
+    items 为 None
     表示当日该通道无数据(采集失败,或该币种压根没接这个通道)。raw_count 是采集层
     去重**之前**的条数——GDELT 落盘前已按标题去重,只看 len(items) 会把
     "取满 8 条、其中 2 条重复"读成"只有 6 条,没触顶",漏报截断。
@@ -188,7 +190,7 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     days_collected = days_nonempty = capped = assumed = 0
     seen, caps = set(), set()
     per_day, published_by_date = [], {}
-    for snap, items, raw_count in observations:
+    for snap, items, raw_count, entry in observations:
         if items is None:
             per_day.append((False, None))
             continue
@@ -197,11 +199,22 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         per_day.append((True, len(items)))
         if items:
             days_nonempty += 1
-            cap, was_assumed = _cap(snap, cap_key, cap_fallback)
-            caps.add(cap)
-            assumed += 1 if was_assumed else 0
-            if (raw_count if raw_count is not None else len(items)) >= cap:
-                capped += 1
+            # 采集层给出的权威布尔优先:两条事件通道上限不同(gnews 99 /
+            # GDELT 8),在这里拿单一 cap_key 去比必然错位 —— 补位来的
+            # raw=8 去跟 99 比会把真截断读成没截断
+            flag = entry.get("source_capped") if isinstance(entry, dict) else None
+            own_cap = entry.get("source_cap") if isinstance(entry, dict) else None
+            if isinstance(flag, bool):
+                if (isinstance(own_cap, int) and not isinstance(own_cap, bool)
+                        and own_cap > 0):
+                    caps.add(own_cap)
+                capped += 1 if flag else 0
+            else:
+                cap, was_assumed = _cap(snap, cap_key, cap_fallback)
+                caps.add(cap)
+                assumed += 1 if was_assumed else 0
+                if (raw_count if raw_count is not None else len(items)) >= cap:
+                    capped += 1
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -306,9 +319,11 @@ def _events_one(snapshots, currency, lo, hi, skipped):
         raw = entry.get("articles_raw_count") if isinstance(entry, dict) else None
         if not (isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0):
             raw = None
-        art_obs.append((snap, arts if isinstance(arts, list) else None, raw))
-        # official 落盘前不去重,采到几条就是几条
-        off_obs.append((snap, official if isinstance(official, list) else None, None))
+        art_obs.append((snap, arts if isinstance(arts, list) else None, raw,
+                        entry if isinstance(entry, dict) else None))
+        # official 落盘前不去重,采到几条就是几条;它没有 per-entry 上限字段
+        off_obs.append((snap, official if isinstance(official, list) else None,
+                        None, None))
     a, a_days, a_pub = _channel(art_obs, "gdelt_records", GDELT_DAILY_CAP,
                                 _seen_date, _article_key, lo, hi)
     o, o_days, o_pub = _channel(off_obs, "official_daily", OFFICIAL_DAILY_CAP,
