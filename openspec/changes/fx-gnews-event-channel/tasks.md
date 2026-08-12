@@ -5,18 +5,18 @@
 
 ## 2. RSS 解析与窗口过滤(纯函数,单测不打网络)
 
-- [ ] 2.1 `_gnews_parse(text)`:`xml.etree` 解析 `<item>`,逐条取 `title` / `link` / `pubDate` / `source@url`;非 XML、空正文、无 `<item>` 一律抛错由上层转 gap,MUST NOT 返回空列表冒充"源确实无数据"
-- [ ] 2.2 `_pubdate(raw)`:`email.utils.parsedate_to_datetime` 解析 RFC 2822;解析失败返回 `None`;无 tzinfo 按 UTC 处理,不猜本地时区
-- [ ] 2.3 本地窗口过滤:窗口外条目排除并计数;`pubDate` 不可解析的条目单独计数,既不计窗口内也不静默丢弃
-- [ ] 2.4 域名提取与白名单匹配 `_in_whitelist(domain, wl)`:匹配规则为 `d == w or d.endswith("." + w)`;**必须有用例钉死 `notreuters.com` 不命中 `reuters.com`、`interaksyon.philstar.com` 命中 `philstar.com`**
+- [x] 2.1 `_gnews_parse(text)`:`xml.etree` 解析 `<item>`,逐条取 `title` / `link` / `pubDate` / `source@url`;非 XML、空正文、无 `<item>` 一律抛错由上层转 gap,MUST NOT 返回空列表冒充"源确实无数据"
+- [x] 2.2 `_pubdate(raw)`:`email.utils.parsedate_to_datetime` 解析 RFC 2822;解析失败返回 `None`;无 tzinfo 按 UTC 处理,不猜本地时区
+- [x] 2.3 本地窗口过滤:窗口外条目排除并计数;`pubDate` 不可解析的条目单独计数,既不计窗口内也不静默丢弃
+- [x] 2.4 域名提取与白名单匹配 `_in_whitelist(domain, wl)`:匹配规则为 `d == w or d.endswith("." + w)`;**必须有用例钉死 `notreuters.com` 不命中 `reuters.com`、`interaksyon.philstar.com` 命中 `philstar.com`**
 
 ## 3. 通道装配与计数落盘
 
-- [ ] 3.1 `_gnews_collect(cfg, currency)`:取数 → 解析 → 窗口 → 白名单 → 复用现有 `_dedupe_titles`,返回条目与逐层计数
+- [x] 3.1 `_gnews_collect(cfg, currency)`:取数 → 解析 → 窗口 → 白名单 → 复用现有 `_dedupe_titles`,返回条目与逐层计数
 - [ ] 3.2 快照条目落盘 `articles` / `articles_raw_count` / `source_cap` / `source_capped` / `channel` + 嵌套 `gnews_filter{raw,undated,out_window,offlist,kept}`;`articles_raw_count` 沿用既有语义(源返回条数,非去重后条数);gnews 整体失败时 `gnews_filter` 写 **null 不写 0**
-- [ ] 3.3 `source_capped` 由采集层算好落盘(判据 `raw >= GNEWS_SOFT_CAP=99`,实测上限在 99–100 之间摆动,取下界以免漏报截断);`meta.caps` 增 `gnews_records`
+- [x] 3.3 `source_capped` 由采集层算好落盘(判据 `raw >= GNEWS_SOFT_CAP=99`,实测上限在 99–100 之间摆动,取下界以免漏报截断);`meta.caps` 增 `gnews_records`
 - [ ] 3.5 **下游兼容(design §2.2 实查后确认需改)**:`derive.py:_count_capped` 与 `weekly_digest._channel` 改为优先读条目的 `source_capped`,缺失时才退回既有 `raw >= cap`。不改会让 GDELT 补位条目(raw=8,真顶到上限)去跟 gnews 的 100 比而漏报截断;存量快照行为不变
-- [ ] 3.4 gnews 条目的 `url` 原样落跳转链、`domain` 取 `<source url=>`;`channel` 标注取数通道;`seendate` **必须用 GDELT 的 `%Y%m%dT%H%M%SZ` 格式**(先归一 UTC)——实测 `weekly_digest.SEEN_DATE_RE` 不认 ISO,落 ISO 会让周报把每条 gnews 文章都算成时间戳不可解析
+- [x] 3.4 gnews 条目的 `url` 原样落跳转链、`domain` 取 `<source url=>`;`channel` 标注取数通道;`seendate` **必须用 GDELT 的 `%Y%m%dT%H%M%SZ` 格式**(先归一 UTC)——实测 `weekly_digest.SEEN_DATE_RE` 不认 ISO,落 ISO 会让周报把每条 gnews 文章都算成时间戳不可解析
 
 ## 4. 与 GDELT 的衔接(空洞补位)
 

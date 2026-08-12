@@ -237,21 +237,62 @@ def _gnews_one(cfg, currency, domains):
 
 
 def collect(cfg):
+    """两趟:gnews 主通道 → GDELT 只补空洞。
+
+    holes 是显式列表而不是隐含条件:让"没出现空洞就一次 GDELT 请求都不发"
+    能被直接断言(测试计请求数),而不是靠观察副作用推断。
+    """
     gaps, out = [], {}
+    domains = _load_domains(cfg, gaps)
+    endpoints = cfg.get("endpoints")
+    gnews_url = endpoints.get("gnews_rss_url") if isinstance(endpoints, dict) else None
+    gnews_on = bool(domains) and isinstance(gnews_url, str) and bool(gnews_url)
+
+    # gnews 停用 → 全是空洞 → 全部走 GDELT,即接入前的现状
+    holes = list(KEYWORDS)
+    if gnews_on:
+        holes = []
+        for currency in KEYWORDS:   # 无 sleep:每币种 1 次 GET,共 5 次
+            entry, err = _gnews_one(cfg, currency, domains)
+            if err is not None:
+                gaps.append(util.make_gap("gnews", currency, err))
+            out[currency] = entry
+            if not entry["articles"]:
+                holes.append(currency)
+
     first = True
     for currency in query_order(cfg["date"]):
+        if currency not in holes:
+            continue
         if not first:
             time.sleep(cfg["gdelt_delay_s"])
         first = False
         articles, err = _query_with_retry(cfg, KEYWORDS[currency])
         if err is not None:
-            gaps.append(util.make_gap("gdelt", currency, err))
+            # 主通道也没取到时,这条 gap 的含义是"两条通道都空",比单说 GDELT
+            # 限流更重要 —— 前者才是真缺口,后者在补位模式下只是过程
+            gaps.append(util.make_gap(
+                "gdelt", currency,
+                "两条通道均未取得条目(gnews 无可用条目;GDELT %s)" % err
+                if gnews_on else err))
             continue
         # 去重前条数一并落盘:只留去重后的长度,下游就无法判断"是否顶到
         # 每日上限"——同一批里删掉两条重复,8 条会变成 6 条,截断被漏报
         arts, raw_count = articles
-        out[currency] = {"articles": _dedupe_titles(arts),
-                         "articles_raw_count": raw_count}
+        prior = out.get(currency)
+        entry = {
+            "articles": _dedupe_titles(arts), "articles_raw_count": raw_count,
+            "source_cap": MAX_RECORDS,
+            "source_capped": isinstance(raw_count, int)
+                             and not isinstance(raw_count, bool)
+                             and raw_count >= MAX_RECORDS,
+            "channel": "gdelt",
+        }
+        # 保留主通道那一趟的账:丢了它,"gnews 抓到 88 条但白名单挡了 86 条"
+        # 这个唯一能判断白名单是否配得过严的信息就消失了
+        if isinstance(prior, dict) and "gnews_filter" in prior:
+            entry["gnews_filter"] = prior["gnews_filter"]
+        out[currency] = entry
     return out, gaps
 
 

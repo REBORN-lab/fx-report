@@ -619,5 +619,115 @@ class GnewsOneTest(unittest.TestCase):
         self.assertEqual(entry["articles_raw_count"], 3)
 
 
+class TwoPassCollectTest(unittest.TestCase):
+    def _wl_file(self, tmp, domains='["philstar.com"]'):
+        path = os.path.join(tmp, "wl.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"domains": %s}' % domains)
+        return path
+
+    def test_no_holes_means_zero_gdelt_requests(self):
+        """五币种都有条目时,GDELT 一次请求都不该发(靶点 M9)。"""
+        hits = {"gn": 0, "doc": 0}
+
+        def gn(handler):
+            hits["gn"] += 1
+            return (200, gnews_body(3))
+
+        def doc(handler):
+            hits["doc"] += 1
+            return (200, SAMPLE)
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": gn, "/doc": doc}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl_file(tmp))
+            out, gaps = events.collect(cfg)
+        self.assertEqual(hits["gn"], 5)
+        self.assertEqual(hits["doc"], 0)
+        self.assertEqual(gaps, [])
+        self.assertTrue(all(out[c]["channel"] == "gnews" for c in out))
+
+    def test_all_filtered_out_triggers_gdelt_backfill(self):
+        """靶点 M8:空洞判定必须用过滤**后**条数。用过滤前条数则永不补位。"""
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(8, domain="bybit.com")),
+                               "/doc": (200, SAMPLE)}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl_file(tmp))
+            out, gaps = events.collect(cfg)
+        self.assertTrue(all(out[c]["channel"] == "gdelt" for c in out))
+        self.assertTrue(out["PHP"]["articles"])
+
+    def test_backfill_keeps_gnews_filter_counts(self):
+        """靶点 M12:补位成功后仍要能回答「主通道发生了什么」。"""
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(8, domain="bybit.com")),
+                               "/doc": (200, SAMPLE)}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl_file(tmp))
+            out, _ = events.collect(cfg)
+        self.assertEqual(out["PHP"]["gnews_filter"]["raw"], 8)
+        self.assertEqual(out["PHP"]["gnews_filter"]["offlist"], 8)
+        self.assertEqual(out["PHP"]["source_cap"], events.MAX_RECORDS)  # 通道自己的上限
+
+    def test_both_channels_fail_gap_mentions_both(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(8, domain="bybit.com"))}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl_file(tmp))
+            cfg["endpoints"]["gdelt_doc_url"] = DEAD_URL + "/doc"
+            out, gaps = events.collect(cfg)
+        self.assertEqual(len(gaps), 5)
+        self.assertIn("两条通道", gaps[0]["reason"])
+
+    def test_gnews_unconfigured_falls_back_to_gdelt_only(self):
+        """既有 GDELT 用例走的就是这条路:行为必须与接入前完全一致。"""
+        with FixtureServer({"/doc": (200, SAMPLE)}) as srv:
+            out, gaps = events.collect(cfg_with(srv))
+        self.assertEqual(gaps, [])
+        self.assertEqual(sorted(out), ["BRL", "EUR", "PHP", "THB", "USD"])
+        self.assertNotIn("gnews_filter", out["PHP"])
+
+    def test_empty_whitelist_records_gap_and_falls_back(self):
+        """靶点 M11。"""
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(3)),
+                               "/doc": (200, SAMPLE)}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl_file(tmp, "[]"))
+            out, gaps = events.collect(cfg)
+        self.assertEqual([g["scope"] for g in gaps], ["whitelist"])
+        self.assertTrue(all(out[c]["channel"] == "gdelt" for c in out))
+
+    def test_gnews_parse_failure_records_gap_and_backfills(self):
+        """靶点 M10 的 collect 侧 + M13:非 XML 必须记 gap,不能落成「源无数据」。"""
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, "<html>503</html>"),
+                               "/doc": (200, SAMPLE)}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl_file(tmp))
+            out, gaps = events.collect(cfg)
+        self.assertTrue(any(g["source"] == "gnews" for g in gaps))
+        self.assertTrue(all(out[c]["channel"] == "gdelt" for c in out))
+        self.assertIsNone(out["PHP"]["gnews_filter"])
+
+    def test_partial_holes_only_those_go_to_gdelt(self):
+        """只有 PHP 落空 → 只有 PHP 打 GDELT,其余保持 gnews。"""
+        seen = []
+
+        def gn(handler):
+            q = urllib.parse.unquote_plus(handler.path)
+            dom = "bybit.com" if "Philippine" in q else "philstar.com"
+            return (200, gnews_body(4, domain=dom))
+
+        def doc(handler):
+            seen.append(urllib.parse.unquote_plus(handler.path))
+            return (200, SAMPLE)
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": gn, "/doc": doc}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl_file(tmp))
+            out, gaps = events.collect(cfg)
+        self.assertEqual(len(seen), 1)
+        self.assertIn("Philippine", seen[0])
+        self.assertEqual(out["PHP"]["channel"], "gdelt")
+        self.assertEqual(out["USD"]["channel"], "gnews")
+
+
 if __name__ == "__main__":
     unittest.main()
