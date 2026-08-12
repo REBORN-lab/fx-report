@@ -158,6 +158,39 @@ def _gnews_filter(items, lo, hi, domains):
     return kept, counts
 
 
+def _load_domains(cfg, gaps):
+    """→ domains 列表,或 None 表示「gnews 通道停用」。
+
+    三级处置,沿用仓库既有约定:
+      未配置 / 文件不存在  → None,**不记 gap**(有意停用,删掉文件即整通道回滚)
+      JSON 解析失败        → 记 gap 后 None(配置了但坏了)
+      domains 非 list/为空 → 记 gap 后 None
+
+    最后一条尤其要响:空白名单会把一切过滤成 0 条,五个币种同时"没有事件",
+    而日报会把这写成五国昨日均无驱动 —— 管道状态被当成市场事实。
+    """
+    path = cfg.get("news_sources_path")
+    if not isinstance(path, str) or not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError, RecursionError) as e:
+        # RecursionError:深嵌套 JSON 令 json.load 爆栈,非 ValueError 子类
+        gaps.append(util.make_gap("gnews", "whitelist",
+                                  "%s: %s" % (type(e).__name__, e)))
+        return None
+    raw = doc.get("domains") if isinstance(doc, dict) else None
+    clean = ([d.strip().lower() for d in raw
+              if isinstance(d, str) and d.strip()] if isinstance(raw, list) else [])
+    if not clean:
+        gaps.append(util.make_gap(
+            "gnews", "whitelist",
+            "domains 缺失/非列表/无有效项——空白名单会把全部条目过滤掉,拒绝启用"))
+        return None
+    return clean
+
+
 def collect(cfg):
     gaps, out = [], {}
     first = True

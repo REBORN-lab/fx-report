@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 import unittest
 import urllib.parse
 from datetime import datetime, timedelta, timezone
@@ -474,6 +475,55 @@ class GnewsFilterTest(unittest.TestCase):
                   "pubdate_raw": "Wed, 12 Aug 2026 00:00:00 GMT"}]
         _, c = events._gnews_filter(items, self.LO, self.HI, self.WL)
         self.assertEqual(c["kept"], 2)
+
+
+class WhitelistLoadTest(unittest.TestCase):
+    """三级:未配置=有意停用(不记 gap)/ JSON 坏 / domains 空 —— 后两者必须记 gap。"""
+
+    def _write(self, tmp, payload):
+        path = os.path.join(tmp, "news_sources.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(payload)
+        return path
+
+    def test_unconfigured_is_silent_disable(self):
+        gaps = []
+        self.assertIsNone(events._load_domains(make_test_cfg(), gaps))
+        self.assertEqual(gaps, [])
+
+    def test_nonexistent_path_is_silent_disable(self):
+        gaps = []
+        cfg = make_test_cfg(news_sources_path="/nonexistent/nope.json")
+        self.assertIsNone(events._load_domains(cfg, gaps))
+        self.assertEqual(gaps, [])
+
+    def test_broken_json_records_gap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "{not json")
+            gaps = []
+            self.assertIsNone(events._load_domains(
+                make_test_cfg(news_sources_path=path), gaps))
+        self.assertEqual([g["source"] for g in gaps], ["gnews"])
+
+    def test_empty_domains_records_gap(self):
+        """空白名单会把一切过滤成 0 条,五币种同时「没有事件」—— 最危险的形态,必须响。"""
+        for payload in ('{"domains": []}', '{"domains": "reuters.com"}',
+                        '{"nope": 1}', '[]', '{"domains": ["", "  "]}'):
+            with tempfile.TemporaryDirectory() as tmp:
+                path = self._write(tmp, payload)
+                gaps = []
+                got = events._load_domains(
+                    make_test_cfg(news_sources_path=path), gaps)
+            self.assertIsNone(got, payload)
+            self.assertEqual(len(gaps), 1, payload)
+
+    def test_valid_file_returns_normalised_domains(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, '{"domains": [" Reuters.com ", "philstar.com", 7]}')
+            gaps = []
+            got = events._load_domains(make_test_cfg(news_sources_path=path), gaps)
+        self.assertEqual(got, ["reuters.com", "philstar.com"])   # 去空白、转小写、丢非串
+        self.assertEqual(gaps, [])
 
 
 if __name__ == "__main__":
