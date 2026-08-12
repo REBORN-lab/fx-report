@@ -149,6 +149,12 @@ def _channel_of(snap, currency):
     entry = events.get(currency) if isinstance(events, dict) else None
     if not isinstance(entry, dict):
         return None
+    # 没有文章列表就没有通道:__main__ 把官方公告并进同一命名空间,于是
+    # "当天事件采集彻底失败、只剩 official" 的条目照样存在(实测
+    # data/2026-08-11.json 的 EUR)。对它返回 "gdelt" 会让日报写出
+    # "前一日取自 gdelt 通道",而那天一条 GDELT 条目都没采到
+    if not isinstance(entry.get("articles"), list):
+        return None
     chan = entry.get("channel")
     return chan if isinstance(chan, str) and chan else "gdelt"
 
@@ -164,6 +170,11 @@ def _count_capped(snap, currency):
     # 采集层给出的权威判定优先。两条事件通道上限不同(gnews 99 / GDELT 8),
     # 下游拿单一上限去比必然错位:GDELT 补位条目 raw=8(真顶到了)去跟 99 比,
     # 8 >= 99 为假,截断被漏报。存量快照无此字段,退回下面的旧路径。
+    # 主通道的截断同样让当日条数变成下界(截断是"或"关系):补位覆写条目级
+    # source_capped 后,主通道那份只剩 gnews_filter.capped 一个落点
+    gf = entry.get("gnews_filter")
+    if isinstance(gf, dict) and gf.get("capped") is True:
+        return True
     authoritative = entry.get("source_capped")
     if isinstance(authoritative, bool):
         return authoritative

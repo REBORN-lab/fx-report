@@ -1054,5 +1054,70 @@ class ChannelSourceCappedTest(unittest.TestCase):
         self.assertEqual(got["articles_capped_days"], 1)
 
 
+class DroppedDayInvariantTest(unittest.TestCase):
+    """第二轮审查的 Critical:第一轮只把 offlist 折进结论,out_window 与 undated
+    两层原样敞着 —— 正是 _verdict docstring 警告的「枚举补丁永远差一条」。
+
+    不变量:**主通道看到过条目却一条都没留下的那一天,不算「观测完整」**。
+    这一条同时覆盖窗口层、时间戳层、白名单层,以及日后新增的任何一层。
+    """
+
+    def _snaps(self, gf, days=7):
+        return [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                 "events": {"USD": {"articles": [], "articles_raw_count": 0,
+                                    "source_cap": 8, "source_capped": False,
+                                    "channel": "gdelt", "gnews_filter": dict(gf)}},
+                 "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+                for d in range(1, days + 1)]
+
+    def _v(self, gf):
+        return wd._events_one(self._snaps(gf), "USD",
+                              "2026-08-01", "2026-08-07", 0)["articles_verdict"]
+
+    def test_out_window_layer_blocks_zero_claim(self):
+        """回填 3 天前:查询带 when:2d,窗口却是那一天 → 100 条全落窗口外、零 gap。"""
+        v = self._v({"raw": 100, "undated": 0, "out_window": 100,
+                     "offlist": 0, "kept": 0, "capped": True})
+        self.assertNotIn("确实 0 条", v)
+
+    def test_undated_layer_blocks_zero_claim(self):
+        """源改了 pubDate 渲染格式 → 100 条全部时间戳不可解析。"""
+        v = self._v({"raw": 100, "undated": 100, "out_window": 0,
+                     "offlist": 0, "kept": 0, "capped": True})
+        self.assertNotIn("确实 0 条", v)
+
+    def test_offlist_layer_still_blocks_zero_claim(self):
+        v = self._v({"raw": 100, "undated": 0, "out_window": 0,
+                     "offlist": 100, "kept": 0, "capped": True})
+        self.assertNotIn("确实 0 条", v)
+
+    def test_mixed_layers_blocks_zero_claim(self):
+        v = self._v({"raw": 99, "undated": 33, "out_window": 33,
+                     "offlist": 33, "kept": 0, "capped": True})
+        self.assertNotIn("确实 0 条", v)
+
+    def test_genuinely_empty_source_still_allows_zero_claim(self):
+        """主通道确实一条都没抓到(raw=0)→ 没有观测缺口,允许下结论。"""
+        v = self._v({"raw": 0, "undated": 0, "out_window": 0,
+                     "offlist": 0, "kept": 0, "capped": False})
+        self.assertIn("确实 0 条", v)
+
+    def test_cumulative_count_is_labelled_as_per_day_sum(self):
+        """同一批条目每天数一遍,700 不是 700 条不同的新闻 —— 措辞必须说明是条次。"""
+        v = self._v({"raw": 100, "undated": 0, "out_window": 0,
+                     "offlist": 100, "kept": 0, "capped": True})
+        self.assertIn("条次", v)
+        self.assertNotIn("700 条被", v)
+
+    def test_capped_counted_even_when_nothing_kept(self):
+        """截断是「源返回了多少条」的属性,与最终留下几条无关。
+        source_capped 的读取此前写在 `if items:` 里,空列表日整块跳过。"""
+        got = wd._events_one(self._snaps(
+            {"raw": 100, "undated": 0, "out_window": 0, "offlist": 100,
+             "kept": 0, "capped": True}, days=2), "USD",
+            "2026-08-01", "2026-08-02", 0)
+        self.assertEqual(got["articles_capped_days"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -110,7 +110,8 @@ def _pubdate(raw):
         return None
     try:
         dt = parsedate_to_datetime(raw)
-    except (TypeError, ValueError):     # 3.10 前抛 TypeError,之后抛 ValueError
+    except (TypeError, ValueError, OverflowError):
+        # 3.10 前抛 TypeError、之后抛 ValueError;年份越界抛 OverflowError
         return None
     if not isinstance(dt, datetime):
         return None
@@ -253,10 +254,12 @@ def _gnews_one(cfg, currency, domains):
             query=urllib.parse.quote(KEYWORDS[currency] + GNEWS_QUERY_SUFFIX))
         items = _gnews_parse(util.fetch_text(url, cfg["timeout_s"]))
         lo, hi = _gnews_window(cfg)
+        # 过滤阶段同样碰外部数据(pubDate / source url 都来自响应),留在 try 外
+        # 等于给采集层留了一条上抛的路
+        kept, counts = _gnews_filter(items, lo, hi, domains)
     except Exception as e:
         # articles=None 而非 []:没采到与"采到了但 0 条"必须可分辨
         return _gnews_entry(None, None, None), "%s: %s" % (type(e).__name__, e)
-    kept, counts = _gnews_filter(items, lo, hi, domains)
     return _gnews_entry(_dedupe_titles(kept), counts["raw"], counts), None
 
 
@@ -322,8 +325,13 @@ def collect(cfg):
     # 补位成功那天就会一边列着 GDELT 条目、一边写"未取得可署名来源",自相矛盾
     for currency, entry in out.items():
         gf = entry.get("gnews_filter")
-        entry["attributable_source_absent"] = bool(
-            isinstance(gf, dict) and not gf.get("kept") and not entry.get("articles"))
+        if not isinstance(gf, dict):
+            # 主通道压根没跑成(或未启用)→ 不知道有没有可署名来源。
+            # 写 false 等于断言"取得了",而事实是没观测过
+            entry["attributable_source_absent"] = None
+        else:
+            entry["attributable_source_absent"] = bool(
+                not gf.get("kept") and not entry.get("articles"))
     return out, gaps
 
 

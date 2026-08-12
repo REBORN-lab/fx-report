@@ -186,7 +186,8 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
 
     返回 (stats, per_day, published_by_date)。
     """
-    sampled = distinct = in_win = outside = undated = offlist = 0
+    sampled = distinct = in_win = outside = undated = 0
+    dropped_days = dropped_items = 0
     days_collected = days_nonempty = capped = assumed = 0
     seen, caps = set(), set()
     per_day, published_by_date = [], {}
@@ -197,31 +198,44 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         days_collected += 1
         sampled += len(items)
         per_day.append((True, len(items)))
-        # 相关性闸门滤掉的条数:它既不是"没采到"也不是"确实没有",而是
-        # "看到了但都不可署名"。不折进结论,整周 700 条被滤光会被断言成
-        # "本周确实没有事件"(审查复现)
+        # 主通道看到过条目却一条都没留下的那一天,**不算观测完整**。
+        #
+        # 这一条是不变量,不是补丁:第一轮修复只把 offlist 折进结论,窗口层与
+        # 时间戳层原样敞着,于是"回填 3 天前"(README 写明的运维动作)会让
+        # 100 条全落窗口外、零 gap,而结论照旧断言"确实 0 条、全区间采集完整"。
+        # 正是本文件 _verdict docstring 警告的「枚举补丁永远差一条」。
+        # 判据只看 raw>0 且 kept==0,故日后新增任何一层过滤都自动被覆盖。
         gf = entry.get("gnews_filter") if isinstance(entry, dict) else None
-        n_off = gf.get("offlist") if isinstance(gf, dict) else None
-        if isinstance(n_off, int) and not isinstance(n_off, bool) and n_off > 0:
-            offlist += n_off
+        if isinstance(gf, dict):
+            n_raw, n_kept = gf.get("raw"), gf.get("kept")
+            if (isinstance(n_raw, int) and not isinstance(n_raw, bool) and n_raw > 0
+                    and not n_kept):
+                dropped_days += 1
+                dropped_items += n_raw
+        # 截断是"源返回了多少条"的属性,与最终留下几条无关 —— 这段必须在
+        # `if items:` 之外,否则滤空的日子会一边 derive 说触顶、一边周报说无截断
+        flag = entry.get("source_capped") if isinstance(entry, dict) else None
+        own_cap = entry.get("source_cap") if isinstance(entry, dict) else None
+        # 截断是"或"关系:主通道被截断时,当日条数同样只是下界,哪怕最终
+        # 条目来自补位通道。补位覆写条目级 source_capped 后,主通道那份截断
+        # 只剩 gnews_filter.capped 一个落点,不读它等于把它写了个寂寞
+        if isinstance(gf, dict) and gf.get("capped") is True:
+            flag = True
+        if isinstance(flag, bool):
+            # 采集层给出的权威布尔优先:两条通道上限不同(gnews 99 / GDELT 8),
+            # 在这里拿单一 cap_key 去比必然错位
+            if (isinstance(own_cap, int) and not isinstance(own_cap, bool)
+                    and own_cap > 0):
+                caps.add(own_cap)
+            capped += 1 if flag else 0
+        elif items:
+            cap, was_assumed = _cap(snap, cap_key, cap_fallback)
+            caps.add(cap)
+            assumed += 1 if was_assumed else 0
+            if (raw_count if raw_count is not None else len(items)) >= cap:
+                capped += 1
         if items:
             days_nonempty += 1
-            # 采集层给出的权威布尔优先:两条事件通道上限不同(gnews 99 /
-            # GDELT 8),在这里拿单一 cap_key 去比必然错位 —— 补位来的
-            # raw=8 去跟 99 比会把真截断读成没截断
-            flag = entry.get("source_capped") if isinstance(entry, dict) else None
-            own_cap = entry.get("source_cap") if isinstance(entry, dict) else None
-            if isinstance(flag, bool):
-                if (isinstance(own_cap, int) and not isinstance(own_cap, bool)
-                        and own_cap > 0):
-                    caps.add(own_cap)
-                capped += 1 if flag else 0
-            else:
-                cap, was_assumed = _cap(snap, cap_key, cap_fallback)
-                caps.add(cap)
-                assumed += 1 if was_assumed else 0
-                if (raw_count if raw_count is not None else len(items)) >= cap:
-                    capped += 1
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -256,7 +270,8 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         "outside_window": outside if got else None,
         "undated": undated if got else None,
         "capped_days": capped,
-        "offlist": offlist,
+        "dropped_days": dropped_days,
+        "dropped_items": dropped_items,
         "daily_cap": _one_cap(caps),
         "cap_assumed_days": assumed,
         "days_collected": days_collected,
@@ -314,9 +329,11 @@ def _verdict(stats, window_days, skipped, unit):
                        % (stats["capped_days"],
                           ("(%s 条)" % cap) if cap is not None
                           else "(区间内上限随通道不同,不给单值)"))
-    if stats.get("offlist"):
-        caveats.append("另有 %d 条被相关性闸门滤除(抓到了但来源不可署名)"
-                       % stats["offlist"])
+    if stats.get("dropped_days"):
+        # 说"条次"不说"条":同一批条目连采数日会被每天数一遍,700 条次可能
+        # 只是 100 条新闻被数了 7 遍。落盘的是逐日计数,去重信息不存在
+        caveats.append("%d 天抓到共 %d 条次但无一可用(窗口外/时间戳不可解析/"
+                       "来源不可署名)" % (stats["dropped_days"], stats["dropped_items"]))
     if stats["in_window"]:
         head = "区间内至少 %d 条" % stats["in_window"]
         return head if not caveats else "%s(%s)" % (head, "、".join(caveats))

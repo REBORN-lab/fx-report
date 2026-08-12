@@ -402,5 +402,25 @@ class ChannelChangeTest(unittest.TestCase):
         self.assertEqual(out["PHP"]["channel_changed_from"], "gdelt")
 
 
+class ChannelOfEdgeTest(unittest.TestCase):
+    """F4:通道是「这一天的文章从哪取的」。没有文章就没有通道 —— 真实生产数据
+    data/2026-08-11.json 的 EUR 条目只有 official(当天 GDELT 握手超时),
+    __main__ 把官方公告并进同一命名空间,于是条目存在但没有 articles。"""
+
+    def test_official_only_entry_has_no_channel(self):
+        snap = {"date": "2026-08-11", "events": {"EUR": {"official": [{"title": "x"}]}}}
+        self.assertIsNone(derive._channel_of(snap, "EUR"))
+
+    def test_legacy_entry_with_articles_still_defaults_to_gdelt(self):
+        snap = {"date": "2026-08-11",
+                "events": {"EUR": {"articles": [{"title": "t"}],
+                                   "articles_raw_count": 1}}}
+        self.assertEqual(derive._channel_of(snap, "EUR"), "gdelt")
+
+    def test_articles_null_means_no_channel(self):
+        snap = {"date": "2026-08-11", "events": {"EUR": {"articles": None}}}
+        self.assertIsNone(derive._channel_of(snap, "EUR"))
+
+
 if __name__ == "__main__":
     unittest.main()

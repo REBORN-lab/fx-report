@@ -946,5 +946,43 @@ class ReviewRoundTwoTest(unittest.TestCase):
             self.assertTrue(events._in_whitelist(host, doms), host)
 
 
+class ReviewRoundThreeTest(unittest.TestCase):
+    """第二轮审查的其余幸存项。"""
+
+    def _wl(self, tmp, doms='["philstar.com"]'):
+        path = os.path.join(tmp, "wl.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"domains": %s}' % doms)
+        return path
+
+    # F7:两条通道都彻底没跑成时,"不知道"不能写成"知道取得了可署名来源"
+    def test_attributable_flag_is_null_when_main_channel_never_ran(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = make_test_cfg(
+                endpoints={"gnews_rss_url": DEAD_URL + "/gn?q={query}",
+                           "gdelt_doc_url": DEAD_URL + "/doc"},
+                news_sources_path=self._wl(tmp))
+            out, _ = events.collect(cfg)
+        self.assertIsNone(out["PHP"]["attributable_source_absent"])
+
+    # F10:_pubdate 的 except 元组漏 OverflowError
+    def test_pubdate_overflow_returns_none(self):
+        for raw in ("Tue, 11 Aug 999999999 03:00:00 GMT",
+                    "Mon, 01 Jan 99999 00:00:00 +9999"):
+            self.assertIsNone(events._pubdate(raw), raw)
+
+    # F10:_gnews_filter 也必须在 try 内 —— 它会碰外部数据
+    def test_filter_stage_exception_becomes_gap_not_raise(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(3)),
+                               "/doc": (200, SAMPLE)}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl(tmp))
+            with mock.patch.object(events, "_gnews_filter",
+                                   side_effect=RuntimeError("boom")):
+                out, gaps = events.collect(cfg)     # 不得抛
+        self.assertTrue(any(g["source"] == "gnews" for g in gaps))
+        self.assertEqual(sorted(out), ["BRL", "EUR", "PHP", "THB", "USD"])
+
+
 if __name__ == "__main__":
     unittest.main()
