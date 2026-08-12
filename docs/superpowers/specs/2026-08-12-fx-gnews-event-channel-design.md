@@ -79,7 +79,22 @@ GDELT 没有(第三轮 I10)」。
 这一条修正了 `tasks.md` 3.2 里「确认 `derive.py:146` 与 `weekly_digest.py:306`
 无需改动」的判断——design 阶段实查后确认它们**需要改动**,tasks 已相应更新。
 
-### 2.3 `gnews_filter` 为什么在补位成功后也要保留
+### 2.3 `seendate` 必须沿用 GDELT 的格式(实测确认)
+
+`weekly_digest.SEEN_DATE_RE` 的模式是 `^(\d{4})(\d{2})(\d{2})T`,只认 GDELT 的
+`20260809T120000Z`。实测 ISO 形态 `2026-08-11T03:37:51+00:00` **不匹配**。
+
+若 gnews 落 ISO 时间戳,`_seen_date` 对每一条 gnews 文章都返回 `None` →
+周度聚合器把它们全计入 `undated` → `_verdict` 每周退化成"有无事件无法判定"。
+这是一次**系统性静默劣化**:测试全绿、采集成功、周报却永远不敢下结论。
+
+因此 gnews 条目的 `seendate` 用 `dt.strftime("%Y%m%dT%H%M%SZ")` 落盘(先归一到 UTC)。
+
+语义差异如实标注而不是改格式表达:GDELT 的 `seendate` 是**采见时间**,gnews 的是
+**发布时间**(更准)。区别由 `channel` 字段承载,SKILL 相应说明。一种格式一个解析器
+——`_channel` 的 docstring 已经为"同一判定写两遍"付过一次代价。
+
+### 2.4 `gnews_filter` 为什么在补位成功后也要保留
 
 补位成功意味着 `articles` 来自 GDELT。若此时丢掉 gnews 的账,「gnews 抓到 88 条
 但白名单把 86 条挡在外面」这个信息就消失了——而它恰恰是判断白名单是否配得太严的
@@ -157,9 +172,13 @@ gnews **整体失败**(取数异常 / 非 XML / 无 `<item>`)时 `gnews_filter` 
 | M12 | 补位成功后丢掉 `gnews_filter` | 补位后 `gnews_filter.raw` 仍为 88 |
 | M13 | gnews 失败时 `gnews_filter` 写 0 而非 null | 取数异常时该节为 null |
 | M14 | 下游忽略 `source_capped` 仍按 raw≥cap 比 | GDELT 补位条目 raw=8 时截断被识别 |
+| M15 | gnews 的 `seendate` 落 ISO 而非 GDELT 格式 | `weekly_digest._seen_date` 能解析 gnews 条目的 seendate |
 
 M14 覆盖 §2.2 的下游改动:构造一份 `channel: "gdelt"`、`raw=8`、`source_capped: true`
-的快照,断言 `derive._count_capped` 与周度聚合器都认它,而不是拿 100 去比。
+的快照,断言 `derive._count_capped` 与周度聚合器都认这个布尔,而不是拿 gnews 的 100 去比。
+
+M15 覆盖 §2.3 的时间戳格式:把一条 gnews 落盘条目直接喂给 `weekly_digest._seen_date`,
+断言它解析出日期而非 `None`。这条靶点是**跨模块**的——只测 events.py 内部永远发现不了。
 
 ## 7. 边界条件清单
 
@@ -174,7 +193,12 @@ M14 覆盖 §2.2 的下游改动:构造一份 `channel: "gdelt"`、`raw=8`、`so
 
 ## Spec Patch
 
-无。delta spec 的 16 个场景已覆盖上述全部行为:`source_cap` / `source_capped` 由
+**已回写一条**(build 阶段「小规模增量」分级:遗漏边界条件 → 直接编辑 delta spec)。
+delta spec 新增 Scenario「时间戳格式跨通道一致」与对应规范正文,场景数 16 → **17**。
+起因是 §2.3 的实测发现:`SEEN_DATE_RE` 不认 ISO,落 ISO 会造成系统性静默劣化,
+而原 16 个场景里没有任何一条约束时间戳格式。
+
+其余无需 patch:`source_cap` / `source_capped` 由
 「源返回条数顶到通道上限时 SHALL 落盘截断标记」要求,`gnews_filter` 由「每币种的
 快照条目 SHALL 逐层记录过滤计数」要求,白名单加载分级由「配置缺失时该通道视为
 有意停用并回落 GDELT,MUST NOT 记为缺漏」与「主通道响应畸形 → 记入缺漏并走补位」
