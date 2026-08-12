@@ -1,8 +1,17 @@
-"""GDELT DOC 2.0 事件采集:五币种关键词组串行查询,软限速识别+退避重试一次。"""
+"""事件采集:Google News RSS 为主通道 + 域名白名单闸门,GDELT 只补空洞。
+
+主通道实测 5/5 币种可达而 GDELT 只有 2/5(2026-08-12,三个 hard-429)。但裸接
+主通道会把噪音换进沉默——PHP 88 条里 76 条是加密货币换算页("PHP" 同时是交易对
+代码)。沉默有 gap 机制可披露,噪音没有,故相关性闸门与逐层过滤计数是本模块主体。
+"""
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 from . import util
 
@@ -44,6 +53,44 @@ def _dedupe_titles(articles):
                 continue
             seen.add(title)
         out.append(a)
+    return out
+
+
+def _host(url):
+    """取小写主机名并剥 www. 前缀。取不到返回 None,不返回空串——
+    空串会悄悄参与白名单比较,None 不会。"""
+    if not isinstance(url, str) or not url:
+        return None
+    host = url.split("//")[-1].split("/")[0].split("?")[0].strip().lower()
+    if not host:
+        return None
+    return host[4:] if host.startswith("www.") else host
+
+
+def _gnews_parse(text):
+    """Google News RSS → [{title, url, pubdate_raw, domain}]。
+
+    非 XML、空正文、XML 里没有 <item> —— 一律抛 ValueError,由调用方转 gap。
+    **绝不返回空列表**:那会让"源改版了"与"该币种确实没新闻"在快照里完全同形,
+    下游据此可以得出"昨日无明确驱动"。这与 _fetch 里
+    "parsed ok but no usable 'articles' list" 是同一道门。
+    """
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as e:
+        raise ValueError("响应不是合法 XML: %s" % e)
+    items = root.findall(".//item")
+    if not items:
+        raise ValueError("XML 可解析但无 <item>(源可能已改版或返回了错误页)")
+    out = []
+    for it in items:
+        src = it.find("source")
+        out.append({
+            "title": it.findtext("title"),
+            "url": it.findtext("link"),
+            "pubdate_raw": it.findtext("pubDate"),
+            "domain": _host(src.get("url")) if src is not None else None,
+        })
     return out
 
 

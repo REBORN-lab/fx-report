@@ -315,5 +315,48 @@ class GnewsConfigTest(unittest.TestCase):
         self.assertTrue(url.startswith("https://news.google.com/rss/search"))
 
 
+GNEWS_XML = """<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>BSP holds policy rate</title>
+ <link>https://news.google.com/rss/articles/CBMiOPAQ</link>
+ <guid isPermaLink="false">CBMiOPAQ</guid>
+ <pubDate>Tue, 11 Aug 2026 03:37:51 GMT</pubDate>
+ <source url="https://interaksyon.philstar.com">Interaksyon</source></item>
+<item><title>Convert 1000 PHP to USTC</title>
+ <link>https://news.google.com/rss/articles/CBMiZZZZ</link>
+ <pubDate>Tue, 11 Aug 2026 04:00:00 GMT</pubDate>
+ <source url="https://www.bybit.com">Bybit</source></item>
+</channel></rss>"""
+
+
+class GnewsParseTest(unittest.TestCase):
+    def test_extracts_four_fields_per_item(self):
+        got = events._gnews_parse(GNEWS_XML)
+        self.assertEqual(len(got), 2)
+        self.assertEqual(got[0]["title"], "BSP holds policy rate")
+        self.assertEqual(got[0]["url"], "https://news.google.com/rss/articles/CBMiOPAQ")
+        self.assertEqual(got[0]["pubdate_raw"], "Tue, 11 Aug 2026 03:37:51 GMT")
+        self.assertEqual(got[0]["domain"], "interaksyon.philstar.com")
+        self.assertEqual(got[1]["domain"], "bybit.com")     # www. 已剥掉
+
+    def test_non_xml_raises_not_empty_list(self):
+        """返空列表会让「源改版了」与「确实没新闻」在快照里同形——本仓库反复栽的形态。"""
+        for body in ("", "   ", "<html><body>503</body></html>", '{"a": 1}'):
+            with self.assertRaises(ValueError, msg=repr(body)):
+                events._gnews_parse(body)
+
+    def test_valid_xml_without_items_raises(self):
+        empty = '<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
+        with self.assertRaises(ValueError):
+            events._gnews_parse(empty)
+
+    def test_missing_source_element_yields_none_domain(self):
+        body = ('<?xml version="1.0"?><rss><channel><item>'
+                '<title>t</title><pubDate>Tue, 11 Aug 2026 03:00:00 GMT</pubDate>'
+                '</item></channel></rss>')
+        got = events._gnews_parse(body)
+        self.assertIsNone(got[0]["domain"])
+        self.assertIsNone(got[0]["url"])
+
+
 if __name__ == "__main__":
     unittest.main()

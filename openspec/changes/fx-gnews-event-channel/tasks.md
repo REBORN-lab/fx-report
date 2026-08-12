@@ -1,7 +1,7 @@
 ## 1. 配置与端点
 
-- [ ] 1.1 `config/endpoints.json` 增 `gnews_rss_url`(带 `hl` / `gl` / `ceid` 参数的模板,查询词由采集层填入并 `urlencode`)
-- [ ] 1.2 新增 `config/news_sources.json` 域名白名单:通讯社与财经大报、五国本地主流财经、五家央行官网;初始名单来自 2026-08-12 实测存活域名,文件内注明"配置缺失 = 有意停用,删掉即回滚"
+- [x] 1.1 `config/endpoints.json` 增 `gnews_rss_url`(带 `hl` / `gl` / `ceid` 参数的模板,查询词由采集层填入并 `urlencode`)
+- [x] 1.2 新增 `config/news_sources.json` 域名白名单:通讯社与财经大报、五国本地主流财经、五家央行官网;初始名单来自 2026-08-12 实测存活域名,文件内注明"配置缺失 = 有意停用,删掉即回滚"
 
 ## 2. RSS 解析与窗口过滤(纯函数,单测不打网络)
 
