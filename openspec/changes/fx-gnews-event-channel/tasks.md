@@ -13,8 +13,9 @@
 ## 3. 通道装配与计数落盘
 
 - [ ] 3.1 `_gnews_collect(cfg, currency)`:取数 → 解析 → 窗口 → 白名单 → 复用现有 `_dedupe_titles`,返回条目与逐层计数
-- [ ] 3.2 快照条目落盘 `articles` / `articles_raw_count` / `articles_undated` / `articles_out_window` / `articles_offlist` / `source_capped` / `channel`;`articles_raw_count` 沿用既有语义(源返回条数,非去重后条数),确认 `derive.py:146` 与 `weekly_digest.py:306` 无需改动
-- [ ] 3.3 `source_capped`:源返回条数等于通道上限(实测 100)时置 true,使周度聚合器的 `capped_days` 不漏计
+- [ ] 3.2 快照条目落盘 `articles` / `articles_raw_count` / `source_cap` / `source_capped` / `channel` + 嵌套 `gnews_filter{raw,undated,out_window,offlist,kept}`;`articles_raw_count` 沿用既有语义(源返回条数,非去重后条数);gnews 整体失败时 `gnews_filter` 写 **null 不写 0**
+- [ ] 3.3 `source_capped` 由采集层算好落盘(判据 `raw >= GNEWS_SOFT_CAP=99`,实测上限在 99–100 之间摆动,取下界以免漏报截断);`meta.caps` 增 `gnews_records`
+- [ ] 3.5 **下游兼容(design §2.2 实查后确认需改)**:`derive.py:_count_capped` 与 `weekly_digest._channel` 改为优先读条目的 `source_capped`,缺失时才退回既有 `raw >= cap`。不改会让 GDELT 补位条目(raw=8,真顶到上限)去跟 gnews 的 100 比而漏报截断;存量快照行为不变
 - [ ] 3.4 gnews 条目的 `url` 原样落跳转链、`domain` 取 `<source url=>`;`channel` 标注取数通道
 
 ## 4. 与 GDELT 的衔接(空洞补位)
@@ -27,7 +28,7 @@
 ## 5. 健壮性与回归
 
 - [ ] 5.1 畸形输入不上抛:空正文、HTML 错误页、非 XML、`<item>` 缺字段、`source` 缺 `url`、超长正文——逐项用例,采集层只转 gap
-- [ ] 5.2 变异测试:白名单裸后缀匹配、去掉本地窗口过滤、过滤计数漏记、`source_capped` 恒 false、空洞判定用过滤前条数——逐条须被测试杀掉
+- [ ] 5.2 变异测试:Design Doc 第 6 节列的 M1–M14 逐条须被测试杀掉(白名单裸后缀 / 仅 == 不匹配子域 / 去掉本地窗口 / 坏 pubDate 当窗口内 / offlist 恒 0 / source_capped 恒 false / capped 用 == / 空洞判定用过滤前条数 / 无空洞也发 GDELT / 解析失败返空列表 / 空白名单不记 gap / 补位后丢 gnews_filter / 失败时计数写 0 / 下游忽略 source_capped)
 - [ ] 5.3 全量回归通过(基线 421),`python3 -m unittest discover -s tests -t .`
 
 ## 6. 报告层与文档

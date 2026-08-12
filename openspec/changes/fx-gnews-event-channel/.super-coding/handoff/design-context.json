@@ -1,0 +1,14 @@
+{
+  "change": "fx-gnews-event-channel",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "super-coding-handoff.sh",
+  "context_hash": "c2394b6318d1087809869d96a254b856b8b577248448df872ca9a417d75a7ccd",
+  "files": [
+    { "path": "openspec/changes/fx-gnews-event-channel/proposal.md", "sha256": "3633b45c28d775c1d8ea3933da716662a9837257894c7c7432c8a6f93130b39d" },
+    { "path": "openspec/changes/fx-gnews-event-channel/design.md", "sha256": "a60b9383ef0d71f239425e811b76f1561735ed1435577c4ce2f836d418380acc" },
+    { "path": "openspec/changes/fx-gnews-event-channel/tasks.md", "sha256": "75bf7679016902953b7e7e966b146e594a25ab379cafaa2f6499ea17852d95a3" },
+    { "path": "openspec/changes/fx-gnews-event-channel/specs/fx-data-collection/spec.md", "sha256": "8b8e2d828cf39b45ed52ab572eab7a72868929c9a7c7aeed757f7929040bcdb8" }
+  ]
+}

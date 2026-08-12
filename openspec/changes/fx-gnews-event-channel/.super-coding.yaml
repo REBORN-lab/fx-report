@@ -1,5 +1,5 @@
 workflow: full
-phase: open
+phase: design
 context_compression: off
 build_mode: null
 build_pause: null
@@ -17,3 +17,5 @@ branch_status: pending
 created_at: 2026-08-12
 verified_at: null
 archived: false
+handoff_context: openspec/changes/fx-gnews-event-channel/.super-coding/handoff/design-context.json
+handoff_hash: c2394b6318d1087809869d96a254b856b8b577248448df872ca9a417d75a7ccd
