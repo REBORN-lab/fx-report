@@ -161,6 +161,9 @@ def _gnews_filter(items, lo, hi, domains):
             "seendate": dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
         })
     counts["kept"] = len(kept)
+    # 截断事实记在这一节里:GDELT 补位会覆写条目级的 source_capped,
+    # 主通道"抓到 100 条已顶到上限"的事实必须留在主通道自己的账上
+    counts["capped"] = counts["raw"] >= GNEWS_SOFT_CAP
     return kept, counts
 
 
@@ -187,8 +190,20 @@ def _load_domains(cfg, gaps):
                                   "%s: %s" % (type(e).__name__, e)))
         return None
     raw = doc.get("domains") if isinstance(doc, dict) else None
-    clean = ([d.strip().lower() for d in raw
-              if isinstance(d, str) and d.strip()] if isinstance(raw, list) else [])
+    # 归一成裸主机名:写成 www.reuters.com / https://ft.com / .cnbc.com 的项
+    # 对任何主机名都永远返回 False —— "加了源却没生效"必须变成可见事件
+    clean, bad = [], []
+    for d in (raw if isinstance(raw, list) else []):
+        h = _host(d.strip().lstrip(".")) if isinstance(d, str) else None
+        if h:
+            if h not in clean:
+                clean.append(h)
+        elif isinstance(d, str) and d.strip():
+            bad.append(d)
+    if bad:
+        gaps.append(util.make_gap("gnews", "whitelist",
+                                  "以下白名单项无法归一成主机名,已忽略:%s"
+                                  % "、".join(bad[:5])))
     if not clean:
         gaps.append(util.make_gap(
             "gnews", "whitelist",
@@ -230,14 +245,17 @@ def _gnews_one(cfg, currency, domains):
     失败时 entry 仍返回(articles 空、gnews_filter 为 None),使"没跑成"
     在快照里与"跑了但一条没留下"可分辨。异常一律转 err,绝不上抛。
     """
-    url = cfg["endpoints"]["gnews_rss_url"].format(
-        query=urllib.parse.quote(KEYWORDS[currency] + GNEWS_QUERY_SUFFIX))
     try:
+        # 模板组装也在 try 内:endpoints.json 是 README 里写明可手改的旋钮,
+        # 多一个占位符就会让 .format 抛 KeyError —— 那会穿透 collect() 上抛,
+        # 把五个币种的事件连同 GDELT 回落一起吞掉(违反采集层硬契约)
+        url = cfg["endpoints"]["gnews_rss_url"].format(
+            query=urllib.parse.quote(KEYWORDS[currency] + GNEWS_QUERY_SUFFIX))
         items = _gnews_parse(util.fetch_text(url, cfg["timeout_s"]))
+        lo, hi = _gnews_window(cfg)
     except Exception as e:
         # articles=None 而非 []:没采到与"采到了但 0 条"必须可分辨
         return _gnews_entry(None, None, None), "%s: %s" % (type(e).__name__, e)
-    lo, hi = _gnews_window(cfg)
     kept, counts = _gnews_filter(items, lo, hi, domains)
     return _gnews_entry(_dedupe_titles(kept), counts["raw"], counts), None
 
@@ -299,6 +317,13 @@ def collect(cfg):
         if isinstance(prior, dict) and "gnews_filter" in prior:
             entry["gnews_filter"] = prior["gnews_filter"]
         out[currency] = entry
+    # 「有没有拿到可署名来源的报道」由脚本给结论,SKILL 只引用这个布尔。
+    # 让 LLM 自己组合「gnews_filter.kept == 0 且 articles 为空」两个条件,
+    # 补位成功那天就会一边列着 GDELT 条目、一边写"未取得可署名来源",自相矛盾
+    for currency, entry in out.items():
+        gf = entry.get("gnews_filter")
+        entry["attributable_source_absent"] = bool(
+            isinstance(gf, dict) and not gf.get("kept") and not entry.get("articles"))
     return out, gaps
 
 
@@ -335,7 +360,11 @@ def _fetch(cfg, query):
     params = {"query": query, "mode": "artlist", "format": "json",
               "maxrecords": MAX_RECORDS, "sort": "hybridrel"}
     params.update(_window(cfg))
-    url = cfg["endpoints"]["gdelt_doc_url"] + "?" + urllib.parse.urlencode(params)
+    endpoints = cfg.get("endpoints")
+    base = endpoints.get("gdelt_doc_url") if isinstance(endpoints, dict) else None
+    if not isinstance(base, str) or not base:
+        return None, "gdelt_doc_url 未配置"
+    url = base + "?" + urllib.parse.urlencode(params)
     try:
         text = util.fetch_text(url, cfg["timeout_s"])
     except urllib.error.HTTPError as e:

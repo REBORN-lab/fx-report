@@ -364,5 +364,30 @@ class SourceCappedTest(unittest.TestCase):
         self.assertTrue(derive._count_capped(snap, "PHP"))   # 退回旧路径
 
 
+class ChannelChangeTest(unittest.TestCase):
+    """I4:GDELT(上限 8、无白名单)与 gnews(上限 99、过白名单)的读数不可比。
+    实测已落盘数据:08-11 PHP count=8(GDELT 顶到上限),08-12 PHP count=2(gnews
+    81 条过白名单剩 2),count_delta 给出 -6 并被报告写成「事件面变化」。"""
+
+    def _snap(self, date, n, channel):
+        return {"date": date, "events": {"PHP": {
+            "articles": [{"title": "t%d" % i} for i in range(n)],
+            "articles_raw_count": n, "channel": channel,
+            "source_cap": 99 if channel == "gnews" else 8, "source_capped": False}},
+            "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+
+    def test_delta_null_when_channel_changed(self):
+        out = derive._events_derived(self._snap("2026-08-12", 2, "gnews"),
+                                     [self._snap("2026-08-11", 8, "gdelt")], [])
+        self.assertIsNone(out["PHP"]["count_delta"])
+        self.assertEqual(out["PHP"]["channel_changed_from"], "gdelt")
+
+    def test_delta_given_when_channel_same(self):
+        out = derive._events_derived(self._snap("2026-08-12", 5, "gnews"),
+                                     [self._snap("2026-08-11", 3, "gnews")], [])
+        self.assertEqual(out["PHP"]["count_delta"], 2)
+        self.assertIsNone(out["PHP"]["channel_changed_from"])
+
+
 if __name__ == "__main__":
     unittest.main()

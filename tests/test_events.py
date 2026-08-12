@@ -466,7 +466,7 @@ class GnewsFilterTest(unittest.TestCase):
         kept, c = events._gnews_filter([], self.LO, self.HI, self.WL)
         self.assertEqual(kept, [])
         self.assertEqual(c, {"raw": 0, "undated": 0, "out_window": 0,
-                             "offlist": 0, "kept": 0})
+                             "offlist": 0, "kept": 0, "capped": False})
 
     def test_boundary_timestamps_are_inclusive(self):
         items = [{"title": "lo", "url": "u", "domain": "philstar.com",
@@ -841,6 +841,109 @@ class ObservationGapTest(unittest.TestCase):
         got = wd._events_one([snap(10, 99, True), snap(11, 8, True)],
                              "PHP", "2026-08-10", "2026-08-11", 0)
         self.assertNotIn("None", got["articles_verdict"])
+
+
+class ReviewRoundTwoTest(unittest.TestCase):
+    """第二轮审查的 Important 修复。每条都由审查者实跑复现过。"""
+
+    def _wl(self, tmp, doms='["philstar.com"]'):
+        path = os.path.join(tmp, "wl.json")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"domains": %s}' % doms)
+        return path
+
+    # I10:raw=99 区分不了 >= 与 ==,这条判据此前零保护
+    def test_capped_true_above_soft_cap(self):
+        with FixtureServer({"/gn": (200, gnews_body(100))}) as srv:
+            entry, _ = events._gnews_one(gnews_cfg(srv), "PHP", ["philstar.com"])
+        self.assertTrue(entry["source_capped"])
+
+    # I11b:GDELT 分支的 source_capped 此前零覆盖,改成恒 False 全量仍通过
+    def test_gdelt_backfill_capped_flag_is_computed(self):
+        full = json.dumps({"articles": [
+            {"title": "g%d" % i, "url": "u%d" % i, "domain": "reuters.com",
+             "seendate": "20260811T000000Z"} for i in range(events.MAX_RECORDS)]})
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(4, domain="bybit.com")),
+                               "/doc": (200, full)}) as srv:
+            out, _ = events.collect(gnews_cfg(srv, news_sources_path=self._wl(tmp)))
+        self.assertEqual(out["PHP"]["channel"], "gdelt")
+        self.assertEqual(out["PHP"]["source_cap"], events.MAX_RECORDS)
+        self.assertTrue(out["PHP"]["source_capped"])
+
+    def test_gdelt_backfill_not_capped_below_limit(self):
+        few = json.dumps({"articles": [
+            {"title": "g", "url": "u", "domain": "reuters.com",
+             "seendate": "20260811T000000Z"}]})
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(4, domain="bybit.com")),
+                               "/doc": (200, few)}) as srv:
+            out, _ = events.collect(gnews_cfg(srv, news_sources_path=self._wl(tmp)))
+        self.assertFalse(out["PHP"]["source_capped"])
+
+    # I1:补位覆写 source_capped 后,主通道已顶到上限的事实不能消失
+    def test_gnews_truncation_survives_gdelt_backfill(self):
+        few = json.dumps({"articles": [
+            {"title": "g", "url": "u", "domain": "reuters.com",
+             "seendate": "20260811T000000Z"}]})
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(100, domain="bybit.com")),
+                               "/doc": (200, few)}) as srv:
+            out, _ = events.collect(gnews_cfg(srv, news_sources_path=self._wl(tmp)))
+        self.assertTrue(out["PHP"]["gnews_filter"]["capped"])
+        self.assertEqual(out["PHP"]["gnews_filter"]["raw"], 100)
+
+    # I3:让脚本算好「有没有可署名来源」,不让 SKILL 的 LLM 自己组合条件
+    def test_attributable_source_absent_only_when_nothing_usable(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(4, domain="bybit.com"))}) as srv:
+            cfg = gnews_cfg(srv, news_sources_path=self._wl(tmp))
+            cfg["endpoints"]["gdelt_doc_url"] = DEAD_URL + "/doc"
+            out, _ = events.collect(cfg)
+        self.assertTrue(out["PHP"]["attributable_source_absent"])
+
+    def test_attributable_flag_false_when_gdelt_backfilled(self):
+        """补位成功时该布尔必须为 false —— 否则日报会一边列着 GDELT 条目,
+        一边写「昨日未取得可署名来源的报道」,两句自相矛盾。"""
+        few = json.dumps({"articles": [
+            {"title": "g", "url": "u", "domain": "reuters.com",
+             "seendate": "20260811T000000Z"}]})
+        with tempfile.TemporaryDirectory() as tmp, \
+                FixtureServer({"/gn": (200, gnews_body(4, domain="bybit.com")),
+                               "/doc": (200, few)}) as srv:
+            out, _ = events.collect(gnews_cfg(srv, news_sources_path=self._wl(tmp)))
+        self.assertTrue(out["PHP"]["articles"])
+        self.assertFalse(out["PHP"]["attributable_source_absent"])
+
+    # I7/I13:模板写坏不得让 collect() 上抛(采集层硬契约)
+    def test_broken_url_template_records_gap_not_raise(self):
+        for tpl in ("{query}&num={count}", "{query}&x={}", "{query}&y={"):
+            with tempfile.TemporaryDirectory() as tmp, \
+                    FixtureServer({"/doc": (200, SAMPLE)}) as srv:
+                cfg = make_test_cfg(
+                    endpoints={"gnews_rss_url": srv.base_url + "/gn?q=" + tpl,
+                               "gdelt_doc_url": srv.base_url + "/doc"},
+                    news_sources_path=self._wl(tmp))
+                out, gaps = events.collect(cfg)     # 不得抛
+            self.assertEqual(sorted(out), ["BRL", "EUR", "PHP", "THB", "USD"], tpl)
+            self.assertTrue(all(out[c]["channel"] == "gdelt" for c in out), tpl)
+            self.assertTrue(any(g["source"] == "gnews" for g in gaps), tpl)
+
+    def test_missing_gdelt_endpoint_records_gap_not_raise(self):
+        cfg = make_test_cfg(endpoints={})
+        out, gaps = events.collect(cfg)
+        self.assertEqual(out, {})
+        self.assertEqual(len(gaps), 5)
+
+    # Minor:白名单项未归一时静默永不命中
+    def test_whitelist_entries_are_normalised(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._wl(tmp, '["www.reuters.com", "https://ft.com", ".cnbc.com"]')
+            gaps = []
+            doms = events._load_domains(make_test_cfg(news_sources_path=path), gaps)
+        self.assertEqual(doms, ["reuters.com", "ft.com", "cnbc.com"])
+        for host in ("reuters.com", "ft.com", "cnbc.com"):
+            self.assertTrue(events._in_whitelist(host, doms), host)
 
 
 if __name__ == "__main__":

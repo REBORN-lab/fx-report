@@ -260,6 +260,7 @@ class OfficialFeedsTest(unittest.TestCase):
         self.assertIsNone(snap["derived"]["events"]["USD"]["count"])
 
 
+@mock.patch.dict(os.environ, {"FX_GDELT_DELAY_S": "0", "FX_GDELT_BACKOFF_S": "0"})
 class GnewsCapsTest(unittest.TestCase):
     """上限不随快照落盘,日后常量一改,聚合器拿新上限判旧快照就会静默错判。"""
 

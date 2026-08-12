@@ -135,6 +135,14 @@ def _rates_derived(payload, history, gaps):
     return out
 
 
+def _channel_of(snap, currency):
+    """该币种当日事件的取数通道。取不到返回 None(不猜)。"""
+    events = snap.get("events") if isinstance(snap, dict) else None
+    entry = events.get(currency) if isinstance(events, dict) else None
+    chan = entry.get("channel") if isinstance(entry, dict) else None
+    return chan if isinstance(chan, str) and chan else None
+
+
 def _count_capped(snap, currency):
     """当日该币种的 GDELT 条数是否顶到采集上限。上限优先取快照记录的采集时真值。
     去重前条数(articles_raw_count)缺失的存量快照退回去重后长度,方向偏保守
@@ -175,11 +183,20 @@ def _events_derived(payload, history, gaps):
         try:
             count = _article_count(payload, currency)
             prev = _article_count(history[0], currency) if history else None
+            # 跨通道相减没有意义:GDELT 上限 8 且不过白名单,gnews 上限 99 且过
+            # 白名单。实测 08-11 PHP=8(GDELT 顶到上限)与 08-12 PHP=2(gnews 81
+            # 条滤剩 2)相减得 -6,会被报告写成"事件面变化"
+            chan = _channel_of(payload, currency)
+            chan_prev = _channel_of(history[0], currency) if history else chan
+            switched = (chan is not None and chan_prev is not None
+                        and chan != chan_prev)
             out[currency] = {
                 "count": count,
                 "count_prev": prev,
                 "count_delta": (count - prev)
-                               if (count is not None and prev is not None) else None,
+                               if (count is not None and prev is not None
+                                   and not switched) else None,
+                "channel_changed_from": chan_prev if switched else None,
                 # 两天都触顶时 count_delta 恒为 0,"与前值持平"就成了上限造成的
                 # 假象而非事件面平稳 —— 必须让报告能看见这一点
                 "count_capped": _count_capped(payload, currency),

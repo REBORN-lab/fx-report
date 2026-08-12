@@ -310,9 +310,10 @@ def _verdict(stats, window_days, skipped, unit):
         # daily_cap 为 None = 区间内上限不唯一(两条通道混用)。直接插值会把
         # 字面量 None 印进中文结论句
         cap = stats["daily_cap"]
-        caveats.append("%d 天顶到每日上限 %s"
+        caveats.append("%d 天顶到当日采集上限%s"
                        % (stats["capped_days"],
-                          ("%s 条" % cap) if cap is not None else "(上限随通道不同,不给单值)"))
+                          ("(%s 条)" % cap) if cap is not None
+                          else "(区间内上限随通道不同,不给单值)"))
     if stats.get("offlist"):
         caveats.append("另有 %d 条被相关性闸门滤除(抓到了但来源不可署名)"
                        % stats["offlist"])

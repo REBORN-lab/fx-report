@@ -768,7 +768,7 @@ class VerdictInvariantTest(unittest.TestCase):
                  for d in ("2026-08-10", "2026-08-11")]
         off, _ = self._v(snaps)
         self.assertNotIn("确实", off)
-        self.assertIn("顶到每日上限", off)
+        self.assertIn("顶到当日采集上限", off)   # 措辞含上限值或「上限不唯一」
         self.assertIn("无法判定", off)
 
     def test_undated_blocks_the_zero_claim(self):
