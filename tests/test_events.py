@@ -404,5 +404,77 @@ class WhitelistTest(unittest.TestCase):
         self.assertFalse(events._in_whitelist("bybit.com", self.WL))
 
 
+class GnewsFilterTest(unittest.TestCase):
+    LO = datetime(2026, 8, 10, 0, 0, tzinfo=timezone.utc)
+    HI = datetime(2026, 8, 12, 0, 0, tzinfo=timezone.utc)
+    WL = ["philstar.com"]
+
+    def _items(self):
+        return [
+            {"title": "in-window on-list", "url": "u1",
+             "pubdate_raw": "Tue, 11 Aug 2026 03:00:00 GMT",
+             "domain": "interaksyon.philstar.com"},
+            {"title": "in-window off-list", "url": "u2",
+             "pubdate_raw": "Tue, 11 Aug 2026 04:00:00 GMT", "domain": "bybit.com"},
+            {"title": "out-of-window on-list", "url": "u3",
+             "pubdate_raw": "Sat, 01 Aug 2026 04:00:00 GMT", "domain": "philstar.com"},
+            {"title": "undated", "url": "u4",
+             "pubdate_raw": "not a date", "domain": "philstar.com"},
+        ]
+
+    def test_four_counts_sum_to_raw(self):
+        kept, c = events._gnews_filter(self._items(), self.LO, self.HI, self.WL)
+        self.assertEqual(c["raw"], 4)
+        self.assertEqual(c["undated"], 1)
+        self.assertEqual(c["out_window"], 1)
+        self.assertEqual(c["offlist"], 1)
+        self.assertEqual(c["kept"], 1)
+        # 总账必须闭合:漏记任一层,过滤量就不再可见
+        self.assertEqual(c["undated"] + c["out_window"] + c["offlist"] + c["kept"],
+                         c["raw"])
+
+    def test_only_in_window_on_list_survives(self):
+        kept, _ = events._gnews_filter(self._items(), self.LO, self.HI, self.WL)
+        self.assertEqual([a["title"] for a in kept], ["in-window on-list"])
+
+    def test_seendate_uses_gdelt_format_not_iso(self):
+        """落 ISO 会让 weekly_digest._seen_date 对每条 gnews 文章都返回 None,
+        周报 _verdict 每周退化成「无法判定」—— 系统性静默劣化。"""
+        kept, _ = events._gnews_filter(self._items(), self.LO, self.HI, self.WL)
+        self.assertEqual(kept[0]["seendate"], "20260811T030000Z")
+
+    def test_seendate_is_parseable_by_weekly_digest(self):
+        """跨模块靶点:只测 events.py 内部永远发现不了格式分叉。"""
+        from scripts.weekly_digest import _seen_date
+        kept, _ = events._gnews_filter(self._items(), self.LO, self.HI, self.WL)
+        self.assertEqual(_seen_date(kept[0]), "2026-08-11")
+
+    def test_non_utc_offset_normalised_before_formatting(self):
+        items = [{"title": "t", "url": "u", "domain": "philstar.com",
+                  "pubdate_raw": "Tue, 11 Aug 2026 05:00:00 +0200"}]
+        kept, _ = events._gnews_filter(items, self.LO, self.HI, self.WL)
+        self.assertEqual(kept[0]["seendate"], "20260811T030000Z")
+
+    def test_missing_domain_counts_as_offlist(self):
+        items = [{"title": "t", "url": "u", "domain": None,
+                  "pubdate_raw": "Tue, 11 Aug 2026 03:00:00 GMT"}]
+        kept, c = events._gnews_filter(items, self.LO, self.HI, self.WL)
+        self.assertEqual((c["offlist"], c["kept"]), (1, 0))
+
+    def test_empty_input_is_all_zeros_not_error(self):
+        kept, c = events._gnews_filter([], self.LO, self.HI, self.WL)
+        self.assertEqual(kept, [])
+        self.assertEqual(c, {"raw": 0, "undated": 0, "out_window": 0,
+                             "offlist": 0, "kept": 0})
+
+    def test_boundary_timestamps_are_inclusive(self):
+        items = [{"title": "lo", "url": "u", "domain": "philstar.com",
+                  "pubdate_raw": "Mon, 10 Aug 2026 00:00:00 GMT"},
+                 {"title": "hi", "url": "u", "domain": "philstar.com",
+                  "pubdate_raw": "Wed, 12 Aug 2026 00:00:00 GMT"}]
+        _, c = events._gnews_filter(items, self.LO, self.HI, self.WL)
+        self.assertEqual(c["kept"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

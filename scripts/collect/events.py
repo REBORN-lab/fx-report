@@ -122,6 +122,42 @@ def _in_whitelist(host, domains):
     return any(host == d or host.endswith("." + d) for d in domains)
 
 
+def _gnews_filter(items, lo, hi, domains):
+    """→ (kept, counts)。counts 含 raw/undated/out_window/offlist/kept,四层账闭合。
+
+    四个计数在同一个函数里出,调用方不各算各的 —— 分头算的东西迟早对不上,
+    而对不上的那一刻没人会发现(计数看起来总是"有个数")。
+
+    顺序:时间戳 → 窗口 → 白名单。去重由调用方在**之后**做:先去重会让
+    offlist 的分母与 raw 对不上。
+
+    seendate 用 GDELT 的 %Y%m%dT%H%M%SZ 格式落盘(先归一 UTC):
+    weekly_digest.SEEN_DATE_RE 只认这个形态,落 ISO 会让它对每条 gnews 文章
+    都返回 None,周报据此把整周降级为"有无事件无法判定"。
+    """
+    counts = {"raw": len(items), "undated": 0, "out_window": 0,
+              "offlist": 0, "kept": 0}
+    kept = []
+    for it in items:
+        dt = _pubdate(it.get("pubdate_raw"))
+        if dt is None:
+            counts["undated"] += 1
+            continue
+        if not (lo <= dt <= hi):
+            counts["out_window"] += 1
+            continue
+        if not _in_whitelist(it.get("domain"), domains):
+            counts["offlist"] += 1
+            continue
+        kept.append({
+            "title": it.get("title"), "url": it.get("url"),
+            "domain": it.get("domain"),
+            "seendate": dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+        })
+    counts["kept"] = len(kept)
+    return kept, counts
+
+
 def collect(cfg):
     gaps, out = [], {}
     first = True
