@@ -50,10 +50,14 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(snap["gaps"], [])
         self.assertIn("collector_version", snap["meta"])
         # 采集上限随快照落盘:常量一改,聚合器拿新上限判旧快照会静默错判触顶
+        # 全等断言是有意的:某个上限悄悄消失必须能被抓到。两条事件通道上限
+        # 不同(gnews 99 / GDELT 8),少记任一个,下游判截断就会拿错的上限去比
         self.assertEqual(snap["meta"]["caps"],
                          {"official_daily": feeds.MAX_ITEMS,
-                          "gdelt_records": events_mod.MAX_RECORDS})
-        self.assertNotEqual(feeds.MAX_ITEMS, events_mod.MAX_RECORDS)  # 互换可被发现
+                          "gdelt_records": events_mod.MAX_RECORDS,
+                          "gnews_records": events_mod.GNEWS_SOFT_CAP})
+        self.assertEqual(len({feeds.MAX_ITEMS, events_mod.MAX_RECORDS,
+                              events_mod.GNEWS_SOFT_CAP}), 3)   # 三者互换可被发现
         self.assertNotIn("us_release_dates", snap)   # 零 key 不出现该键
 
     def test_one_source_down_others_intact(self):
