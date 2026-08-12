@@ -729,5 +729,44 @@ class TwoPassCollectTest(unittest.TestCase):
         self.assertEqual(out["USD"]["channel"], "gnews")
 
 
+class GnewsRobustnessTest(unittest.TestCase):
+    """外部数据可任意畸形;采集层不得抛出,只能转 gap。"""
+
+    def _collect(self, body):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "wl.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('{"domains": ["philstar.com"]}')
+            with FixtureServer({"/gn": (200, body), "/doc": (200, SAMPLE)}) as srv:
+                return events.collect(gnews_cfg(srv, news_sources_path=path))
+
+    def test_never_raises_on_any_body(self):
+        for body in ("", "\x00\x01", "<rss>", "<rss><channel/></rss>", "[]",
+                     '<?xml version="1.0"?><rss><channel><item/></channel></rss>',
+                     "<" * 5000, "not xml at all"):
+            payload, gaps = self._collect(body)
+            self.assertIsInstance(payload, dict)
+            self.assertEqual(sorted(payload), ["BRL", "EUR", "PHP", "THB", "USD"])
+
+    def test_item_without_pubdate_counted_undated(self):
+        body = ('<?xml version="1.0"?><rss><channel><item><title>t</title>'
+                '<source url="https://philstar.com">S</source></item></channel></rss>')
+        payload, _ = self._collect(body)
+        self.assertEqual(payload["PHP"]["gnews_filter"]["undated"], 1)
+
+    def test_source_without_url_attribute(self):
+        pub = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        body = ('<?xml version="1.0"?><rss><channel><item><title>t</title>'
+                '<pubDate>%s</pubDate><source>Nameless</source></item>'
+                '</channel></rss>' % pub)
+        payload, _ = self._collect(body)
+        self.assertEqual(payload["PHP"]["gnews_filter"]["offlist"], 1)
+
+    def test_empty_item_yields_undated_not_crash(self):
+        body = '<?xml version="1.0"?><rss><channel><item/></channel></rss>'
+        payload, _ = self._collect(body)
+        self.assertEqual(payload["PHP"]["gnews_filter"]["undated"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
