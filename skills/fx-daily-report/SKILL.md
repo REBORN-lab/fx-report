@@ -33,6 +33,13 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       未必属于昨日:seendate 的日期部分不是 DATE 前一日的,行尾标
       "(采见日非昨日)";seendate 缺失或无法辨认的标"(采见日不明)"。
       与 official 同理——采样口径不等于当日市场事件。
+      **`channel` 为 `gnews` 时**:`url` 是 Google 跳转链、**不是原文直链**,
+      引用一律以 `domain` 标出处,禁止把跳转链当原文地址写进报告;该通道的
+      seendate 是**发布时间**(比采见时间更准),`channel` 为 `gdelt` 时才是采见时间。
+      **`gnews_filter` 存在且 `kept` 为 0 时**,含义是"主通道抓到 raw 条但全部
+      落在可署名来源白名单之外",**不是"该国昨日无新闻"**;正文只能写
+      "昨日未取得可署名来源的报道",写成后者即违反禁令 6。
+      `source_capped` 为 true 时,该币种条目取自被截断的样本,任何条数都是下界。
     - 官方公告:<title>(<issuer>,发布于 <published>)……至多 3 条,取自
       events.<币种>.official(央行官方 RSS,可署名高可信;该币种无 official 键
       时写"无")。**每条必须带 published 原文**;RSS 只给"最新 N 条"、不按日期

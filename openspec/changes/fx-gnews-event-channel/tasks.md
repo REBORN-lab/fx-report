@@ -27,9 +27,9 @@
 
 ## 5. 健壮性与回归
 
-- [ ] 5.1 畸形输入不上抛:空正文、HTML 错误页、非 XML、`<item>` 缺字段、`source` 缺 `url`、超长正文——逐项用例,采集层只转 gap
-- [ ] 5.2 变异测试:Design Doc 第 6 节列的 M1–M14 逐条须被测试杀掉(白名单裸后缀 / 仅 == 不匹配子域 / 去掉本地窗口 / 坏 pubDate 当窗口内 / offlist 恒 0 / source_capped 恒 false / capped 用 == / 空洞判定用过滤前条数 / 无空洞也发 GDELT / 解析失败返空列表 / 空白名单不记 gap / 补位后丢 gnews_filter / 失败时计数写 0 / 下游忽略 source_capped)
-- [ ] 5.3 全量回归通过(基线 421),`python3 -m unittest discover -s tests -t .`
+- [x] 5.1 畸形输入不上抛:空正文、HTML 错误页、非 XML、`<item>` 缺字段、`source` 缺 `url`、超长正文——逐项用例,采集层只转 gap
+- [x] 5.2 变异测试:Design Doc 第 6 节列的 M1–M14 逐条须被测试杀掉(白名单裸后缀 / 仅 == 不匹配子域 / 去掉本地窗口 / 坏 pubDate 当窗口内 / offlist 恒 0 / source_capped 恒 false / capped 用 == / 空洞判定用过滤前条数 / 无空洞也发 GDELT / 解析失败返空列表 / 空白名单不记 gap / 补位后丢 gnews_filter / 失败时计数写 0 / 下游忽略 source_capped)
+- [x] 5.3 全量回归通过(基线 421),`python3 -m unittest discover -s tests -t .`
 
 ## 6. 报告层与文档
 
