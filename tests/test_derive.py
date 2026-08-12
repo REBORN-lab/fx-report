@@ -402,6 +402,29 @@ class ChannelChangeTest(unittest.TestCase):
         self.assertEqual(out["PHP"]["channel_changed_from"], "gdelt")
 
 
+class MainChannelCappedTest(unittest.TestCase):
+    """截断是「或」关系:主通道被截断时当日条数同样是下界,哪怕最终条目来自补位。
+    补位覆写条目级 source_capped 后,主通道那份只剩 gnews_filter.capped 一个落点。"""
+
+    def _snap(self, entry):
+        return {"date": "2026-08-12", "events": {"PHP": entry},
+                "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+
+    def test_main_channel_truncation_survives_backfill(self):
+        snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3,
+                           "source_cap": 8, "source_capped": False, "channel": "gdelt",
+                           "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
+                                            "offlist": 100, "kept": 0, "capped": True}})
+        self.assertTrue(derive._count_capped(snap, "PHP"))
+
+    def test_no_truncation_anywhere_is_false(self):
+        snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3,
+                           "source_cap": 8, "source_capped": False, "channel": "gdelt",
+                           "gnews_filter": {"raw": 5, "undated": 0, "out_window": 0,
+                                            "offlist": 4, "kept": 1, "capped": False}})
+        self.assertFalse(derive._count_capped(snap, "PHP"))
+
+
 class ChannelOfEdgeTest(unittest.TestCase):
     """F4:通道是「这一天的文章从哪取的」。没有文章就没有通道 —— 真实生产数据
     data/2026-08-11.json 的 EUR 条目只有 official(当天 GDELT 握手超时),

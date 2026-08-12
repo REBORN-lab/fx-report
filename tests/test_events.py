@@ -967,7 +967,10 @@ class ReviewRoundThreeTest(unittest.TestCase):
 
     # F10:_pubdate 的 except 元组漏 OverflowError
     def test_pubdate_overflow_returns_none(self):
-        for raw in ("Tue, 11 Aug 999999999 03:00:00 GMT",
+        # 实测:年份 999999999 抛 ValueError,9999999999999 才抛 OverflowError
+        # (OverflowError 不是 ValueError 子类,漏进 except 元组就会穿透上抛)
+        for raw in ("Tue, 11 Aug 9999999999999 03:00:00 GMT",
+                    "Tue, 11 Aug 999999999 03:00:00 GMT",
                     "Mon, 01 Jan 99999 00:00:00 +9999"):
             self.assertIsNone(events._pubdate(raw), raw)
 

@@ -1075,15 +1075,18 @@ class DroppedDayInvariantTest(unittest.TestCase):
                               "2026-08-01", "2026-08-07", 0)["articles_verdict"]
 
     def test_out_window_layer_blocks_zero_claim(self):
-        """回填 3 天前:查询带 when:2d,窗口却是那一天 → 100 条全落窗口外、零 gap。"""
+        """回填 3 天前:查询带 when:2d,窗口却是那一天 → 100 条全落窗口外、零 gap。
+
+        capped 必须为 False:置 True 会让截断 caveat 先挡住"确实 0 条",
+        用例就变成假绿——测的是截断披露,不是本不变量(变异 M27 实测抓到过)。"""
         v = self._v({"raw": 100, "undated": 0, "out_window": 100,
-                     "offlist": 0, "kept": 0, "capped": True})
+                     "offlist": 0, "kept": 0, "capped": False})
         self.assertNotIn("确实 0 条", v)
 
     def test_undated_layer_blocks_zero_claim(self):
         """源改了 pubDate 渲染格式 → 100 条全部时间戳不可解析。"""
         v = self._v({"raw": 100, "undated": 100, "out_window": 0,
-                     "offlist": 0, "kept": 0, "capped": True})
+                     "offlist": 0, "kept": 0, "capped": False})   # 同上,防假绿
         self.assertNotIn("确实 0 条", v)
 
     def test_offlist_layer_still_blocks_zero_claim(self):
@@ -1093,7 +1096,7 @@ class DroppedDayInvariantTest(unittest.TestCase):
 
     def test_mixed_layers_blocks_zero_claim(self):
         v = self._v({"raw": 99, "undated": 33, "out_window": 33,
-                     "offlist": 33, "kept": 0, "capped": True})
+                     "offlist": 33, "kept": 0, "capped": False})
         self.assertNotIn("确实 0 条", v)
 
     def test_genuinely_empty_source_still_allows_zero_claim(self):
