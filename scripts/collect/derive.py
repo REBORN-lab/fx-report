@@ -136,11 +136,21 @@ def _rates_derived(payload, history, gaps):
 
 
 def _channel_of(snap, currency):
-    """该币种当日事件的取数通道。取不到返回 None(不猜)。"""
+    """该币种当日事件的取数通道。条目存在但无 channel 字段 → 视为 "gdelt"。
+
+    存量快照(本变更之前生成的)全部来自 GDELT,把它们当成"未知、所以视同相同"
+    会让换通道当日照常相减 —— 实测 2026-08-12 的 USD(gnews 11 条)与 08-11
+    (GDELT 顶到 8 条)因此给出 count_delta: 3,而两者上限与筛选口径都不同。
+    与 macro._source_changed_from 的 row.get("source", "dbnomics") 同一约定。
+
+    条目本身不存在 → None(那天压根没这个币种的事件,谈不上通道)。
+    """
     events = snap.get("events") if isinstance(snap, dict) else None
     entry = events.get(currency) if isinstance(events, dict) else None
-    chan = entry.get("channel") if isinstance(entry, dict) else None
-    return chan if isinstance(chan, str) and chan else None
+    if not isinstance(entry, dict):
+        return None
+    chan = entry.get("channel")
+    return chan if isinstance(chan, str) and chan else "gdelt"
 
 
 def _count_capped(snap, currency):

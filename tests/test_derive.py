@@ -388,6 +388,19 @@ class ChannelChangeTest(unittest.TestCase):
         self.assertEqual(out["PHP"]["count_delta"], 2)
         self.assertIsNone(out["PHP"]["channel_changed_from"])
 
+    def test_legacy_snapshot_without_channel_counts_as_gdelt(self):
+        """本变更之前的快照没有 channel 字段,但它们**就是** GDELT 期的。
+        当成「未知所以视为相同」会让换通道当日照常相减 —— 实测 2026-08-12 的 USD
+        (gnews 11 条)与 08-11(GDELT 顶到 8 条)给出 count_delta: 3。
+        与 macro._source_changed_from 的 row.get("source", "dbnomics") 同一约定。"""
+        legacy = {"date": "2026-08-11", "events": {"PHP": {
+            "articles": [{"title": "t%d" % i} for i in range(8)],
+            "articles_raw_count": 8}},
+            "meta": {"caps": {"gdelt_records": 8}}}
+        out = derive._events_derived(self._snap("2026-08-12", 2, "gnews"), [legacy], [])
+        self.assertIsNone(out["PHP"]["count_delta"])
+        self.assertEqual(out["PHP"]["channel_changed_from"], "gdelt")
+
 
 if __name__ == "__main__":
     unittest.main()
