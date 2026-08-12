@@ -13,17 +13,17 @@
 ## 3. 通道装配与计数落盘
 
 - [x] 3.1 `_gnews_collect(cfg, currency)`:取数 → 解析 → 窗口 → 白名单 → 复用现有 `_dedupe_titles`,返回条目与逐层计数
-- [ ] 3.2 快照条目落盘 `articles` / `articles_raw_count` / `source_cap` / `source_capped` / `channel` + 嵌套 `gnews_filter{raw,undated,out_window,offlist,kept}`;`articles_raw_count` 沿用既有语义(源返回条数,非去重后条数);gnews 整体失败时 `gnews_filter` 写 **null 不写 0**
+- [x] 3.2 快照条目落盘 `articles` / `articles_raw_count` / `source_cap` / `source_capped` / `channel` + 嵌套 `gnews_filter{raw,undated,out_window,offlist,kept}`;`articles_raw_count` 沿用既有语义(源返回条数,非去重后条数);gnews 整体失败时 `gnews_filter` 写 **null 不写 0**
 - [x] 3.3 `source_capped` 由采集层算好落盘(判据 `raw >= GNEWS_SOFT_CAP=99`,实测上限在 99–100 之间摆动,取下界以免漏报截断);`meta.caps` 增 `gnews_records`
 - [ ] 3.5 **下游兼容(design §2.2 实查后确认需改)**:`derive.py:_count_capped` 与 `weekly_digest._channel` 改为优先读条目的 `source_capped`,缺失时才退回既有 `raw >= cap`。不改会让 GDELT 补位条目(raw=8,真顶到上限)去跟 gnews 的 100 比而漏报截断;存量快照行为不变
 - [x] 3.4 gnews 条目的 `url` 原样落跳转链、`domain` 取 `<source url=>`;`channel` 标注取数通道;`seendate` **必须用 GDELT 的 `%Y%m%dT%H%M%SZ` 格式**(先归一 UTC)——实测 `weekly_digest.SEEN_DATE_RE` 不认 ISO,落 ISO 会让周报把每条 gnews 文章都算成时间戳不可解析
 
 ## 4. 与 GDELT 的衔接(空洞补位)
 
-- [ ] 4.1 `collect()` 改为:先跑 gnews;仅对过滤后 0 条的币种按既有 `query_order` 轮转发起 GDELT 补位;未出现空洞的币种不发 GDELT 请求(用例须断言"未发起请求")
-- [ ] 4.2 两条通道都无所得时记缺漏,原因文本须体现**两条通道均已尝试**,不得只写 GDELT 限流
-- [ ] 4.3 GDELT 的限流判定、退避重试、`query_order` 一行不改;既有 GDELT 用例全部保持通过
-- [ ] 4.4 gnews 端点或白名单未配置 → 静默回落 GDELT-only(即现状),不记缺漏
+- [x] 4.1 `collect()` 改为:先跑 gnews;仅对过滤后 0 条的币种按既有 `query_order` 轮转发起 GDELT 补位;未出现空洞的币种不发 GDELT 请求(用例须断言"未发起请求")
+- [x] 4.2 两条通道都无所得时记缺漏,原因文本须体现**两条通道均已尝试**,不得只写 GDELT 限流
+- [x] 4.3 GDELT 的限流判定、退避重试、`query_order` 一行不改;既有 GDELT 用例全部保持通过
+- [x] 4.4 gnews 端点或白名单未配置 → 静默回落 GDELT-only(即现状),不记缺漏
 
 ## 5. 健壮性与回归
 

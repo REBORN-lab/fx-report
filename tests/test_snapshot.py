@@ -254,3 +254,24 @@ class OfficialFeedsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
             snap = self._run(tmp, srv, routes)
         self.assertIsNone(snap["derived"]["events"]["USD"]["count"])
+
+
+class GnewsCapsTest(unittest.TestCase):
+    """上限不随快照落盘,日后常量一改,聚合器拿新上限判旧快照就会静默错判。"""
+
+    def test_meta_caps_includes_gnews_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_test_root(tmp, {}, indicators=[])
+            cfg = entry.build_cfg("2026-08-10", root=tmp)
+            snap = entry.run(cfg)
+        self.assertEqual(snap["meta"]["caps"]["gnews_records"],
+                         events_mod.GNEWS_SOFT_CAP)
+        self.assertEqual(snap["meta"]["caps"]["gdelt_records"],
+                         events_mod.MAX_RECORDS)
+
+    def test_cfg_points_at_repo_whitelist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_test_root(tmp, {}, indicators=[])
+            cfg = entry.build_cfg("2026-08-10", root=tmp)
+        self.assertEqual(cfg["news_sources_path"],
+                         os.path.join(tmp, "config", "news_sources.json"))

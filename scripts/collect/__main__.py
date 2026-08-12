@@ -82,6 +82,8 @@ def build_cfg(date_str, root=ROOT):
         "indicators": indicators,
         "data_dir": data_dir,
         "calendar_path": cals[-1] if cals else os.path.join(root, "state", "calendar-2026.json"),
+        # 白名单缺失 = 有意停用整个 gnews 通道(全部币种回落 GDELT),删掉即回滚
+        "news_sources_path": os.path.join(root, "config", "news_sources.json"),
         "prev_snapshot": prev_snapshot,
         "prev_snapshot_gap": prev_gap,
         "history": _load_history(data_dir, date_str),
@@ -124,7 +126,8 @@ def run(cfg):
         # 日后常量一改,聚合器拿新上限去判旧快照就会静默错判"是否触顶"
         "meta": {"collector_version": COLLECTOR_VERSION,
                  "caps": {"official_daily": feeds.MAX_ITEMS,
-                          "gdelt_records": events.MAX_RECORDS}},
+                          "gdelt_records": events.MAX_RECORDS,
+                          "gnews_records": events.GNEWS_SOFT_CAP}},
     }
     if macro_p.get("us_release_dates") is not None:
         snapshot["us_release_dates"] = macro_p["us_release_dates"]
