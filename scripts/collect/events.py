@@ -29,6 +29,12 @@ MAX_RECORDS = 8
 SOFT_LIMIT_ERR = "soft-rate-limited"     # HTTP 200 + 限速正文
 HARD_LIMIT_ERR = "hard-rate-limited-429"  # HTTP 429
 
+# 实测上限在 99–100 摆动(宽查询 the/dollar 返 100,加 num=200 返 99)。取下界:
+# 漏报截断会让报告把下界当全量断言,误报只让结论变弱 —— 宁可少说不可错说。
+GNEWS_SOFT_CAP = 99
+GNEWS_WINDOW_H = 48                # 与 GDELT timespan=48h 对齐
+GNEWS_QUERY_SUFFIX = " when:2d"    # 服务端窗口;实测不可信,本地仍要过滤一遍
+
 
 def query_order(date_str):
     """五币种查询顺序,按采集日期确定性轮转。
@@ -189,6 +195,45 @@ def _load_domains(cfg, gaps):
             "domains 缺失/非列表/无有效项——空白名单会把全部条目过滤掉,拒绝启用"))
         return None
     return clean
+
+
+def _gnews_window(cfg):
+    """(lo, hi)。与 GDELT 的 backfill / timespan=48h 两种形态对齐。"""
+    if cfg["backfill"]:
+        lo = datetime.strptime(cfg["yesterday"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        hi = datetime.strptime(cfg["date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return lo, hi
+    now = datetime.now(timezone.utc)
+    # hi 留 5 分钟余量容忍源侧时钟略快;不留会把刚发布的条目判成"未来条目"丢掉
+    return now - timedelta(hours=GNEWS_WINDOW_H), now + timedelta(minutes=5)
+
+
+def _gnews_entry(articles, raw_count, counts):
+    """gnews 条目的统一形状。source_capped 由采集层算好落盘,下游只读不比 ——
+    两条通道上限不同,下游拿单一上限去比必然错位。"""
+    return {"articles": articles, "articles_raw_count": raw_count,
+            "source_cap": GNEWS_SOFT_CAP,
+            "source_capped": isinstance(raw_count, int)
+                             and not isinstance(raw_count, bool)
+                             and raw_count >= GNEWS_SOFT_CAP,
+            "channel": "gnews", "gnews_filter": counts}
+
+
+def _gnews_one(cfg, currency, domains):
+    """→ (entry, err)。err 非 None 表示该币种 gnews 没跑成,应进 holes。
+
+    失败时 entry 仍返回(articles 空、gnews_filter 为 None),使"没跑成"
+    在快照里与"跑了但一条没留下"可分辨。异常一律转 err,绝不上抛。
+    """
+    url = cfg["endpoints"]["gnews_rss_url"].format(
+        query=urllib.parse.quote(KEYWORDS[currency] + GNEWS_QUERY_SUFFIX))
+    try:
+        items = _gnews_parse(util.fetch_text(url, cfg["timeout_s"]))
+    except Exception as e:
+        return _gnews_entry([], None, None), "%s: %s" % (type(e).__name__, e)
+    lo, hi = _gnews_window(cfg)
+    kept, counts = _gnews_filter(items, lo, hi, domains)
+    return _gnews_entry(_dedupe_titles(kept), counts["raw"], counts), None
 
 
 def collect(cfg):

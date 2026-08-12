@@ -526,5 +526,98 @@ class WhitelistLoadTest(unittest.TestCase):
         self.assertEqual(gaps, [])
 
 
+def gnews_body(n, domain="interaksyon.philstar.com", pub=None):
+    """生成 n 条 gnews RSS 条目;pub 默认取当前时刻(落在 48h 窗口内)。"""
+    if pub is None:
+        pub = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    items = "".join(
+        '<item><title>t%d</title><link>https://news.google.com/rss/articles/X%d</link>'
+        '<pubDate>%s</pubDate><source url="https://%s">S</source></item>'
+        % (i, i, pub, domain) for i in range(n))
+    return '<?xml version="1.0"?><rss version="2.0"><channel>%s</channel></rss>' % items
+
+
+def gnews_cfg(srv, **over):
+    """gnews 启用所需的两项都配齐:端点 + 白名单文件(由调用方给 path)。"""
+    base = make_test_cfg(endpoints={
+        "gnews_rss_url": srv.base_url + "/gn?q={query}",
+        "gdelt_doc_url": srv.base_url + "/doc",
+    })
+    base.update(over)
+    return base
+
+
+def gnews_cfg_dead():
+    return make_test_cfg(endpoints={"gnews_rss_url": DEAD_URL + "/gn?q={query}",
+                                    "gdelt_doc_url": DEAD_URL + "/doc"})
+
+
+class GnewsOneTest(unittest.TestCase):
+    WL = ["philstar.com"]
+
+    def test_entry_shape_and_channel(self):
+        with FixtureServer({"/gn": (200, gnews_body(3))}) as srv:
+            entry, err = events._gnews_one(gnews_cfg(srv), "PHP", self.WL)
+        self.assertIsNone(err)
+        self.assertEqual(entry["channel"], "gnews")
+        self.assertEqual(len(entry["articles"]), 3)
+        self.assertEqual(entry["articles_raw_count"], 3)
+        self.assertEqual(entry["source_cap"], events.GNEWS_SOFT_CAP)
+        self.assertFalse(entry["source_capped"])
+        self.assertEqual(entry["gnews_filter"]["kept"], 3)
+
+    def test_capped_at_soft_cap_99(self):
+        """实测上限在 99–100 之间摆动;取下界,宁可误报截断不可漏报。"""
+        with FixtureServer({"/gn": (200, gnews_body(99))}) as srv:
+            entry, _ = events._gnews_one(gnews_cfg(srv), "PHP", self.WL)
+        self.assertTrue(entry["source_capped"])
+
+    def test_not_capped_at_98(self):
+        with FixtureServer({"/gn": (200, gnews_body(98))}) as srv:
+            entry, _ = events._gnews_one(gnews_cfg(srv), "PHP", self.WL)
+        self.assertFalse(entry["source_capped"])
+
+    def test_offlist_items_counted_not_dropped_silently(self):
+        with FixtureServer({"/gn": (200, gnews_body(5, domain="bybit.com"))}) as srv:
+            entry, err = events._gnews_one(gnews_cfg(srv), "PHP", self.WL)
+        self.assertIsNone(err)
+        self.assertEqual(entry["articles"], [])
+        self.assertEqual(entry["gnews_filter"]["raw"], 5)
+        self.assertEqual(entry["gnews_filter"]["offlist"], 5)
+
+    def test_fetch_failure_yields_err_and_null_filter(self):
+        """缺输入写 null 不写 0:写 0 会让「跑了但没留下」与「压根没跑成」同形。"""
+        entry, err = events._gnews_one(gnews_cfg_dead(), "PHP", self.WL)
+        self.assertIsNotNone(err)
+        self.assertIsNone(entry["gnews_filter"])
+        self.assertEqual(entry["articles"], [])
+        self.assertEqual(entry["channel"], "gnews")
+
+    def test_query_is_urlencoded_keywords_plus_window(self):
+        seen = {}
+
+        def route(handler):
+            seen["path"] = handler.path
+            return (200, gnews_body(1))
+
+        with FixtureServer({"/gn": route}) as srv:
+            events._gnews_one(gnews_cfg(srv), "PHP", self.WL)
+        q = urllib.parse.unquote_plus(seen["path"])
+        self.assertIn("Philippine peso", q)
+        self.assertIn("when:2d", q)
+
+    def test_dedupe_runs_after_whitelist(self):
+        """先去重会让 offlist 的分母与 raw 对不上。"""
+        pub = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        dupe = ('<item><title>same</title><link>l</link><pubDate>%s</pubDate>'
+                '<source url="https://philstar.com">S</source></item>' % pub)
+        body = '<?xml version="1.0"?><rss><channel>%s</channel></rss>' % (dupe * 3)
+        with FixtureServer({"/gn": (200, body)}) as srv:
+            entry, _ = events._gnews_one(gnews_cfg(srv), "PHP", self.WL)
+        self.assertEqual(len(entry["articles"]), 1)          # 去重后
+        self.assertEqual(entry["gnews_filter"]["kept"], 3)   # 去重前(分母对得上 raw)
+        self.assertEqual(entry["articles_raw_count"], 3)
+
+
 if __name__ == "__main__":
     unittest.main()
