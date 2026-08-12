@@ -64,6 +64,7 @@ def make_test_cfg(**over):
         "endpoints": {},
         "indicators": [],
         "calendar_path": None,
+        "news_sources_path": None,   # 缺省 = gnews 通道停用,既有用例行为不变
         "prev_snapshot": None,
         "fred_api_key": None,
         "gdelt_delay_s": 0,

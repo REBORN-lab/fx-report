@@ -284,5 +284,36 @@ class RawCountTest(unittest.TestCase):
         self.assertEqual(len(entry["articles"]), 2)      # 去重后
         self.assertEqual(entry["articles_raw_count"], 4)  # 去重前
 
+class GnewsConfigTest(unittest.TestCase):
+    """gnews 需要端点与白名单两者都配齐才启用;缺任一即静默停用(现状行为)。"""
+
+    def test_make_test_cfg_has_news_sources_path_key(self):
+        cfg = make_test_cfg()
+        self.assertIn("news_sources_path", cfg)
+        self.assertIsNone(cfg["news_sources_path"])
+
+    def test_shipped_whitelist_is_loadable_and_nonempty(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                            "config", "news_sources.json")
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        self.assertIsInstance(doc.get("domains"), list)
+        self.assertGreater(len(doc["domains"]), 10)
+        self.assertIn("reuters.com", doc["domains"])
+        # 白名单项必须是裸主机名:带 scheme 或路径会永远匹配不上,而且失效是静默的
+        for d in doc["domains"]:
+            self.assertNotIn("/", d, d)
+            self.assertFalse(d.startswith("www."), d)
+            self.assertEqual(d, d.lower(), d)
+
+    def test_endpoint_template_takes_query_placeholder(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                            "config", "endpoints.json")
+        with open(path, encoding="utf-8") as f:
+            url = json.load(f)["gnews_rss_url"]
+        self.assertIn("{query}", url)
+        self.assertTrue(url.startswith("https://news.google.com/rss/search"))
+
+
 if __name__ == "__main__":
     unittest.main()
