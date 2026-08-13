@@ -10,6 +10,7 @@ from unittest import mock
 from scripts import check_report
 from scripts import weekly_digest
 from scripts.collect import derive
+from scripts.collect import events as events_mod
 
 SNAP = {"date": "2026-08-10",
         "rates": {"PHP": {"primary": 60.843, "prev_primary": 60.9},
@@ -842,7 +843,7 @@ class DailyVerdictQuotingTest(unittest.TestCase):
         self.assertFalse([x for x in v if "VERDICT" in x], v)
         self.assertEqual(len(notes), 1)
         self.assertIn("VERDICT_SKIPPED_LEGACY", notes[0])
-        self.assertIn("1 个币种", notes[0])
+        self.assertIn("1/5 个覆盖币种", notes[0])
 
     def test_legacy_count_covers_every_currency(self):
         notes = []
@@ -851,7 +852,22 @@ class DailyVerdictQuotingTest(unittest.TestCase):
             snap_with_derived(schema_version=1, verdict=None,
                               currencies=check_report.CURRENCIES),
             BRIEF, notes=notes)
-        self.assertIn("5 个币种", notes[0])
+        self.assertIn("5/5 个覆盖币种", notes[0])
+
+    def test_legacy_notice_shows_the_offending_type(self):
+        """schema_version 是字符串 "2" 时,%s 会印成「schema 过旧
+        (derived.schema_version=2)」—— 而闸门常量 DERIVED_VERDICT_SCHEMA
+        恰好就是 2,读者只会断定校验器坏了,而不是快照类型写错了。
+        只有 str 能区分 %r 与 %s:2.0 / None / [] 两种写法输出一致,
+        放进循环即成恒真用例(见 I5 的教训)。"""
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": "2", "rates": {}, "real_rate": {},
+                           "events": {c: {} for c in check_report.CURRENCIES}}
+        notes = []
+        check_report.check_daily(make_report(),
+                                 json.dumps(snap, ensure_ascii=False),
+                                 BRIEF, notes=notes)
+        self.assertIn("derived.schema_version='2'", notes[0])
 
     def test_missing_schema_version_is_treated_as_legacy(self):
         snap = dict(SNAP)
@@ -984,6 +1000,8 @@ class DailyContainerGateTest(unittest.TestCase):
     调用点行为不对称,正是共享判定要防的漂移。"""
 
     def _run(self, events, ver=2, notes=None):
+        """要断言降级声明请显式传 notes —— 不传时用例只能看见 violations,
+        「零违规零声明」这一形态正是本类要防的,看不见就测不出。"""
         snap = dict(SNAP)
         snap["derived"] = {"schema_version": ver, "rates": {}, "real_rate": {},
                            "events": events}
@@ -993,9 +1011,11 @@ class DailyContainerGateTest(unittest.TestCase):
 
     def test_non_dict_container_fails_loudly(self):
         for bad in ([], "x", 7):
-            v = self._run(bad)
-            self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x for x in v),
-                            (bad, v))
+            with self.subTest(bad=bad):
+                v = self._run(bad)
+                self.assertTrue(
+                    any("VERDICT_CONTAINER_MALFORMED" in x for x in v),
+                    (bad, v))
 
     def test_missing_container_key_fails_loudly(self):
         snap = dict(SNAP)
@@ -1010,10 +1030,16 @@ class DailyContainerGateTest(unittest.TestCase):
         self.assertEqual(len(missing), len(check_report.CURRENCIES), v)
 
     def test_partial_container_reports_only_the_absent_ones(self):
-        v = self._run({c: {"events_verdict": "x"} for c in ("USD", "EUR", "PHP")})
+        # 占位句必须是 make_report() 里真有的子串:写 "x" 会白拿三条无关的
+        # VERDICT_NOT_QUOTED,违规集比期望集大,下面的强断言就成了摆设
+        quoted = "无明确驱动"
+        self.assertIn(quoted, make_report())
+        v = self._run({c: {"events_verdict": quoted}
+                       for c in ("USD", "EUR", "PHP")})
         names = [c for c in check_report.CURRENCIES
                  if any("VERDICT_ENTRY_MISSING" in x and c in x for x in v)]
         self.assertEqual(names, ["THB", "BRL"])
+        self.assertEqual(len(v), 2, v)
 
     def test_currency_not_covered_is_not_required(self):
         """让位仍然成立:报告没写的币种不要求条目。"""
@@ -1029,8 +1055,24 @@ class DailyContainerGateTest(unittest.TestCase):
         """①② 只对声称带结论句的快照生效 —— 存量快照照旧跳过,不得变红。"""
         for bad in (None, [], {}, "x"):
             with self.subTest(events=bad):
-                v = self._run(bad, ver=1)
+                notes = []
+                v = self._run(bad, ver=1, notes=notes)
                 self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+                # 不变红不等于可以不出声 —— 一条都没查必须说出来
+                self.assertEqual(len(notes), 1, (bad, notes))
+                self.assertIn("VERDICT_SKIPPED_LEGACY", notes[0])
+
+    def test_entry_present_but_not_a_dict_is_treated_as_missing(self):
+        """条目在、但不是对象:check_verdicts 会静默 continue(周报侧基准
+        货币在 rates 里本就没条目,那个沉默是必需的),所以只能堵在日报
+        调用点。判据必须是「值为 dict 的键集」—— 用键存在性,这一形态
+        原样零违规零声明地通过,与 O2 之前完全同形。"""
+        for bad in (None, "oops", [], 7):
+            with self.subTest(entry=bad):
+                v = self._run({c: bad for c in check_report.CURRENCIES})
+                missing = [x for x in v if "VERDICT_ENTRY_MISSING" in x]
+                self.assertEqual(len(missing), len(check_report.CURRENCIES),
+                                 (bad, v))
 
 
 class DailyNoDerivedNoticeTest(unittest.TestCase):
@@ -1107,6 +1149,5 @@ class CurrenciesCoveredByKeywordsTest(unittest.TestCase):
     USD 条目就会静默消失,而校验器从不读 KEYWORDS。这条断言是唯一的哨兵。"""
 
     def test_every_currency_has_keywords(self):
-        from scripts.collect import events as events_mod
         self.assertLessEqual(set(check_report.CURRENCIES),
                              set(events_mod.KEYWORDS))

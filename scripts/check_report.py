@@ -240,16 +240,33 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
         # 日报五个币种都应有事件派生量(derive 按 rates ∪ events.KEYWORDS
         # 逐币种填充),整条缺失不是合法形态 —— 与周报的 rates 容器不同,
         # 那里基准货币本就没有条目
-        for c in sorted(covered - set(events)):
+        present = {k for k, entry in events.items()
+                   if isinstance(entry, dict)}
+        # 判据必须是「值为 dict 的键集」而不是键存在性:check_verdicts 对非
+        # dict 条目静默 continue(周报侧基准货币在 rates 里本就没条目,那是
+        # 必需的),用 set(events) 会让「条目在、但是 null/字符串/列表」
+        # 原样静默通过 —— 与「条目缺失」同因同果,必须同判
+        for c in sorted(covered - present):
             v.append("VERDICT_ENTRY_MISSING: derived.events 缺少 %s 的条目;"
                      "该币种的结论句一条都未校验" % c)
     found, skipped = check_verdicts(report, events,
                                     VERDICT_FIELD_DAILY, covered,
                                     required=ver_ok, label="derived.events")
     v.extend(found)
+    checked = {c for c in covered
+               if isinstance(events, dict) and isinstance(events.get(c), dict)}
     if skipped and notes is not None:
-        notes.append("VERDICT_SKIPPED_LEGACY: %d 个币种因快照 schema 过旧"
-                     "(derived.schema_version=%r)未校验结论句" % (skipped, ver))
+        notes.append("VERDICT_SKIPPED_LEGACY: %d/%d 个覆盖币种因快照 schema 过旧"
+                     "(derived.schema_version=%r)未校验结论句"
+                     % (skipped, len(covered), ver))
+    elif (has_derived and not ver_ok and covered and not checked
+            and notes is not None):
+        # schema 旧、且连一个可查条目都没有:skipped 恒为 0,上一条不会触发。
+        # 不补这一档,「derived 在但空」会退回裸 CHECK PASSED、零声明 ——
+        # 与 ③ 档要消灭的形态一字不差,只是分支不同
+        notes.append("VERDICT_SKIPPED_LEGACY: %d/%d 个覆盖币种因快照 schema 过旧"
+                     "(derived.schema_version=%r)未校验结论句"
+                     % (len(covered), len(covered), ver))
 
     allowed = numbers_in(snapshot_text) | numbers_in(brief_text) | ALLOWED_SMALL
     for n in sorted(numbers_in(report) - allowed):
