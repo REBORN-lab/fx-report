@@ -124,21 +124,21 @@ class WeeklyRoutesThroughJoinVerdictTest(unittest.TestCase):
              "malformed": 0}
 
     def test_verdict_uses_join_verdict(self):
-        with mock.patch.object(wd, "join_verdict", return_value="SENTINEL") as m:
+        with mock.patch.object(wd, "join_verdict", autospec=True,
+                               return_value="SENTINEL") as m:
             got = wd._verdict(dict(self.STATS), 5, 0, "事件")
         self.assertEqual(got, "SENTINEL")
-        m.assert_called_once()
-        self.assertEqual(m.call_args[0][0], "区间内至少 3 条")
-        self.assertEqual(m.call_args[0][1], ["3/5 天未采到"])
+        m.assert_called_once_with("区间内至少 3 条", ["3/5 天未采到"])
 
     def test_fixings_verdict_uses_join_verdict(self):
-        with mock.patch.object(wd, "join_verdict", return_value="SENTINEL") as m:
+        with mock.patch.object(wd, "join_verdict", autospec=True,
+                               return_value="SENTINEL") as m:
             got = wd._fixings_verdict(3, 2, None, None, 0, 5, 0)
         self.assertEqual(got,
                          "SENTINEL;周区间是这些价位的高低,不是区间内的真实极值")
-        self.assertEqual(m.call_args[0][0],
-                         "区间内观测到 3 个不同价位,实际定盘次数只多不少")
-        self.assertEqual(m.call_args[0][1], ["2 次观测的定盘日未记录"])
+        m.assert_called_once_with(
+            "区间内观测到 3 个不同价位,实际定盘次数只多不少",
+            ["2 次观测的定盘日未记录"])
 
 
 class RefactorIsByteIdenticalTest(unittest.TestCase):

@@ -476,6 +476,7 @@ def _verdict(stats, window_days, skipped, unit):
     if stats["in_window"]:
         head = "区间内至少 %d 条" % stats["in_window"]
         return join_verdict(head, caveats)
+    # 下面两条不是 head(caveats) 形态:caveat 嵌在句中/纯字面量,套拼装口会改输出
     if caveats:
         return "区间内未见%s,但 %s,有无%s无法判定" % (unit, "、".join(caveats), unit)
     return "区间内确实 0 条(全区间采集完整、无截断、时间戳均可解析)"
