@@ -709,6 +709,12 @@ class EventsVerdictTest(unittest.TestCase):
                             "count_at_cap": False})
         self.assertNotIn("()", got["events_verdict"])
 
+    def test_cap_phrase_rejects_bool(self):
+        """True 是 int 的子类:不挡住会印出「(1 条)」。仓库纪律的执行点,
+        production 不可达但必须有名字——两名审查者各自独立复现过这条幸存变异。"""
+        self.assertEqual(derive._daily_cap_phrase(True), "(上限不可知)")
+        self.assertEqual(derive._daily_cap_phrase(False), "(上限不可知)")
+
     def test_empty_events_derived_carries_the_key(self):
         """四处同步(derive / EMPTY_EVENTS_DERIVED / SKILL / 校验器)少一处即
         漂移。键集断言只保证两侧一致,这条另外保证不是两侧一起被删掉。"""

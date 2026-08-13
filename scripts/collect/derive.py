@@ -54,7 +54,7 @@ def _entry_of(snap, currency):
 def _event_entry_of(snap, currency):
     """该币种的**事件**条目。与 _entry_of 分开:后者读 rates,名字相近而定义域
     不同 —— 拿它去取 gnews_filter 会静默返回 None(即"不知道"),把已知的截断
-    读成未观测。三处调用共用这一份,避免复制粘贴查找逻辑后各自漂移。"""
+    读成未观测。六处调用共用这一份,避免复制粘贴查找逻辑后各自漂移。"""
     events = snap.get("events") if isinstance(snap, dict) else None
     entry = events.get(currency) if isinstance(events, dict) else None
     return entry if isinstance(entry, dict) else None
@@ -234,9 +234,13 @@ def _main_sample_capped(snap, currency):
     return flag if isinstance(flag, bool) else None
 
 
-def _cap_phrase(cap):
-    """上限的中文括注。上限不可知时**不给数值** —— 直接插值会把字面量 None
-    印进中文结论句(周报侧的 _cap_phrase 因同一原因存在)。"""
+def _daily_cap_phrase(cap):
+    """单日上限的中文括注。**不要与 weekly_digest._cap_phrase 合并**:那条的
+    fallback 说的是"区间内上限不唯一",这条说的是"这一天的上限没记下来"——
+    两个不同事实,不是同一句话的两种措辞。共用的只有 verdicts.join_verdict。
+
+    上限不可知时**不给数值** —— 直接插值会把字面量 None 印进中文结论句。
+    """
     if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
         return "(%d 条)" % cap
     return "(上限不可知)"
@@ -261,7 +265,7 @@ def _events_verdict(count, count_capped, sample_capped, channel_changed_from,
         head = "当日采到 %d 条" % count
     caveats = []
     if count_capped is True:
-        caveats.append("已顶到当日采集上限%s,实际篇数只多不少" % _cap_phrase(cap))
+        caveats.append("已顶到当日采集上限%s,实际篇数只多不少" % _daily_cap_phrase(cap))
     if sample_capped is True:
         # 与上一条分开:触顶的是**滤除前**的原始样本,落盘条数可能离上限还差
         # 得远(实测 raw=100 而 count=11)。合并会把"事件面确实持平"写成假象
@@ -327,8 +331,10 @@ def _events_derived(payload, history, gaps):
                 # 报告唯一可以用来陈述"有没有、有几条"的字段:脚本已把上限
                 # 触顶、样本触顶、通道更换、不可识别条数折进结论,日报逐字
                 # 整句引用即可,禁止自行按布尔拼话术
-                "events_verdict": _events_verdict(count, capped, sampled,
-                                                  changed_from, dropped, cap),
+                "events_verdict": _events_verdict(
+                    count, count_capped=capped, sample_capped=sampled,
+                    channel_changed_from=changed_from, dropped_malformed=dropped,
+                    cap=cap),
             }
         except Exception as e:
             out[currency] = dict(EMPTY_EVENTS_DERIVED)
