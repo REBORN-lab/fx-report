@@ -31,6 +31,13 @@ def block(text, start_re):
     return "".join(m.group(0).split()) if m else None
 
 
+def sentences(flat_text):
+    """按句号切句。**这里不能用空行切段**:禁令那句与曾经教着按布尔拼话术的
+    那句同处一个 markdown 列表项(- 派生指标:)之内,中间一个空行都没有,
+    按空行切会把两者判成同一段,于是"提及落在哪儿"永远为真。"""
+    return [s for s in flat_text.split("。") if s]
+
+
 class DailySkillTest(unittest.TestCase):
     def test_points_at_the_verdict_field(self):
         t = flat(DAILY)
@@ -53,18 +60,26 @@ class DailySkillTest(unittest.TestCase):
                        "该币种条目取自被截断的样本,任何条数都是下界"):
             self.assertNotIn(phrase, t, phrase)
 
-    def test_count_capped_is_named_only_by_the_ban(self):
+    def test_every_mention_of_count_capped_sits_inside_a_ban(self):
         """一边禁止据 `count_capped` 拼话术、一边教着按 `count_capped` 拼话术,
-        两句字面冲突,而"哪一句算数"无处可判。堵法:这个布尔在全文只准出现在
-        禁令那一处。
+        两句字面冲突,而"哪一句算数"无处可判。
+
+        判据是**每一处提及所在的那一句都得是禁令**,不是"全文只准出现 1 次"。
+        计数式断言脆:将来正当地再提一次(比如新增一条禁令)它就红,而最省事
+        的"修法"是把断言改松 —— 靠放宽断言消除红是本仓库明令禁止的。句子级
+        判定则相反:新增正当禁令自然通过,把判定话术写回模板段必红。
 
         第二条断言防的是相反的过头修法 —— 直接删掉冲突句会留下真实缺口:
         `count_delta` 仍可引用,而 `events_verdict` 的 caveat 并没有说"delta 为 0
         是上限造成的",LLM 于是可以合法引用 delta=0 并自行解读成"持平"。
         替代规则必须还在,只是不再依赖布尔字段。"""
         t = flat(DAILY)
-        self.assertEqual(t.count("count_capped"), 1,
-                         "count_capped 只应出现在「禁止据布尔拼话术」那一处")
+        hits = [s for s in sentences(t) if "count_capped" in s]
+        self.assertTrue(hits, "count_capped 一次都没提到 —— 禁令本身丢了?")
+        for s in hits:
+            self.assertTrue(
+                "禁止" in s and "拼装" in s,
+                "这一处提及不是禁止拼装、而是在教着按布尔拼话术:%s" % s)
         self.assertIn("与前值持平", t, "堵 delta=0 → 持平 的规则不能被一删了之")
 
     def test_states_the_exact_substring_rule(self):
@@ -94,6 +109,24 @@ class DailySkillTest(unittest.TestCase):
 class LegacyCodeDispositionTest(unittest.TestCase):
     """降级码的处置必须是仓库里跑得动的动作。写一条没有入口的指令,运维照做
     时只会退回"随便跑点什么",比不写更坏。"""
+
+    def test_no_derived_disposition_splits_the_two_cases(self):
+        """`VERDICT_SKIPPED_NO_DERIVED` 只有"重跑第 1 步采集"这一支处置,而它
+        只对采集窗口还覆盖 DATE 的快照成立。对 data/2026-08-07..10 那 4 份
+        (窗口已移过),重跑拿到的不是当日那批条目 —— 与 VERDICT_SKIPPED_LEGACY
+        被否掉"重新派生"的理由一模一样。
+
+        这条缝是本轮自己开的:禁令 9 的豁免口已点名该码是合法跳过档、无句可引,
+        处置表却仍叫人去重跑采集。同一份文档一处说"不必补救"、一处说"重跑",
+        「哪一句算数」无处可判 —— 正是本 change 要消灭的形态。
+        两支都必须在,且判别标准要可执行(采集窗口是否还覆盖该日)。"""
+        seg = block(raw(DAILY),
+                    r"(?m)^- `VERDICT_SKIPPED_NO_DERIVED`.*?(?=\n\n|\n- `|\Z)")
+        self.assertIsNotNone(seg, "没摘到 VERDICT_SKIPPED_NO_DERIVED 的处置段")
+        self.assertIn("重跑", seg, "窗口仍覆盖 DATE 的那一支要保留重跑采集")
+        self.assertIn("采集窗口", seg, "缺可执行的判别标准,读者判不出自己属哪支")
+        self.assertIn("存量快照", seg, "缺窗口已移过 DATE 的那一支")
+        self.assertIn("禁止自行补造", seg, "存量那一支没堵住「自己编一句」")
 
     def test_legacy_disposition_names_no_nonexistent_derive_entry(self):
         seg = block(raw(DAILY),
