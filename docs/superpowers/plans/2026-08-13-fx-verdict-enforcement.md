@@ -2119,7 +2119,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Create: `docs/superpowers/evidence/2026-08-13-fx-verdict-mutations.py`
 
-- [ ] **T8 Step 1: 写电池脚本**
+- [x] **T8 Step 1: 写电池脚本**
 
 创建 `docs/superpowers/evidence/2026-08-13-fx-verdict-mutations.py`:
 
@@ -2260,7 +2260,7 @@ if killed != executed:
     raise SystemExit(1)
 ```
 
-- [ ] **T8 Step 2: 跑电池**
+- [x] **T8 Step 2: 跑电池**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -2272,7 +2272,7 @@ Expected: 先打印 `BASELINE OK — Ran NNN tests in ...`,再 10 行 `KILLED`,�
 **任何一条 SURVIVED 都必须补测试,不得放过** —— 存活即该分支没被测住。补完测试重跑,直到三个数相等。
 **任何一条 STALE** 说明靶点原文与实现不一致:核对 Task 3/4/6 的实现是否逐字照抄了本计划的代码块,或按实际源码重写靶点原文;**不得**把 STALE 当成跳过。
 
-- [ ] **T8 Step 3: 确认没有豁免开关**
+- [x] **T8 Step 3: 确认没有豁免开关**
 
 ```bash
 grep -ni "legacy\|exempt\|skip.*verdict\|--no-" scripts/check_report.py || echo "无豁免开关"
@@ -2297,7 +2297,7 @@ Expected(实测更正):`-ni` 命中四处,全是**声明**不是开关 —— do
 故 T8 修复轮已把冻结改为断言 **argparse 注册表**;CLI 开关集合仍为
 `{--help, --brief, --mode, --strict-brief, --digest, --daily}`,但现在钉的是注册表而非帮助文本。
 
-- [ ] **T8 Step 4: 全量回归**
+- [x] **T8 Step 4: 全量回归**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -2306,7 +2306,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`(**实跑数字为准,不要预填**)。
 
-- [ ] **T8 Step 5: 勾选并提交**
+- [x] **T8 Step 5: 勾选并提交**
 
 把 tasks.md 的 `4.2`、`5.1`、`5.2` 改成 `- [x]`,逐条验证后:
 
