@@ -16,7 +16,7 @@ verification_report: docs/superpowers/reports/2026-08-13-fx-gnews-event-channel-
 branch_status: handled
 created_at: 2026-08-12
 verified_at: 2026-08-13
-archived: false
+archived: true
 handoff_context: openspec/changes/fx-gnews-event-channel/.super-coding/handoff/design-context.json
 handoff_hash: 9ce9c9946ee1919f20e1af0d4321ddabb45fc9f1d360698a525fa30ff68cb026
 bound_branch: feature/20260812/fx-gnews-event-channel

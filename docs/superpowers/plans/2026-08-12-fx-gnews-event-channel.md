@@ -2,6 +2,7 @@
 change: fx-gnews-event-channel
 design-doc: docs/superpowers/specs/2026-08-12-fx-gnews-event-channel-design.md
 base-ref: 5e1bba91b507fc6b1182ed44f14053e8e55b7ff2
+archived-with: 2026-08-13-fx-gnews-event-channel
 ---
 
 # Google News 事件主通道 Implementation Plan

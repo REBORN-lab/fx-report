@@ -2,6 +2,8 @@
 super_coding_change: fx-gnews-event-channel
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-08-13-fx-gnews-event-channel
+status: final
 ---
 
 # 技术设计:Google News 事件主通道 + 域名白名单闸门
