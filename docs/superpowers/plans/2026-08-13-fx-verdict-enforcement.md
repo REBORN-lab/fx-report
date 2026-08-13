@@ -2275,12 +2275,27 @@ Expected: 先打印 `BASELINE OK — Ran NNN tests in ...`,再 10 行 `KILLED`,�
 - [ ] **T8 Step 3: 确认没有豁免开关**
 
 ```bash
-grep -n "legacy\|exempt\|skip.*verdict\|--no-" scripts/check_report.py || echo "无豁免开关"
+grep -ni "legacy\|exempt\|skip.*verdict\|--no-" scripts/check_report.py || echo "无豁免开关"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
   tests.test_check_report.NoLegacyExemptionSwitchTest -v
 ```
 
-Expected: 第一条只命中 `VERDICT_SKIPPED_LEGACY`(那是**声明**不是开关);第二条 `OK`。CLI 开关集合被 `NoLegacyExemptionSwitchTest` 冻结在 `{--help, --brief, --mode, --strict-brief, --digest, --daily}`。
+**`-i` 是 T8 实测后补上的,原文写的是 `-n`,而那条命令从来没验过它声称要验的东西**:
+模式里的 `legacy` 是小写、常量是大写 `VERDICT_SKIPPED_LEGACY`,grep 默认大小写敏感,
+**一次都没命中**;唯一的命中是 `skip.*verdict` 撞上第 252 行的 `skipped … check_verdicts`
+(一个局部变量,与豁免开关无关)。原 Expected 描述的现象**不存在**。同型第 N 次:
+命令打印了东西,但打印的不是它声称在查的东西。
+
+Expected(实测更正):`-ni` 命中四处,全是**声明**不是开关 —— docstring 一处、
+`notes.append("VERDICT_SKIPPED_LEGACY: ...")` 两处,加上第 252 行那个局部变量;
+第二条 `OK`。
+
+**但这两条命令都不足以支撑 4.2。** T8 审查实测:注入
+`ap.add_argument("--tolerant", action="store_true", help=argparse.SUPPRESS)` 加一段
+抹掉 `VERDICT_*` 违规的逻辑后,**全量测试全绿、冻结用例通过、上面这条 grep 也通过** ——
+因为 argparse 对 `help=SUPPRESS` 的选项根本不打印,而冻结用例取的是 `--help` 的 stdout。
+故 T8 修复轮已把冻结改为断言 **argparse 注册表**;CLI 开关集合仍为
+`{--help, --brief, --mode, --strict-brief, --digest, --daily}`,但现在钉的是注册表而非帮助文本。
 
 - [ ] **T8 Step 4: 全量回归**
 
