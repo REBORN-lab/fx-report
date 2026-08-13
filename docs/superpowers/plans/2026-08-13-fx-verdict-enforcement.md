@@ -762,6 +762,32 @@ class WeeklyVerdictQuotingTest(unittest.TestCase):
         self.assertFalse([x for x in v if "verdict_details" in x
                           or "digest.verdicts" in x], v)
 
+    def test_violation_carries_the_source_label(self):
+        """label 是三个调用点唯一的区分手段(digest.events / digest.rates /
+        derived.events)。抹掉它,三类违规就分不出来源,而其余断言只看
+        字段名与币种名,照样全绿 —— 代码质量审查实测该变异存活。"""
+        bad = WEEKLY_OK.replace(ART_PHP, "改写过").replace(FIX_PHP, "也改写过")
+        v = self._run(bad)
+        self.assertTrue(any("digest.events.PHP" in x for x in v), v)
+        self.assertTrue(any("digest.rates.PHP" in x for x in v), v)
+
+    def test_missing_container_fails_loudly(self):
+        """产出端坏掉时,校验器 MUST NOT 打印通过却一条都没查。
+        谓词对非 dict 容器静默返回空(不越权判结构),兜底在调用点。"""
+        for bad in (None, [], "x", 7):
+            obj = json.loads(DIGEST)
+            obj["events"] = bad
+            v = self._run(WEEKLY_OK, obj)
+            self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+                                and "digest.events" in x for x in v), (bad, v))
+
+    def test_missing_container_key_fails_loudly(self):
+        obj = json.loads(DIGEST)
+        del obj["rates"]
+        v = self._run(WEEKLY_OK, obj)
+        self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+                            and "digest.rates" in x for x in v), v)
+
 
 class NoLegacyExemptionSwitchTest(unittest.TestCase):
     """豁免机制本身会成为下一个绕过点(Design Doc §6)。校验器的 CLI 开关
@@ -832,8 +858,17 @@ Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caug
         for container, fields, label in (
                 (digest.get("events"), VERDICT_FIELDS_EVENTS, "digest.events"),
                 (digest.get("rates"), VERDICT_FIELDS_RATES, "digest.rates")):
+            if not isinstance(container, dict):
+                # check_verdicts 对非 dict 容器静默返回空 —— 谓词不越权判结构。
+                # 但**没有别处兜底**:main 只校验 week 与 generated_from,
+                # 容器坏掉时会打印 CHECK PASSED 而一条结论句都没查,正是本
+                # change 要消灭的形态。响亮失败在这里。
+                v.append("DIGEST_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
+                         "(实为 %s),该类结论句一条都未校验"
+                         % (label, type(container).__name__))
+                continue
             found, _ = check_verdicts(report, container, fields, covered,
-                                      True, label)
+                                      required=True, label=label)
             v.extend(found)
     return v
 ```

@@ -30,6 +30,26 @@
 - GREEN 证据: (待)
 - 未解决反馈: 见下方「已决定的处置」(M2 挂 T5)
 
+### 必须带进后续任务的三条(实测得来)
+
+1. **T8 电池的 kill 判定必须用进程返回码,不能 grep `"FAILED"`** ——
+   `tests/test_check_report.py` 自身会向 stdout 打印 `CHECK FAILED (1):`,
+   grep 会被污染。T3 审查者的第一版脚本就中招,改用 rc 才修正
+2. **变异锚点必须先验唯一**(`grep -c -F`)。`for c in CURRENCIES:` 在
+   `check_report.py` 出现 **4 次**,单行锚点不生效且**静默**,跑出的绿是对
+   未变异代码跑的。T3 implementer 与审查者各自独立踩到并自曝
+3. **代码块里的括号一律 ASCII `(` `)`,顿号才是全角 `、`**。派发时不要写
+   「全角括号」——已实测:计划 T3 区段 ASCII 括号 145/143 个、全角 0 个;
+   真实 digest 结论句同理。写错会让 T4/T6 逐字比对全线失败
+
+### T3 审查留给 T4/T6 的两条 Minor(T3 不返工)
+
+- **`label` 无测试钉住**:去掉违规信息里的 `%s.%s` 来源前缀,66 个测试全绿
+  (变异 M11 存活)。T6 会有三个 label(`digest.events` / `digest.rates` /
+  `derived.events`)靠它区分来源,**在 T4/T6 的测试里补一条 label 断言**
+- `if s not in report:` 放宽成 `s.strip() not in report` 存活(M12)。
+  `join_verdict` 产出的句子首尾从无空白,可达输入域上近似等价变异,风险极低
+
 ### 已决定的处置
 
 - **M2 分隔符收口挂到 T5**:`_verdict:480` 仍自写 `"、".join(caveats)`,顿号
