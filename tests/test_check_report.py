@@ -444,7 +444,8 @@ class WeeklyGapOmittedTest(unittest.TestCase):
     """I9 收口检查此前零测试(变异存活):digest 的每个缺漏源须在缺漏汇总出现。"""
 
     DIGEST_OBJ = {"week": "2026-W33", "generated_from": ["2026-08-10"],
-                  "gaps_by_source": {"gdelt": 18, "dbnomics": 3}}
+                  "gaps_by_source": {"gdelt": 18, "dbnomics": 3},
+                  "events": {}, "rates": {}}
 
     def _weekly(self, gap_body):
         return WEEKLY_OK.replace("## 缺漏汇总\n- 无\n", "## 缺漏汇总\n" + gap_body)
@@ -458,6 +459,7 @@ class WeeklyGapOmittedTest(unittest.TestCase):
         report = self._weekly("- [gdelt] 限流\n- [dbnomics] 超时\n")
         v = check_report.check_weekly(report, DIGEST, (), self.DIGEST_OBJ)
         self.assertFalse([x for x in v if "GAP_OMITTED" in x], v)
+        self.assertEqual(v, [])
 
     def test_without_digest_object_no_gap_check(self):
         report = self._weekly("- [gdelt] 限流\n")
@@ -740,14 +742,14 @@ class WeeklyVerdictQuotingTest(unittest.TestCase):
             obj = json.loads(DIGEST)
             obj["events"] = bad
             v = self._run(WEEKLY_OK, obj)
-            self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+            self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x
                                 and "digest.events" in x for x in v), (bad, v))
 
     def test_missing_container_key_fails_loudly(self):
         obj = json.loads(DIGEST)
         del obj["rates"]
         v = self._run(WEEKLY_OK, obj)
-        self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+        self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x
                             and "digest.rates" in x for x in v), v)
 
 

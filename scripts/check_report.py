@@ -93,7 +93,7 @@ def check_verdicts(report, container, fields, covered, required, label):
     container : {币种: {字段: 句子}};非 dict 一律返回空结果 —— 谓词不判结构。
                 **注意目前没有别处兜底**:容器缺失/类型错时本检查静默失效,
                 调用方必须自己确认容器存在(T4 已在 check_weekly 加 isinstance
-                门并出 DIGEST_CONTAINER_MALFORMED)
+                门并出 VERDICT_CONTAINER_MALFORMED)
     fields    : 要检查的字段名元组(显式枚举,不按名字模式扫)
     covered   : 报告已覆盖的币种集合;不在其中者跳过,由 SECTION_MISSING /
                 CURRENCY_MISSING 单独报告 —— 同一处缺失不得产生两条违规
@@ -313,8 +313,13 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None):
         v.append("COVERAGE_MISSING: 缺少「覆盖日报:N 份」声明")
     elif int(m.group(1)) < 3 and "缺失日期" not in report:
         v.append("COVERAGE_GAP_DATES: 覆盖不足 3 份但未注明缺失日期")
+    covered = set()
     for c in CURRENCIES:
-        if c not in report:
+        if c in report:
+            covered.add(c)
+        else:
+            # covered 与 CURRENCY_MISSING 必须互为补集 —— T3 的「让位 ①」
+            # 依赖这一点。建在同一个循环里,物理上保证两者一起改
             v.append("CURRENCY_MISSING: 周报未覆盖 %s" % c)
     rs = find_section(secs, "复盘汇总")
     if rs:
@@ -341,7 +346,6 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None):
         # 取不到结论句不等于漏写,不得报 VERDICT_ABSENT。
         # 聚合器的 _rates_digest / _events_one 对每个落盘的币种条目都必写这些
         # 字段,故 required=True:缺失即脚本缺陷。
-        covered = {c for c in CURRENCIES if c in report}
         for container, fields, label in (
                 (digest.get("events"), VERDICT_FIELDS_EVENTS, "digest.events"),
                 (digest.get("rates"), VERDICT_FIELDS_RATES, "digest.rates")):
@@ -350,9 +354,9 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None):
                 # 但**没有别处兜底**:main 只校验 week 与 generated_from,
                 # 容器坏掉时会打印 CHECK PASSED 而一条结论句都没查,正是本
                 # change 要消灭的形态。响亮失败在这里。
-                v.append("DIGEST_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
-                         "(实为 %s),该类结论句一条都未校验"
-                         % (label, type(container).__name__))
+                v.append("VERDICT_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
+                         "(实为 %s),%s 下的结论句一条都未校验"
+                         % (label, type(container).__name__, label))
                 continue
             found, _ = check_verdicts(report, container, fields, covered,
                                       required=True, label=label)
