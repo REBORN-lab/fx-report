@@ -60,26 +60,38 @@ class DailySkillTest(unittest.TestCase):
                        "该币种条目取自被截断的样本,任何条数都是下界"):
             self.assertNotIn(phrase, t, phrase)
 
-    def test_every_mention_of_count_capped_sits_inside_a_ban(self):
-        """一边禁止据 `count_capped` 拼话术、一边教着按 `count_capped` 拼话术,
-        两句字面冲突,而"哪一句算数"无处可判。
+    # 禁令那句点名的五个布尔。**五个都要守**:只守 count_capped 时,谁把
+    # "`channel_changed_from` 非 null 时改写为……"这类模板句写回去,全绿照过 ——
+    # 「当前状态干净」不等于「有东西在守着它」,这正是本 change 被单列四次的
+    # 「修复本身零覆盖」同型。
+    # 注意 sample_capped 是 main_sample_capped 的子串,后者的提及会被前者一并
+    # 捞到;对"是不是禁令"的判定无害(两个都在禁令里),只是让"提到过没有"
+    # 这半条断言对 sample_capped 略松。
+    BANNED_BOOLEANS = ("count_capped", "sample_capped", "main_sample_capped",
+                       "channel_changed_from", "dropped_malformed")
 
-        判据是**每一处提及所在的那一句都得是禁令**,不是"全文只准出现 1 次"。
+    def test_every_mention_of_a_banned_boolean_sits_inside_a_ban(self):
+        """一边禁止据这些布尔拼话术、一边教着按它们拼话术,两句字面冲突,
+        而"哪一句算数"无处可判。
+
+        判据是**每一处提及所在的那一句都得是禁令**,不是"全文只准出现 N 次"。
         计数式断言脆:将来正当地再提一次(比如新增一条禁令)它就红,而最省事
         的"修法"是把断言改松 —— 靠放宽断言消除红是本仓库明令禁止的。句子级
         判定则相反:新增正当禁令自然通过,把判定话术写回模板段必红。
 
-        第二条断言防的是相反的过头修法 —— 直接删掉冲突句会留下真实缺口:
+        最后一条断言防的是相反的过头修法 —— 直接删掉冲突句会留下真实缺口:
         `count_delta` 仍可引用,而 `events_verdict` 的 caveat 并没有说"delta 为 0
         是上限造成的",LLM 于是可以合法引用 delta=0 并自行解读成"持平"。
         替代规则必须还在,只是不再依赖布尔字段。"""
         t = flat(DAILY)
-        hits = [s for s in sentences(t) if "count_capped" in s]
-        self.assertTrue(hits, "count_capped 一次都没提到 —— 禁令本身丢了?")
-        for s in hits:
-            self.assertTrue(
-                "禁止" in s and "拼装" in s,
-                "这一处提及不是禁止拼装、而是在教着按布尔拼话术:%s" % s)
+        for field in self.BANNED_BOOLEANS:
+            hits = [s for s in sentences(t) if field in s]
+            self.assertTrue(hits, "%s 一次都没提到 —— 禁令本身丢了?" % field)
+            for s in hits:
+                self.assertTrue(
+                    "禁止" in s and "拼装" in s,
+                    "%s 的这一处提及不是禁止拼装、而是在教着按布尔拼话术:%s"
+                    % (field, s))
         self.assertIn("与前值持平", t, "堵 delta=0 → 持平 的规则不能被一删了之")
 
     def test_states_the_exact_substring_rule(self):
