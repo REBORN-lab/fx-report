@@ -5,82 +5,91 @@
     "2026-08-08",
     "2026-08-09",
     "2026-08-10",
-    "2026-08-11"
+    "2026-08-11",
+    "2026-08-12"
   ],
   "skipped": 0,
   "rates": {
     "EUR": {
-      "chg_pct_week": -0.173,
+      "chg_pct_week": -0.044,
       "range_low": 0.86543,
       "range_high": 0.86693,
-      "fixings": 2,
+      "fixings": 3,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10",
-      "days_observed": 5,
-      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
+      "last_ref_date": "2026-08-11",
+      "days_observed": 6,
+      "fixings_verdict": "区间内观测到 3 个不同价位,实际定盘次数只多不少(2 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     },
     "PHP": {
-      "chg_pct_week": -0.192,
+      "chg_pct_week": 0.511,
       "range_low": 60.75,
-      "range_high": 60.867,
-      "fixings": 2,
+      "range_high": 61.178,
+      "fixings": 3,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10",
-      "days_observed": 5,
-      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
+      "last_ref_date": "2026-08-11",
+      "days_observed": 6,
+      "fixings_verdict": "区间内观测到 3 个不同价位,实际定盘次数只多不少(2 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     },
     "THB": {
-      "chg_pct_week": -0.127,
+      "chg_pct_week": 0.151,
       "range_low": 33.013,
-      "range_high": 33.055,
-      "fixings": 2,
+      "range_high": 33.105,
+      "fixings": 3,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10",
-      "days_observed": 5,
-      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
+      "last_ref_date": "2026-08-11",
+      "days_observed": 6,
+      "fixings_verdict": "区间内观测到 3 个不同价位,实际定盘次数只多不少(2 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     },
     "BRL": {
-      "chg_pct_week": -0.278,
+      "chg_pct_week": 0.1,
       "range_low": 5.0856,
-      "range_high": 5.0998,
-      "fixings": 2,
+      "range_high": 5.1049,
+      "fixings": 3,
       "first_ref_date": null,
-      "last_ref_date": "2026-08-10",
-      "days_observed": 5,
-      "fixings_verdict": "区间内观测到 2 个不同价位,实际定盘次数只多不少(1 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
+      "last_ref_date": "2026-08-11",
+      "days_observed": 6,
+      "fixings_verdict": "区间内观测到 3 个不同价位,实际定盘次数只多不少(2 次观测的定盘日未记录);周区间是这些价位的高低,不是区间内的真实极值"
     }
   },
   "window_from": "2026-08-07",
-  "window_to": "2026-08-11",
+  "window_to": "2026-08-12",
   "events": {
     "USD": {
-      "articles_verdict": "区间内至少 15 条(3/5 天未采到、2 天顶到每日上限 8 条)",
-      "official_verdict": "区间内未见公告,但 4/5 天未采到、1 天顶到每日上限 3 条,有无公告无法判定",
+      "articles_verdict": "区间内至少 26 条(3/6 天未采到、2 天顶到当日采集上限(区间内上限随通道不同,不给单值)、1 天源返回的原始样本顶到其上限(99 条),滤除后的条数是下界、1 天主通道抓到共 89 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "official_verdict": "区间内未见公告,但 4/6 天未采到、2 天顶到当日采集上限(3 条)、另有 3 条发布于区间外,有无公告无法判定",
       "fallback_days": 0,
-      "articles_sampled": 16,
-      "articles_distinct": 15,
+      "articles_sampled": 27,
+      "articles_distinct": 26,
       "articles_dup_dropped": 1,
-      "articles_in_window": 15,
+      "articles_in_window": 26,
       "articles_outside_window": 0,
       "articles_undated": 0,
       "articles_capped_days": 2,
-      "articles_daily_cap": 8,
-      "articles_cap_assumed_days": 2,
-      "days_with_data": 2,
+      "articles_daily_cap": null,
+      "articles_cap_assumed_days": 1,
+      "articles_sample_capped_days": 1,
+      "articles_sample_daily_cap": 99,
+      "articles_sample_cap_assumed_days": 0,
+      "articles_malformed_dropped": 0,
+      "articles_malformed_items": 0,
+      "articles_filtered_days": 1,
+      "articles_filtered_items": 89,
+      "articles_filtered_blank_days": 0,
+      "days_with_data": 3,
       "days_gdelt_failed": 3,
-      "official_sampled": 3,
+      "official_sampled": 6,
       "official_distinct": 3,
-      "official_dup_dropped": 0,
+      "official_dup_dropped": 3,
       "official_in_window": 0,
       "official_outside_window": 3,
       "official_undated": 0,
-      "official_capped_days": 1,
+      "official_capped_days": 2,
       "official_daily_cap": 3,
-      "official_cap_assumed_days": 1,
-      "days_official_collected": 1,
-      "days_with_official": 1,
-      "days": 5,
-      "snapshots_loaded": 5,
+      "official_cap_assumed_days": 0,
+      "days_official_collected": 2,
+      "days_with_official": 2,
+      "days": 6,
+      "snapshots_loaded": 6,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
@@ -103,7 +112,7 @@
           "articles_sampled": 8,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 3,
+          "articles_seen": 1,
           "official_published": 0
         },
         "2026-08-10": {
@@ -111,7 +120,7 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 4,
+          "articles_seen": 9,
           "official_published": 0
         },
         "2026-08-11": {
@@ -119,39 +128,55 @@
           "articles_sampled": 8,
           "official_collected": true,
           "official_sampled": 3,
-          "articles_seen": 1,
+          "articles_seen": 7,
+          "official_published": 0
+        },
+        "2026-08-12": {
+          "gdelt_collected": true,
+          "articles_sampled": 11,
+          "official_collected": true,
+          "official_sampled": 3,
+          "articles_seen": 2,
           "official_published": 0
         }
       }
     },
     "EUR": {
-      "articles_verdict": "区间内至少 20 条(2/5 天未采到、3 天顶到每日上限 8 条)",
-      "official_verdict": "区间内至少 1 条(4/5 天未采到、1 天顶到每日上限 3 条)",
-      "fallback_days": 0,
-      "articles_sampled": 24,
-      "articles_distinct": 20,
-      "articles_dup_dropped": 4,
-      "articles_in_window": 20,
+      "articles_verdict": "区间内至少 17 条(3/6 天未采到、2 天顶到当日采集上限(区间内上限随通道不同,不给单值)、1 天主通道抓到共 37 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "official_verdict": "区间内至少 2 条(4/6 天未采到、2 天顶到当日采集上限(3 条)、另有 1 条发布于区间外)",
+      "fallback_days": 1,
+      "articles_sampled": 17,
+      "articles_distinct": 17,
+      "articles_dup_dropped": 0,
+      "articles_in_window": 17,
       "articles_outside_window": 0,
       "articles_undated": 0,
-      "articles_capped_days": 3,
-      "articles_daily_cap": 8,
-      "articles_cap_assumed_days": 3,
+      "articles_capped_days": 2,
+      "articles_daily_cap": null,
+      "articles_cap_assumed_days": 2,
+      "articles_sample_capped_days": 0,
+      "articles_sample_daily_cap": null,
+      "articles_sample_cap_assumed_days": 0,
+      "articles_malformed_dropped": 0,
+      "articles_malformed_items": 0,
+      "articles_filtered_days": 1,
+      "articles_filtered_items": 37,
+      "articles_filtered_blank_days": 0,
       "days_with_data": 3,
-      "days_gdelt_failed": 2,
-      "official_sampled": 3,
+      "days_gdelt_failed": 3,
+      "official_sampled": 6,
       "official_distinct": 3,
-      "official_dup_dropped": 0,
-      "official_in_window": 1,
-      "official_outside_window": 2,
+      "official_dup_dropped": 3,
+      "official_in_window": 2,
+      "official_outside_window": 1,
       "official_undated": 0,
-      "official_capped_days": 1,
+      "official_capped_days": 2,
       "official_daily_cap": 3,
-      "official_cap_assumed_days": 1,
-      "days_official_collected": 1,
-      "days_with_official": 1,
-      "days": 5,
-      "snapshots_loaded": 5,
+      "official_cap_assumed_days": 0,
+      "days_official_collected": 2,
+      "days_with_official": 2,
+      "days": 6,
+      "snapshots_loaded": 6,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
@@ -182,33 +207,49 @@
           "articles_sampled": 8,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 8,
+          "articles_seen": 6,
           "official_published": 0
         },
         "2026-08-11": {
-          "gdelt_collected": true,
-          "articles_sampled": 8,
+          "gdelt_collected": false,
+          "articles_sampled": null,
           "official_collected": true,
           "official_sampled": 3,
-          "articles_seen": 2,
+          "articles_seen": 0,
+          "official_published": 1
+        },
+        "2026-08-12": {
+          "gdelt_collected": true,
+          "articles_sampled": 1,
+          "official_collected": true,
+          "official_sampled": 3,
+          "articles_seen": 1,
           "official_published": 0
         }
       }
     },
     "PHP": {
-      "articles_verdict": "区间内至少 8 条(4/5 天未采到、1 天顶到每日上限 8 条)",
+      "articles_verdict": "区间内至少 20 条(4/6 天未采到、1 天顶到当日采集上限(区间内上限随通道不同,不给单值)、1 天主通道抓到共 21 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
       "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
       "fallback_days": 0,
-      "articles_sampled": 8,
-      "articles_distinct": 8,
+      "articles_sampled": 20,
+      "articles_distinct": 20,
       "articles_dup_dropped": 0,
-      "articles_in_window": 8,
+      "articles_in_window": 20,
       "articles_outside_window": 0,
       "articles_undated": 0,
       "articles_capped_days": 1,
-      "articles_daily_cap": 8,
-      "articles_cap_assumed_days": 1,
-      "days_with_data": 1,
+      "articles_daily_cap": null,
+      "articles_cap_assumed_days": 0,
+      "articles_sample_capped_days": 0,
+      "articles_sample_daily_cap": null,
+      "articles_sample_cap_assumed_days": 0,
+      "articles_malformed_dropped": 0,
+      "articles_malformed_items": 0,
+      "articles_filtered_days": 1,
+      "articles_filtered_items": 21,
+      "articles_filtered_blank_days": 0,
+      "days_with_data": 2,
       "days_gdelt_failed": 4,
       "official_sampled": null,
       "official_distinct": null,
@@ -221,8 +262,8 @@
       "official_cap_assumed_days": 0,
       "days_official_collected": 0,
       "days_with_official": 0,
-      "days": 5,
-      "snapshots_loaded": 5,
+      "days": 6,
+      "snapshots_loaded": 6,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
@@ -245,7 +286,7 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 4,
+          "articles_seen": 2,
           "official_published": null
         },
         "2026-08-10": {
@@ -253,12 +294,20 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": 3,
+          "articles_seen": 11,
           "official_published": null
         },
         "2026-08-11": {
           "gdelt_collected": true,
           "articles_sampled": 8,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 6,
+          "official_published": null
+        },
+        "2026-08-12": {
+          "gdelt_collected": true,
+          "articles_sampled": 12,
           "official_collected": false,
           "official_sampled": null,
           "articles_seen": 1,
@@ -267,90 +316,27 @@
       }
     },
     "THB": {
-      "articles_verdict": "区间内至少 5 条(4/5 天未采到)",
+      "articles_verdict": "区间内至少 7 条(5/6 天未采到、1 天主通道抓到共 22 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
       "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
       "fallback_days": 0,
-      "articles_sampled": 5,
-      "articles_distinct": 5,
+      "articles_sampled": 7,
+      "articles_distinct": 7,
       "articles_dup_dropped": 0,
-      "articles_in_window": 5,
+      "articles_in_window": 7,
       "articles_outside_window": 0,
       "articles_undated": 0,
       "articles_capped_days": 0,
-      "articles_daily_cap": 8,
-      "articles_cap_assumed_days": 1,
-      "days_with_data": 1,
-      "days_gdelt_failed": 4,
-      "official_sampled": null,
-      "official_distinct": null,
-      "official_dup_dropped": null,
-      "official_in_window": null,
-      "official_outside_window": null,
-      "official_undated": null,
-      "official_capped_days": 0,
-      "official_daily_cap": null,
-      "official_cap_assumed_days": 0,
-      "days_official_collected": 0,
-      "days_with_official": 0,
-      "days": 5,
-      "snapshots_loaded": 5,
-      "by_date": {
-        "2026-08-07": {
-          "gdelt_collected": false,
-          "articles_sampled": null,
-          "official_collected": false,
-          "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": null
-        },
-        "2026-08-08": {
-          "gdelt_collected": false,
-          "articles_sampled": null,
-          "official_collected": false,
-          "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": null
-        },
-        "2026-08-09": {
-          "gdelt_collected": false,
-          "articles_sampled": null,
-          "official_collected": false,
-          "official_sampled": null,
-          "articles_seen": 0,
-          "official_published": null
-        },
-        "2026-08-10": {
-          "gdelt_collected": false,
-          "articles_sampled": null,
-          "official_collected": false,
-          "official_sampled": null,
-          "articles_seen": 3,
-          "official_published": null
-        },
-        "2026-08-11": {
-          "gdelt_collected": true,
-          "articles_sampled": 5,
-          "official_collected": false,
-          "official_sampled": null,
-          "articles_seen": 2,
-          "official_published": null
-        }
-      }
-    },
-    "BRL": {
-      "articles_verdict": "未接入或全区间采集失败,有无事件无法判定",
-      "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
-      "fallback_days": 0,
-      "articles_sampled": null,
-      "articles_distinct": null,
-      "articles_dup_dropped": null,
-      "articles_in_window": null,
-      "articles_outside_window": null,
-      "articles_undated": null,
-      "articles_capped_days": 0,
-      "articles_daily_cap": null,
+      "articles_daily_cap": 99,
       "articles_cap_assumed_days": 0,
-      "days_with_data": 0,
+      "articles_sample_capped_days": 0,
+      "articles_sample_daily_cap": null,
+      "articles_sample_cap_assumed_days": 0,
+      "articles_malformed_dropped": 0,
+      "articles_malformed_items": 0,
+      "articles_filtered_days": 1,
+      "articles_filtered_items": 22,
+      "articles_filtered_blank_days": 0,
+      "days_with_data": 1,
       "days_gdelt_failed": 5,
       "official_sampled": null,
       "official_distinct": null,
@@ -363,15 +349,15 @@
       "official_cap_assumed_days": 0,
       "days_official_collected": 0,
       "days_with_official": 0,
-      "days": 5,
-      "snapshots_loaded": 5,
+      "days": 6,
+      "snapshots_loaded": 6,
       "by_date": {
         "2026-08-07": {
           "gdelt_collected": false,
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": null,
+          "articles_seen": 0,
           "official_published": null
         },
         "2026-08-08": {
@@ -379,7 +365,7 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": null,
+          "articles_seen": 0,
           "official_published": null
         },
         "2026-08-09": {
@@ -387,7 +373,7 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": null,
+          "articles_seen": 0,
           "official_published": null
         },
         "2026-08-10": {
@@ -395,7 +381,7 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": null,
+          "articles_seen": 2,
           "official_published": null
         },
         "2026-08-11": {
@@ -403,20 +389,115 @@
           "articles_sampled": null,
           "official_collected": false,
           "official_sampled": null,
-          "articles_seen": null,
+          "articles_seen": 2,
+          "official_published": null
+        },
+        "2026-08-12": {
+          "gdelt_collected": true,
+          "articles_sampled": 7,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 3,
+          "official_published": null
+        }
+      }
+    },
+    "BRL": {
+      "articles_verdict": "区间内至少 5 条(5/6 天未采到、1 天主通道抓到共 29 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
+      "fallback_days": 0,
+      "articles_sampled": 5,
+      "articles_distinct": 5,
+      "articles_dup_dropped": 0,
+      "articles_in_window": 5,
+      "articles_outside_window": 0,
+      "articles_undated": 0,
+      "articles_capped_days": 0,
+      "articles_daily_cap": 99,
+      "articles_cap_assumed_days": 0,
+      "articles_sample_capped_days": 0,
+      "articles_sample_daily_cap": null,
+      "articles_sample_cap_assumed_days": 0,
+      "articles_malformed_dropped": 0,
+      "articles_malformed_items": 0,
+      "articles_filtered_days": 1,
+      "articles_filtered_items": 29,
+      "articles_filtered_blank_days": 0,
+      "days_with_data": 1,
+      "days_gdelt_failed": 5,
+      "official_sampled": null,
+      "official_distinct": null,
+      "official_dup_dropped": null,
+      "official_in_window": null,
+      "official_outside_window": null,
+      "official_undated": null,
+      "official_capped_days": 0,
+      "official_daily_cap": null,
+      "official_cap_assumed_days": 0,
+      "days_official_collected": 0,
+      "days_with_official": 0,
+      "days": 6,
+      "snapshots_loaded": 6,
+      "by_date": {
+        "2026-08-07": {
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": null
+        },
+        "2026-08-08": {
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": null
+        },
+        "2026-08-09": {
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
+          "official_published": null
+        },
+        "2026-08-10": {
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 4,
+          "official_published": null
+        },
+        "2026-08-11": {
+          "gdelt_collected": false,
+          "articles_sampled": null,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 1,
+          "official_published": null
+        },
+        "2026-08-12": {
+          "gdelt_collected": true,
+          "articles_sampled": 5,
+          "official_collected": false,
+          "official_sampled": null,
+          "articles_seen": 0,
           "official_published": null
         }
       }
     }
   },
   "gaps_by_source": {
-    "gdelt": 18,
-    "dbnomics": 3
+    "gdelt": 20,
+    "dbnomics": 2
   },
   "verdicts": {
     "命中": 0,
     "未命中": 0,
-    "无法判定": 15,
+    "无法判定": 20,
     "未判定": 10
   },
   "verdict_details": [
@@ -523,25 +604,50 @@
     {
       "date": "2026-08-11",
       "currency": "BRL",
-      "verdict": "未判定"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-11",
       "currency": "EUR",
-      "verdict": "未判定"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-11",
       "currency": "PHP",
-      "verdict": "未判定"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-11",
       "currency": "THB",
-      "verdict": "未判定"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-11",
+      "currency": "USD",
+      "verdict": "无法判定"
+    },
+    {
+      "date": "2026-08-12",
+      "currency": "BRL",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-12",
+      "currency": "EUR",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-12",
+      "currency": "PHP",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-12",
+      "currency": "THB",
+      "verdict": "未判定"
+    },
+    {
+      "date": "2026-08-12",
       "currency": "USD",
       "verdict": "未判定"
     }

@@ -295,11 +295,27 @@ class RawCountTest(unittest.TestCase):
         with mock.patch.object(events, "_query_with_retry",
                                return_value=(([], 3, 3), None)):
             out, gaps = events.collect(cfg)
-        self.assertEqual(gaps, [])
         entry = out["PHP"]
         self.assertEqual(entry["articles"], [])
         self.assertEqual(entry["articles_raw_count"], 3)
         self.assertEqual(entry["articles_dropped_malformed"], 3)
+        # 一个可用元素都没解析出来 → 必须记 gap:落盘形态与"源确实一条都没索引
+        # 到"完全同形,日报靠 gaps → 缺漏节这条链才知道不能写"事件数 0"
+        self.assertEqual(sorted(g["scope"] for g in gaps),
+                         ["BRL", "EUR", "PHP", "THB", "USD"])
+        self.assertIn("结构不可识别", gaps[0]["reason"])
+
+    def test_partial_malformed_drop_is_not_a_gap(self):
+        """部分丢弃不是采集失败:仍有可用条目时不刷 gap,丢弃量经
+        articles_dropped_malformed → derived.dropped_malformed 供日报引用。"""
+        good = [{"title": "ok", "url": "u", "domain": "reuters.com",
+                 "seendate": "20260811T000000Z"}]
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        with mock.patch.object(events, "_query_with_retry",
+                               return_value=((good, 4, 3), None)):
+            out, gaps = events.collect(cfg)
+        self.assertEqual(gaps, [])
+        self.assertEqual(out["PHP"]["articles_dropped_malformed"], 3)
 
     def test_fetch_counts_malformed_elements_end_to_end(self):
         """经真实 HTTP 路径走一遍:上面那条用例 mock 了 _query_with_retry,
@@ -324,6 +340,31 @@ class RawCountTest(unittest.TestCase):
         entry = events._gnews_entry([{"title": "t"}] * 11, 100, counts)
         self.assertIs(entry["source_capped"], True)    # 滤除前的 100 顶到 99
         self.assertIs(entry["count_at_cap"], False)    # 落盘的 11 条离 99 差 88
+        # 边界:kept 恰好等于上限 → 落盘条数确实被钉住(判据是 >= 不是 >)
+        at = dict(counts, offlist=1, kept=events.GNEWS_SOFT_CAP)
+        self.assertIs(events._gnews_entry([{"title": "t"}], 100, at)["count_at_cap"], True)
+        below = dict(counts, kept=events.GNEWS_SOFT_CAP - 1)
+        self.assertIs(events._gnews_entry([{"title": "t"}], 100, below)["count_at_cap"], False)
+        # raw/kept 未知 → None(不知道 ≠ 知道没触顶)
+        unknown = events._gnews_entry(None, None, None)
+        self.assertIsNone(unknown["count_at_cap"])
+        self.assertIsNone(unknown["source_capped"])
+        self.assertIsNone(unknown["articles_dropped_malformed"])
+        self.assertEqual(events._gnews_entry([], 5, dict(counts, raw=5, kept=0))
+                         ["articles_dropped_malformed"], 0)
+
+    def test_gdelt_branch_lands_count_at_cap(self):
+        """count_at_cap 是 landed_count_capped 的第一权威,GDELT 分支此前零覆盖:
+        改成恒 False 时 536 用例全绿(第五轮 S3)。"""
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        for raw, want in ((events.MAX_RECORDS, True), (3, False)):
+            arts = [{"title": "t%d" % i, "url": "u%d" % i, "domain": "reuters.com",
+                     "seendate": "20260811T000000Z"} for i in range(raw)]
+            with mock.patch.object(events, "_query_with_retry",
+                                   return_value=((arts, raw, 0), None)):
+                out, _ = events.collect(cfg)
+            self.assertIs(out["PHP"]["count_at_cap"], want, raw)
+            self.assertIs(out["PHP"]["source_capped"], want, raw)
 
 class GnewsConfigTest(unittest.TestCase):
     """gnews 需要端点与白名单两者都配齐才启用;缺任一即静默停用(现状行为)。"""

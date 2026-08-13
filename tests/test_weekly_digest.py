@@ -1067,6 +1067,8 @@ class DroppedDayInvariantTest(unittest.TestCase):
         return [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
                  "events": {"USD": {"articles": [], "articles_raw_count": 0,
                                     "source_cap": 8, "source_capped": False,
+                                    "count_at_cap": False,
+                                    "articles_dropped_malformed": 0,
                                     "channel": "gdelt", "gnews_filter": dict(gf)}},
                  "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
                 for d in range(1, days + 1)]
@@ -1333,6 +1335,81 @@ class LegacySnapshotCapParityTest(unittest.TestCase):
         self.assertEqual(got["articles_malformed_dropped"], 21)
         self.assertNotIn("确实 0 条", got["articles_verdict"])
         self.assertIn("7 天共 21 条次结构不可识别被跳过", got["articles_verdict"])
+
+    def test_malformed_unknown_is_not_zero(self):
+        """存量快照没有这本账 —— 那几天不知道有没有被跳过的元素,不是知道没有。
+        仓库里 6 份真实快照实测全部无此键(第五轮 S7)。"""
+        legacy = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                   "events": {"USD": {"articles": [], "articles_raw_count": 0}},
+                   "meta": {"caps": {"gdelt_records": 8}}} for d in range(1, 8)]
+        got = wd._events_one(legacy, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_malformed_unknown_days"], 7)
+        self.assertNotIn("确实 0 条", got["articles_verdict"])
+        self.assertIn("7 天的不可识别条数不可知", got["articles_verdict"])
+
+    def test_malformed_days_counts_only_days_with_drops(self):
+        """`bad > 0` 改成 `bad >= 0` 时天数会变成"所有采到的天"(第五轮 S5)。"""
+        def day(d, bad):
+            return {"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                    "events": {"USD": {"articles": [], "articles_raw_count": bad,
+                                       "source_cap": 8, "source_capped": False,
+                                       "count_at_cap": False,
+                                       "articles_dropped_malformed": bad}},
+                    "meta": {"caps": {"gdelt_records": 8}}}
+        snaps = [day(d, 5) for d in (1, 2, 3)] + [day(d, 0) for d in (4, 5, 6, 7)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_malformed_dropped"], 15)
+        self.assertEqual(got["articles_malformed_unknown_days"], 0)
+        self.assertIn("3 天共 15 条次结构不可识别被跳过", got["articles_verdict"])
+
+    def test_pure_gdelt_truncation_disclosed_once(self):
+        """GDELT 不过滤 → source_capped 与 count_at_cap 由同一个 raw>=8 算出。
+        两个计数各记一遍会让结论句把同一次截断说两遍,而且第二句还对一条根本
+        不过滤的通道说"滤除后的条数是下界"(第五轮 S2/S6)。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {
+                      "articles": [{"title": "t%d-%d" % (d, i), "url": "u%d-%d" % (d, i),
+                                    "seendate": "202608%02dT120000Z" % d}
+                                   for i in range(8)],
+                      "articles_raw_count": 8, "source_cap": 8, "source_capped": True,
+                      "count_at_cap": True, "articles_dropped_malformed": 0,
+                      "channel": "gdelt"}},
+                  "meta": {"caps": {"gdelt_records": 8}}} for d in range(1, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_capped_days"], 7)
+        self.assertEqual(got["articles_sample_capped_days"], 0)
+        self.assertIn("7 天顶到当日采集上限(8 条)", got["articles_verdict"])
+        self.assertNotIn("滤除后的条数是下界", got["articles_verdict"])
+
+    def test_untruncated_day_does_not_dilute_the_cap_in_the_verdict(self):
+        """未触顶的 gnews 日(上限 99)不得把触顶日已知的 8 冲成"不给单值"。
+        真实 W33 上 USD/EUR/PHP 都踩中(第五轮 S4/S8)。"""
+        def gdelt(d):
+            return {"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                    "events": {"USD": {
+                        "articles": [{"title": "g%d-%d" % (d, i), "url": "u%d-%d" % (d, i),
+                                      "seendate": "202608%02dT120000Z" % d}
+                                     for i in range(8)],
+                        "articles_raw_count": 8, "source_cap": 8, "source_capped": True,
+                        "count_at_cap": True, "articles_dropped_malformed": 0,
+                        "channel": "gdelt"}},
+                    "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+        def gnews(d):
+            return {"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                    "events": {"USD": {
+                        "articles": [{"title": "n%d" % d, "url": "v%d" % d,
+                                      "seendate": "202608%02dT120000Z" % d}],
+                        "articles_raw_count": 11, "source_cap": 99,
+                        "source_capped": False, "count_at_cap": False,
+                        "articles_dropped_malformed": 0, "channel": "gnews",
+                        "gnews_filter": {"raw": 11, "undated": 0, "out_window": 0,
+                                         "offlist": 10, "kept": 1, "capped": False}}},
+                    "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+        got = wd._events_one([gdelt(1), gdelt(2), gnews(3)], "USD",
+                             "2026-08-01", "2026-08-03", 0)
+        self.assertEqual(got["articles_capped_days"], 2)
+        self.assertIn("2 天顶到当日采集上限(8 条)", got["articles_verdict"])
+        self.assertIsNone(got["articles_daily_cap"])   # 区间内确实出现过两种上限
 
     def test_sample_cap_assumption_does_not_taint_entry_cap(self):
         """第四轮 S6/S9:主通道上限的推定并进 cap_assumed_days,会给权威的条目级

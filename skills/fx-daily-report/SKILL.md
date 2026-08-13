@@ -80,7 +80,11 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       **滤除前**原始样本触顶(gnews 上限 99),此时落盘的条数可能离上限还差得远
       ——实测 raw=100 而 count=11。`sample_capped` 为 true 时只追加"源返回的原始
       样本触顶,滤除后的条数是下界",**禁止**据它写上面那两句关于 count 的话;
-      反之 `count_capped` 为 true 才是"这个数被上限钉住";
+      反之 `count_capped` 为 true 才是"这个数被上限钉住"。两者同为 true 时(不做
+      过滤的通道上二者恒等)只写 `count_capped` 那一句,不重复披露;
+      **`dropped_malformed` 大于 0 时**追加"另有 N 条源返回的元素结构不可识别被
+      跳过(源可能已改版)",事件数据据此打折;该值为 null 表示存量快照无此账,
+      **不得**写成"没有被跳过的元素";
       **`channel_changed_from` 非 null 时**,两日取自不同事件通道(上限与筛选口径
       都不同),`count_delta` 已由脚本置 null,该处改写为"前一日取自
       <channel_changed_from> 通道,口径不可比,不给变化量",

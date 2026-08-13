@@ -478,3 +478,62 @@ gnews 条目)只有 `source_capped: true` 而无 `count_at_cap`,回退路径把�
 所说的滤除前 `raw`。这个谓词此时已有两个消费者(周度聚合器与派生量),按
 `scripts/fixings.py` 的先例抽成 `events.landed_count_capped` 共用,漂移面归零
 (靶点 M69/M70 各自钉住"哪一侧偷偷再写一遍")。
+
+## 12. 第五轮审查:接一侧不算接上(build 阶段追加)
+
+10 条发现、9 条幸存(三个视角里有一个报了 0 条——五轮以来第一次)。1 条 Critical,
+仍是**同一族**:字段落盘了、周报接上了,日报那一侧没接。
+
+### 12.1 Critical:`articles_dropped_malformed` 只接进了周报
+
+第四轮把 `dropped` 一路落到快照并接进 `weekly_digest._channel`,但采集层没为它
+记 gap、`derive` 没读它、SKILL 与 `check_report` 里相关词零命中。于是**同一份快照,
+周报说「无法判定」、日报说「事件数 0」**。
+
+修法分两路,因为两种形态的危害不同:
+- **一个可用元素都没解析出来** → 记 gap。此时落盘 `articles=[]` 与「源确实一条都
+  没索引到」完全同形,日报走的是 gaps → 缺漏节 → `check_report` 披露检查这条链,
+  不记 gap 就无处发声
+- **部分丢弃** → 不记 gap(那不是采集失败),经 `derived.dropped_malformed` 供
+  日报引用,SKILL 补话术
+
+教训:**「接上了」要问接的是哪一条消费链**。这个仓库有两条独立的下游(日报走
+snapshot → derived → SKILL → check_report,周报走 snapshot → digest → SKILL),
+只喂一条就会让两份产物对同一份数据说相反的话。
+
+### 12.2 存量快照缺这本账时不能当成 0
+
+仓库里 6 份真实快照实测**无一**带 `articles_dropped_malformed`。当成 0 的话,
+12.1 那条 Critical 在本变更之前落的全部快照上原样敞着。改成三态:缺失记
+`malformed_unknown_days`,结论句出一条「N 天的不可识别条数不可知(存量快照无此账)」
+的 caveat。这条 caveat 会随新快照落盘而自然消失。
+
+### 12.3 不过滤的通道上,同一次截断被说了两遍
+
+第四轮把 `sample_capped` 的来源扩成「`source_capped` 与 `gnews_filter.capped` 取并」。
+但 GDELT 分支上这两个布尔由**同一个** `raw >= 8` 算出(采集层注释自陈「两者恒等」),
+于是每个 GDELT 触顶日同时进两个计数、印两条 caveat,而且第二句还对一条根本不过滤
+的通道说「滤除后的条数是下界」。
+
+判据加一句:只在这次截断**没有被条目级那条 caveat 披露过**时才另立一笔。
+
+### 12.4 未触顶日的上限稀释了结论句
+
+`caps` 收集每一个能判断的日子的上限,`_verdict` 拿它印「N 天顶到当日采集上限(X)」。
+实测真实 W33:USD/EUR/PHP 的触顶日全是上限 8 的 GDELT 日,却因为 08-12 那个**根本
+没触顶**的 gnews 日(上限 99)混进集合,结论句把已知的 8 印成「上限随通道不同,
+不给单值」。
+
+两个集合分工:`caps` 保持「区间内出现过的上限」(`daily_cap` 字段的含义),
+新增 `capped_caps` 只收真触顶那些天的上限,专供结论句。`cap_assumed_days` 照旧对
+每个**依赖推定上限去判断**的日子计数——没触顶的日子同样是拿那个推定值判出来的,
+推错了就会漏报触顶,所以不能跟着窄化。
+
+### 12.5 测试:第一权威零覆盖
+
+`count_at_cap` 是 `landed_count_capped` 的第一分支,对所有新快照它单独决定
+「是否顶到当日采集上限」。把 GDELT 分支那一行改成常量 `False`,536 用例全绿。
+同批存活的还有 `kept >= cap` 的等号边界(现有用例用的是 11 与 100,两侧都绕开了
+等号那一点)、`bad > 0` 改 `>= 0`、`articles_dropped_malformed` 的 0/None 两态。
+
+变异靶点累计 82 条,全部 KILLED(本轮新增 M72–M82,11/11 一次通过)。

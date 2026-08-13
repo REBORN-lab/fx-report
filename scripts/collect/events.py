@@ -361,6 +361,17 @@ def collect(cfg):
         arts, raw_count, dropped = articles
         prior = out.get(currency)
         known = isinstance(raw_count, int) and not isinstance(raw_count, bool)
+        if dropped > 0 and not arts:
+            # **一个可用元素都没解析出来**才记 gap:此时落盘 articles=[] 与
+            # "源确实一条都没索引到"完全同形,日报会写出"事件数 0"而正文无据可引。
+            # 日报走的是 gaps → 缺漏节 → check_report 披露检查这条链,不记 gap
+            # 就会出现"同一份快照,周报说无法判定、日报说 0 条"(第五轮 S1)。
+            # 部分丢弃不记 gap(那不是采集失败),它由 articles_dropped_malformed
+            # 落盘、经 derived.dropped_malformed 供日报引用
+            gaps.append(util.make_gap(
+                "gdelt", currency,
+                "%d/%s 个元素结构不可识别,无一可用(源可能已改版)"
+                % (dropped, raw_count if known else "?")))
         entry = {
             "articles": _dedupe_titles(arts), "articles_raw_count": raw_count,
             "source_cap": MAX_RECORDS,

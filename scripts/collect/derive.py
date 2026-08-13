@@ -28,7 +28,7 @@ EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
 EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None,
                         "count_capped": None, "count_prev_capped": None,
                         "channel_changed_from": None,
-                        "sample_capped": None}
+                        "sample_capped": None, "dropped_malformed": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
 
@@ -199,6 +199,15 @@ def _sample_capped(snap, currency):
     return any(flags) if flags else None
 
 
+def _dropped_malformed(snap, currency):
+    """当日被跳过的结构不可识别元素数。存量快照无此账 → None(不知道 ≠ 知道是 0)。"""
+    entry = _event_entry_of(snap, currency)
+    if entry is None:
+        return None
+    n = entry.get("articles_dropped_malformed")
+    return n if isinstance(n, int) and not isinstance(n, bool) else None
+
+
 def _events_derived(payload, history, gaps):
     """count 为 null 表示"没采到"(该币种事件采集失败),0 表示"确实 0 篇"——
     两者绝不可合并:把采集失败写成 0 就是在报"没发生",属编造。"""
@@ -234,6 +243,9 @@ def _events_derived(payload, history, gaps):
                 # 样本,而 count 是滤后的数,可能离上限还差得远。合并成一个布尔
                 # 会让"事件面确实持平"被写成"上限假象"
                 "sample_capped": _sample_capped(payload, currency),
+                # 源返回但结构不可识别被跳过的元素数。只落进周报是不够的:
+                # 源改版当日日报的 count 会是 0 而正文无任何依据可引(第五轮 S1)
+                "dropped_malformed": _dropped_malformed(payload, currency),
             }
         except Exception as e:
             out[currency] = dict(EMPTY_EVENTS_DERIVED)
