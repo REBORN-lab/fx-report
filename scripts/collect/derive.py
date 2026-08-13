@@ -5,11 +5,14 @@
 分析密度回来。每一项都必须能由快照原始值复算。
 """
 from ..fixings import distinct_fixings, num as _num
+from ..verdicts import join_verdict
 
 from . import events as events_mod
 from . import util
 
-SCHEMA_VERSION = 1
+# 2:derived.events.<币种> 起带 events_verdict 结论句。校验器按这个数分流
+# 存量快照 —— 判据是"这份快照本该有",不是"这个键在不在"。
+SCHEMA_VERSION = 2
 RANGE_DAYS = 5
 # 历史窗口要比 RANGE_DAYS 宽:周末与假日让相邻快照共享同一次定盘,
 # 只读 5 份会让 range_5d 永远凑不满 5 个不同定盘日。
@@ -29,7 +32,11 @@ EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None,
                         "count_capped": None, "count_prev_capped": None,
                         "channel_changed_from": None,
                         "sample_capped": None, "dropped_malformed": None,
-                        "main_sample_capped": None}
+                        "main_sample_capped": None,
+                        # 异常分支写 None 而非兜底句:schema 已升到 2,
+                        # 校验器会据此报 VERDICT_ABSENT —— 那正是想要的,
+                        # 该形态是脚本缺陷,必须响亮,不该与存量快照同形
+                        "events_verdict": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
 
@@ -227,6 +234,47 @@ def _main_sample_capped(snap, currency):
     return flag if isinstance(flag, bool) else None
 
 
+def _cap_phrase(cap):
+    """上限的中文括注。上限不可知时**不给数值** —— 直接插值会把字面量 None
+    印进中文结论句(周报侧的 _cap_phrase 因同一原因存在)。"""
+    if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+        return "(%d 条)" % cap
+    return "(上限不可知)"
+
+
+def _events_verdict(count, count_capped, sample_capped, channel_changed_from,
+                    dropped_malformed, cap):
+    """当日事件的结论句 —— 日报唯一可以用来陈述"有没有、有几条"的字段。
+
+    **不与周报共用判定**:周报的输入是跨日统计(days_collected / window_days /
+    in_window),这里是单日事实;定义域不同,强行复用判定正是上一个 change
+    第四轮那类事故的成因。共用的只有 verdicts.join_verdict 这一个拼装口。
+
+    count 为 None 表示该币种当日事件采集失败,0 表示确实 0 篇 —— 两者绝不可
+    合并:把采集失败写成"未采到事件"以外的任何说法都是在报"没发生"。
+    """
+    if count is None:
+        head = "当日事件采集失败,有无事件无法判定"
+    elif count == 0:
+        head = "当日未采到事件"
+    else:
+        head = "当日采到 %d 条" % count
+    caveats = []
+    if count_capped is True:
+        caveats.append("已顶到当日采集上限%s,实际篇数只多不少" % _cap_phrase(cap))
+    if sample_capped is True:
+        # 与上一条分开:触顶的是**滤除前**的原始样本,落盘条数可能离上限还差
+        # 得远(实测 raw=100 而 count=11)。合并会把"事件面确实持平"写成假象
+        caveats.append("源返回的原始样本顶到其上限,滤后条数是下界")
+    if isinstance(channel_changed_from, str) and channel_changed_from:
+        caveats.append("前一日取自 %s 通道,口径不可比,不给变化量"
+                       % channel_changed_from)
+    if isinstance(dropped_malformed, int) and not isinstance(dropped_malformed, bool) \
+            and dropped_malformed > 0:
+        caveats.append("另有 %d 条结构不可识别被跳过" % dropped_malformed)
+    return join_verdict(head, caveats)
+
+
 def _events_derived(payload, history, gaps):
     """count 为 null 表示"没采到"(该币种事件采集失败),0 表示"确实 0 篇"——
     两者绝不可合并:把采集失败写成 0 就是在报"没发生",属编造。"""
@@ -246,28 +294,41 @@ def _events_derived(payload, history, gaps):
             chan_prev = _channel_of(history[0], currency) if history else chan
             switched = (chan is not None and chan_prev is not None
                         and chan != chan_prev)
+            # 三个布尔与上限提前算出来:落盘的键与结论句必须读**同一份**事实,
+            # 各算一遍就会出现"字段说 false、句子说触顶"的自相矛盾
+            changed_from = chan_prev if switched else None
+            capped = _count_capped(payload, currency)
+            sampled = _sample_capped(payload, currency)
+            dropped = _dropped_malformed(payload, currency)
+            entry = _event_entry_of(payload, currency)
+            cap = entry.get("source_cap") if isinstance(entry, dict) else None
             out[currency] = {
                 "count": count,
                 "count_prev": prev,
                 "count_delta": (count - prev)
                                if (count is not None and prev is not None
                                    and not switched) else None,
-                "channel_changed_from": chan_prev if switched else None,
+                "channel_changed_from": changed_from,
                 # 两天都触顶时 count_delta 恒为 0,"与前值持平"就成了上限造成的
                 # 假象而非事件面平稳 —— 必须让报告能看见这一点
-                "count_capped": _count_capped(payload, currency),
+                "count_capped": capped,
                 "count_prev_capped": (_count_capped(history[0], currency)
                                       if history else None),
                 # 原始样本触顶。与 count_capped 是两件事:被截断的是滤除前的
                 # 样本,而 count 是滤后的数,可能离上限还差得远。合并成一个布尔
                 # 会让"事件面确实持平"被写成"上限假象"
-                "sample_capped": _sample_capped(payload, currency),
+                "sample_capped": sampled,
                 # 源返回但结构不可识别被跳过的元素数。只落进周报是不够的:
                 # 源改版当日日报的 count 会是 0 而正文无任何依据可引(第五轮 S1)
-                "dropped_malformed": _dropped_malformed(payload, currency),
+                "dropped_malformed": dropped,
                 # 主通道那次截断是否**另外**成立。报告只引用这个布尔,不得自行
                 # 判断"条目带不带 gnews_filter"(判据与周报共用同一条)
                 "main_sample_capped": _main_sample_capped(payload, currency),
+                # 报告唯一可以用来陈述"有没有、有几条"的字段:脚本已把上限
+                # 触顶、样本触顶、通道更换、不可识别条数折进结论,日报逐字
+                # 整句引用即可,禁止自行按布尔拼话术
+                "events_verdict": _events_verdict(count, capped, sampled,
+                                                  changed_from, dropped, cap),
             }
         except Exception as e:
             out[currency] = dict(EMPTY_EVENTS_DERIVED)

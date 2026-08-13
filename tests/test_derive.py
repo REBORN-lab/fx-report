@@ -245,7 +245,7 @@ class RobustnessTest(unittest.TestCase):
 
     def test_schema_version_present(self):
         d, _ = derive.derive(payload(), [])
-        self.assertEqual(d["schema_version"], 1)
+        self.assertEqual(d["schema_version"], 2)
 class EventCappingTest(unittest.TestCase):
     """两天都顶到 GDELT 每日上限时 count_delta 恒为 0,"与前值持平"就成了上限
     造成的假象,而不是事件面平稳。报告必须能看见这一点。"""
@@ -590,6 +590,147 @@ class ChannelOfEdgeTest(unittest.TestCase):
         got = derive.derive(today, [prev])[0]["events"]["EUR"]
         self.assertIsNone(got["count_delta"])
         self.assertEqual(got["channel_changed_from"], "gnews")
+
+
+class EventsVerdictTest(unittest.TestCase):
+    """日报侧结论句(delta spec:事件结论句落盘)。
+
+    判定用的是**单日事实**(count / count_capped / sample_capped /
+    channel_changed_from / dropped_malformed),与周报的跨日统计定义域不同 ——
+    刻意不共用判定,只共用 verdicts.join_verdict 这一个拼装口。"""
+
+    def _derive(self, entry, history=(), caps=None):
+        snap = {"date": "2026-08-12", "rates": {"PHP": rate_entry(56.0)},
+                "events": {"PHP": entry},
+                "meta": {"caps": caps or {"gdelt_records": 8, "gnews_records": 99}}}
+        return derive.derive(snap, list(history))[0]["events"]["PHP"]
+
+    def test_key_present_in_normal_branch(self):
+        got = self._derive({"articles": [{"title": "t"}], "channel": "gdelt",
+                            "source_cap": 8, "source_capped": False,
+                            "count_at_cap": False})
+        self.assertIn("events_verdict", got)
+        self.assertIsInstance(got["events_verdict"], str)
+
+    def test_plain_count_head(self):
+        got = self._derive({"articles": [{"title": "t%d" % i} for i in range(3)],
+                            "channel": "gdelt", "source_cap": 8,
+                            "source_capped": False, "count_at_cap": False})
+        self.assertEqual(got["events_verdict"], "当日采到 3 条")
+
+    def test_zero_is_not_the_same_as_failure(self):
+        """0 是"确实 0 篇",null 是"没采到" —— 把采集失败写成 0 就是在报
+        "没发生",属编造。两句话必须不同。"""
+        zero = self._derive({"articles": [], "channel": "gdelt", "source_cap": 8,
+                             "source_capped": False, "count_at_cap": False})
+        failed = self._derive({"official": [{"title": "o"}]})
+        self.assertEqual(zero["events_verdict"], "当日未采到事件")
+        self.assertEqual(failed["events_verdict"],
+                         "当日事件采集失败,有无事件无法判定")
+        self.assertNotEqual(zero["events_verdict"], failed["events_verdict"])
+
+    def test_count_capped_caveat_carries_the_cap(self):
+        # source_capped 刻意为 False:本用例只隔离"落盘条数触顶"这一条 caveat,
+        # 两者同真时会各出一句(见 test_caveats_joined_in_declared_order)
+        got = self._derive({"articles": [{"title": "t%d" % i} for i in range(8)],
+                            "articles_raw_count": 8, "channel": "gdelt",
+                            "source_cap": 8, "source_capped": False,
+                            "count_at_cap": True})
+        self.assertEqual(got["events_verdict"],
+                         "当日采到 8 条(已顶到当日采集上限(8 条),实际篇数只多不少)")
+
+    def test_unknown_cap_does_not_print_none(self):
+        """上限不可知时直接插值会把字面量 None 印进中文结论句(周报侧栽过)。"""
+        got = self._derive({"articles": [{"title": "t"}], "channel": "gdelt",
+                            "count_at_cap": True})
+        self.assertIn("上限不可知", got["events_verdict"])
+        self.assertNotIn("None", got["events_verdict"])
+
+    def test_sample_capped_is_a_separate_caveat(self):
+        """滤除前样本触顶与落盘条数触顶是两件事,不得互相代用。"""
+        got = self._derive({"articles": [{"title": "t"}] * 11,
+                            "articles_raw_count": 100, "channel": "gnews",
+                            "source_cap": 99, "source_capped": True,
+                            "count_at_cap": False,
+                            "gnews_filter": {"raw": 100, "undated": 0,
+                                             "out_window": 0, "offlist": 89,
+                                             "kept": 11, "capped": True}})
+        self.assertEqual(got["events_verdict"],
+                         "当日采到 11 条(源返回的原始样本顶到其上限,滤后条数是下界)")
+
+    def test_channel_change_caveat(self):
+        prev = {"date": "2026-08-11", "rates": {"PHP": rate_entry(56.1)},
+                "events": {"PHP": {"articles": [{"title": "p"}] * 8,
+                                   "channel": "gdelt"}}}
+        got = self._derive({"articles": [{"title": "t"}] * 11, "channel": "gnews",
+                            "source_cap": 99, "source_capped": False,
+                            "count_at_cap": False}, history=[prev])
+        self.assertIn("前一日取自 gdelt 通道,口径不可比,不给变化量",
+                      got["events_verdict"])
+
+    def test_dropped_malformed_caveat(self):
+        got = self._derive({"articles": [{"title": "t"}], "channel": "gdelt",
+                            "source_cap": 8, "source_capped": False,
+                            "count_at_cap": False,
+                            "articles_dropped_malformed": 7})
+        self.assertEqual(got["events_verdict"],
+                         "当日采到 1 条(另有 7 条结构不可识别被跳过)")
+
+    def test_dropped_malformed_zero_adds_no_caveat(self):
+        """0 条被跳过就是没有这件事,不该多出一句 caveat。"""
+        got = self._derive({"articles": [{"title": "t"}], "channel": "gdelt",
+                            "source_cap": 8, "source_capped": False,
+                            "count_at_cap": False,
+                            "articles_dropped_malformed": 0})
+        self.assertEqual(got["events_verdict"], "当日采到 1 条")
+
+    def test_caveats_joined_in_declared_order(self):
+        prev = {"date": "2026-08-11", "rates": {"PHP": rate_entry(56.1)},
+                "events": {"PHP": {"articles": [{"title": "p"}], "channel": "gdelt"}}}
+        got = self._derive({"articles": [{"title": "t"}] * 99,
+                            "articles_raw_count": 100, "channel": "gnews",
+                            "source_cap": 99, "source_capped": True,
+                            "count_at_cap": True,
+                            "articles_dropped_malformed": 2,
+                            "gnews_filter": {"raw": 100, "undated": 0,
+                                             "out_window": 0, "offlist": 1,
+                                             "kept": 99, "capped": True}},
+                           history=[prev])
+        self.assertEqual(
+            got["events_verdict"],
+            "当日采到 99 条(已顶到当日采集上限(99 条),实际篇数只多不少、"
+            "源返回的原始样本顶到其上限,滤后条数是下界、"
+            "前一日取自 gdelt 通道,口径不可比,不给变化量、"
+            "另有 2 条结构不可识别被跳过)")
+
+    def test_no_empty_parens_when_no_caveat(self):
+        got = self._derive({"articles": [{"title": "t"}], "channel": "gdelt",
+                            "source_cap": 8, "source_capped": False,
+                            "count_at_cap": False})
+        self.assertNotIn("()", got["events_verdict"])
+
+    def test_empty_events_derived_carries_the_key(self):
+        """四处同步(derive / EMPTY_EVENTS_DERIVED / SKILL / 校验器)少一处即
+        漂移。键集断言只保证两侧一致,这条另外保证不是两侧一起被删掉。"""
+        self.assertIn("events_verdict", derive.EMPTY_EVENTS_DERIVED)
+        self.assertIsNone(derive.EMPTY_EVENTS_DERIVED["events_verdict"])
+
+    def test_schema_version_is_two(self):
+        """校验器按 derived.schema_version >= 2 分流存量快照 —— 这个数不是
+        装饰,改了它就等于宣布"这份快照本该有结论句"。"""
+        self.assertEqual(derive.SCHEMA_VERSION, 2)
+        d, _ = derive.derive(payload(), [])
+        self.assertEqual(d["schema_version"], 2)
+
+    def test_rates_and_real_rate_get_no_verdict(self):
+        """非目标:日报结论句只做 events 一类。"""
+        d, _ = derive.derive(payload({"PHP": rate_entry(60.75)},
+                                     macro=[{"economy": "PH",
+                                             "indicator": "政策利率",
+                                             "value": 5.0, "period": "2026-07"}]), [])
+        self.assertFalse([k for k in d["rates"]["PHP"] if "verdict" in k])
+        self.assertFalse([k for k in derive.EMPTY_RATE_DERIVED if "verdict" in k])
+        self.assertFalse([k for k in derive.EMPTY_REAL_RATE if "verdict" in k])
 
 
 if __name__ == "__main__":

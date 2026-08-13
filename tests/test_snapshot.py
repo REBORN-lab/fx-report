@@ -174,7 +174,7 @@ class DerivedSectionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
             snap = self._run(tmp, srv)
         self.assertIn("derived", snap)
-        self.assertEqual(snap["derived"]["schema_version"], 1)
+        self.assertEqual(snap["derived"]["schema_version"], 2)
         self.assertIn("PHP", snap["derived"]["rates"])
         self.assertIn("PHP", snap["derived"]["events"])
 
