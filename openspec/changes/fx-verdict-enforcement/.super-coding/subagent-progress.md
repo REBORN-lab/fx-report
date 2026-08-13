@@ -35,7 +35,15 @@
   `articles_verdict` 改一个字后**校验**必须失败」,那是 `check_weekly` 层面的
   行为,T3 明确不接线,只有谓词层覆盖。在 T3 勾就是假勾选
 
-### 必须带进后续任务的四条(实测得来)
+### 必须带进后续任务的五条(实测得来)
+
+00. **「让位」类断言极易空过**。T4 实测:计划给的
+   `test_currency_not_covered_reports_only_currency_missing` 只删币种名、
+   **结论句仍留在正文**,于是 `covered` 恒取全集的变异存活 —— `assertFalse`
+   看起来有覆盖,实则毫无鉴别力。**写这类用例必须先断言
+   `assertNotIn(<结论句>, bad)`**,让「让位机制」成为不报 VERDICT 的唯一原因。
+   T6 的 `test_missing_section_does_not_double_report` 形态不同
+   (`make_report()` 本就不含结论句),但**派 T6 时要求实测该变异确被杀**
 
 0. **变异还原禁用 `git checkout HEAD -- <file>`,除非改动已提交**。
    T3 修复轮实际事故:修复尚未提交时用它还原,`HEAD` 是修复前的提交,

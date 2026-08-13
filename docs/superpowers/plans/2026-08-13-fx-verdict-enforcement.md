@@ -730,6 +730,20 @@ class WeeklyVerdictQuotingTest(unittest.TestCase):
         self.assertTrue(any("CURRENCY_MISSING" in x and "PHP" in x for x in v), v)
         self.assertFalse([x for x in v if "VERDICT" in x and "PHP" in x], v)
 
+    def test_currency_wholly_absent_is_not_double_reported(self):
+        """上一条对「covered 恒取全集」的变异无鉴别力:那里只删掉币种名,
+        三句结论句还留在正文里,两种取法结果相同(自跑变异实测存活)。
+        这条把整行归因删掉 —— PHP 的三句一并消失,让位机制成了不报
+        VERDICT 的唯一原因,同一处缺失才真的只产生一条违规。"""
+        line = [x for x in WEEKLY_OK.splitlines() if x.startswith("USD / EUR / PHP")]
+        self.assertEqual(len(line), 1)
+        bad = WEEKLY_OK.replace(line[0], "USD / EUR / THB / BRL")
+        self.assertNotIn("PHP", bad)
+        self.assertNotIn(ART_PHP, bad)
+        v = self._run(bad)
+        self.assertTrue(any("CURRENCY_MISSING" in x and "PHP" in x for x in v), v)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+
     def test_empty_verdict_string_is_a_violation(self):
         obj = json.loads(DIGEST)
         obj["events"]["PHP"]["articles_verdict"] = "   "
