@@ -22,21 +22,20 @@
 
 ## 当前状态
 
-- 当前 task: **T6**(`check_daily` 接入 + schema 闸门 + 跳过声明)
+- 当前 task: **T6b**(日报侧三档兜底 —— 闸门自己的缝)
 - 阶段: `implementing`
 - 审查-修复轮次: 0 / 3
 - 实现提交: (待)
-- RED 证据: (待)
-- GREEN 证据: (待)
-- **T6 的关键风险**:`data/` 下既有快照的 `derived.schema_version` 仍为 1
-  且无 `events_verdict`。闸门的 `< 2` 分支必须真的跳过并声明跳过条数,
-  否则**今天起所有历史日报校验会集体变红**
-- **T6 必须实测**:`test_missing_section_does_not_double_report` 那条让位断言
-  会不会像 T4 那条一样空过。T4 实测同型断言毫无鉴别力(见下方教训 00)。
-  T6 的形态不同(`make_report()` 本就不含结论句),但**必须施加
-  `covered` 恒取全集的变异确认它被杀**
-- **T6 会让 `check_daily` + `check_weekly` 合计约 145 行**(现 121),
-  逼近拆分阈值 150 —— 但**不要在 T6 拆**(T7/T9 还要引用该文件的逐字代码块)
+- **T6b 是 T6 两轮审查合并出来的任务**,不在原计划里。它同时承载:
+  三档兜底(新)+ T6 的 I1/I2 两条 Important + I3/I5/I7/I8 四条 Minor
+- **最关键的一档是 ③**(无 `derived` 节 → 出声明):实测
+  `data/2026-08-07..10.json` 四天跑出**裸 `CHECK PASSED`、零声明**,
+  与「全部结论句已逐字核验」不可分辨。只做 ①②,本 change 的核心主张
+  **在自家历史产物上有 2/3 的日子不成立**
+- **验收硬线**:六天 rc 与违规必须与 T6 完全一致,**只多出声明**。
+  任何 rc 变化或新增违规都是缺陷
+- **OpenSpec 2.3 留给 T6b**:它写的是「校验器判为『该日不可校验』而非
+  『通过』」—— 无 derived 节那一档在 T6 之后仍然判「通过」,现在勾就是假勾选
 - **M2 分隔符收口不塞进 T5 实现**:T5 按计划只 import `join_verdict`,
   **不碰** `scripts/verdicts.py`(T1 已双审定稿)。收口要加 `CAVEAT_SEP`
   常量并改 Design Doc「只含 join_verdict」那句,属独立决定。
@@ -244,3 +243,25 @@ verdict = 当日采到 50 条(已顶到当日采集上限(99 条),实际篇数�
   (原 docstring 建立关联却没写禁止,**反而在助推合并**);调用改关键字;
   bool 守卫直测(两名审查者各自独立复现过这条幸存变异)
 - plan T5 五步 + OpenSpec **2.1 / 2.2 / 2.6** 已勾选并验证
+
+### T6 —— check_daily 接入 + schema 闸门 + 跳过声明 ✅
+
+- 提交: `3088b5d`;base `7a0660a`
+- RED: `Ran 103 tests` / `FAILED (failures=6, errors=5)`
+- GREEN: `Ran 103` / `OK`;全量 `Ran 646` / `OK`
+- 六天逐日:07–10 `CHECK PASSED` **无声明**(那四天 `derived` 是 `null`,
+  确实什么都没跳过);11 声明 + 既有 `GAP_OMITTED` rc=1(基线同样 rc=1);
+  12 声明 + `CHECK PASSED`
+- 闸门九态分流全对(`True` / `2.0` / `"2"` 都正确走跳过)
+- 让位变异 `covered = set(CURRENCIES)` **被杀**,两名审查者各自复现
+- spec 合规审查 ✅;代码质量审查 ✅(自建 7 条变异,5 杀 2 存活)
+- **两轮审查合并出 T6b**:①②③ 三档兜底 + I1(covered 收进
+  `SECTION_MISSING` 循环)+ I2(`check_daily` 补 docstring)+ I3(`%s`→`%r`)
+  + I5(`test_bool_schema_version_is_not_a_number` 是恒真用例,变异存活)
+  + I6(`notes is not None` 门无测试,变异存活)+ I7(让位断言补反向锚)
+  + I8(subTest)
+- **拆分阈值确认不会触线**:审查者读完计划确认 T7/T8/T9/T10 都不改
+  `check_report.py`,故 143(收口后 146)是本 change 终值,阈值 150
+- **T8 前置情报**:电池 10 条靶点里落在 `check_report.py` 的 9 条已逐条
+  `count()` 验过,**每条恰好匹配 1 处**,不会 STALE
+- plan T6 五步 + OpenSpec **2.4 / 2.7** 已勾选;**2.3 留给 T6b**

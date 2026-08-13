@@ -1279,7 +1279,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/check_report.py`(`check_daily` 签名与函数体;`main` 的 notes 打印)
 - Modify: `tests/test_check_report.py`(追加到文件末尾)
 
-- [ ] **T6 Step 1: 写会红的测试**
+- [x] **T6 Step 1: 写会红的测试**
 
 在 `tests/test_check_report.py` **文件末尾**追加:
 
@@ -1491,7 +1491,7 @@ from scripts import weekly_digest
 from scripts.collect import derive
 ```
 
-- [ ] **T6 Step 2: 跑测试确认失败**
+- [x] **T6 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1500,7 +1500,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 
 Expected:`DailyVerdictQuotingTest` 里带 `notes=` 的用例 ERROR(`TypeError: check_daily() got an unexpected keyword argument 'notes'`),其余期望捕获违规的用例 FAIL(违规列表为空);`DailySkipNoticeIsPrintedTest` 2 个 FAIL;`VerdictFieldSyncTest` 3 个 PASS。
 
-- [ ] **T6 Step 3: 实现 —— `scripts/check_report.py` 两处编辑**
+- [x] **T6 Step 3: 实现 —— `scripts/check_report.py` 两处编辑**
 
 3a. `check_daily` 签名与函数体。把
 
@@ -1580,7 +1580,7 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
         print("CHECK FAILED (%d):" % len(violations))
 ```
 
-- [ ] **T6 Step 4: 跑测试确认通过**
+- [x] **T6 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1596,7 +1596,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`(**实跑数字为准**)。
 
-- [ ] **T6 Step 5: 勾选并提交**
+- [x] **T6 Step 5: 勾选并提交**
 
 把 tasks.md 的 `2.3`、`2.4`、`2.7` 改成 `- [x]`,逐条验证后:
 

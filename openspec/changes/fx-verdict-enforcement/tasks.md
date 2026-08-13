@@ -12,12 +12,12 @@
 - [x] 2.1 先写会红的用例:`derived.events.<币种>` 必须含结论句字段,且其内容随 `count`/`count_capped`/`sample_capped`/`channel_changed_from` 变化
 - [x] 2.2 `derive.py` 新增事件类结论句(仅 `events` 一类;`rates` 与 `real_rate` 明确非目标)
 - [ ] 2.3 存量快照无该字段时的三态:校验器判为"该日不可校验"而非"通过",并在输出中区分于"引用错误"
-- [ ] 2.4 `check_daily` 接入同一套整句包含检查,复用周报侧的实现(禁止两处各写一遍)
+- [x] 2.4 `check_daily` 接入同一套整句包含检查,复用周报侧的实现(禁止两处各写一遍)
 - [x] 2.5 新建 `scripts/verdicts.py`,只含 `join_verdict(head, caveats)`;`weekly_digest._verdict` 与 `_fixings_verdict` 的拼装改经它,判定逻辑一行不改(共享拼装,不共享判定)
 - [x] 2.6 `derive.SCHEMA_VERSION` 升到 2,同步 `EMPTY_EVENTS_DERIVED`;`tests/test_derive.py` 的键集断言会红,那是防漂移哨兵,不得靠放宽断言消除
-- [ ] 2.7 校验器按 `derived.schema_version >= 2` 分流存量快照,并在输出中打印「N 个币种因快照 schema 过旧未校验结论句」——「跳过」与「通过」必须可区分
+- [x] 2.7 校验器按 `derived.schema_version >= 2` 分流存量快照,并在输出中打印「N 个币种因快照 schema 过旧未校验结论句」——「跳过」与「通过」必须可区分
 
-- [ ] 2.9 日报侧容器与条目兜底:`derived.schema_version >= 2` 时,`derived.events` 非 dict 出 `VERDICT_CONTAINER_MALFORMED`、`covered` 里缺条目的币种出 `VERDICT_ENTRY_MISSING`;闸门只对声称带结论句的快照生效,存量快照照旧跳过
+- [ ] 2.9 日报侧三档兜底(T6b):①`derived.events` 非 dict 出 `VERDICT_CONTAINER_MALFORMED` ②`covered` 里缺条目的币种出 `VERDICT_ENTRY_MISSING` ③无 `derived` 节出声明 `VERDICT_SKIPPED_NO_DERIVED`(不判违规、rc 不变)。①②只对 `schema_version >= 2` 的快照生效;③堵的是最后一个静默口子——实测 `data/2026-08-07..10.json` 四天跑出裸 `CHECK PASSED`、零声明:`derived.schema_version >= 2` 时,`derived.events` 非 dict 出 `VERDICT_CONTAINER_MALFORMED`、`covered` 里缺条目的币种出 `VERDICT_ENTRY_MISSING`;闸门只对声称带结论句的快照生效,存量快照照旧跳过
 
 ## 3. SKILL 引用规则
 
