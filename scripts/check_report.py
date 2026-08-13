@@ -289,7 +289,13 @@ def _read_file(path, label):
         return None, "无法读取%s %s: %s" % (label, path, e)
 
 
-def main(argv=None):
+def build_parser():
+    """CLI 开关的**唯一注册处**。单独成函数是为了让测试查得到注册表本身:
+    从 `--help` 的输出反推开关集合守不住 `help=argparse.SUPPRESS` 的隐藏开关
+    (argparse 根本不打印它),而"悄悄加一个豁免开关"正是 Design Doc §6 点名
+    要挡的绕过点。实测:以 SUPPRESS 注册 `--tolerant` 并在 main 里据它滤掉
+    整类 `VERDICT_*` 违规,rc 由 1 变 0,而全量 674 全绿。
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
     ap.add_argument("snapshot", nargs="?")
@@ -301,7 +307,11 @@ def main(argv=None):
                     help="weekly:周度聚合文件,启用周报数字溯源")
     ap.add_argument("--daily", action="append", default=[],
                     help="weekly:当周日报路径,可重复;并入数字白名单")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     report, err = _read_file(args.report, "报告文件")
     if err:
         print(err, file=sys.stderr)

@@ -57,6 +57,10 @@ DAILY_VIOLATION_RE = r"(?m)^违规\(退出码非 0\):.*?(?=\n\n|\Z)"
 WEEKLY_VIOLATION_RE = (r"(?m)^\*\*结论句相关的违规码\(退出码非 0\):\*\*"
                        r".*?(?=\n\n|\Z)")
 WEEKLY_BAN_ONE_RE = r"(?m)^1\. \*\*三条结论句.*?(?=\n\n|\n\d+\. )"
+# 违规节里的条目边界。段被 block() 压平后换行没了,一条 bullet 的结束标志只剩
+# 「下一个码」,故有界到 `-`VERDICT` 或段尾。**这条正则跑在段内、不是全文**:
+# 跑全文就等于把 M11(尾部追加一节喂饱段级断言)那条靶点白送。
+NOT_QUOTED_BULLET_RE = r"-`VERDICT_NOT_QUOTED`.*?(?=-`VERDICT|\Z)"
 
 # 「快照里没有结论句」这一形态的标签串。它不是文案 —— 第 2 步写下它,禁令 9
 # 把它当作豁免的**触发条件**,第 5 步两个降级码各引用一次。四站必须逐字同串:
@@ -123,6 +127,18 @@ class SkillDocTestCase(unittest.TestCase):
         seg = block(raw(path), pattern)
         self.assertIsNotNone(seg, "没摘到「%s」,正则或文档结构变了" % name)
         return seg
+
+    def not_quoted_bullet(self, path, section_re, name):
+        """从违规节里摘出 `VERDICT_NOT_QUOTED` **那一条**,兄弟条目留在外面。
+
+        段级断言会被兄弟条目喂饱(见 ViolationDispositionTest 的类注释),所以
+        可操作码的处置只能在它自己的 bullet 里判。
+        """
+        seg = self.seg_or_fail(path, section_re, name)
+        m = re.search(NOT_QUOTED_BULLET_RE, seg)
+        self.assertIsNotNone(
+            m, "%s 里没有 `VERDICT_NOT_QUOTED` 这一条" % name)
+        return m.group(0)
 
 
 class DailySkillTest(SkillDocTestCase):
@@ -343,17 +359,28 @@ class ViolationDispositionTest(SkillDocTestCase):
 
     光靠 VerdictCodesAreDocumentedTest 守不住它:那条查的是"码名在两份 skill
     合起来的正文里出现过",而每个码的 count 都 ≥2,删掉任一处都有别处顶上。
+
+    **段级也守不住**:可操作的那条与"脚本缺陷"那几条是同一段里的兄弟条目,
+    兄弟自带"改报告没用"/"改周报没用"。于是段级 assertIn("改报告") 由兄弟供货 ——
+    实测把 NOT_QUOTED 那条的处置**整体换成相反指令**("这条是脚本缺陷,改报告没用;
+    重跑第 1 步采集"),日报与周报各自 SURVIVED、失败集 0 条。锚点因此必须
+    ①落进这一条 bullet **之内**,②取该处置**独有**的整句(通用词会被兄弟喂饱)。
     """
 
     def test_daily_violation_section_keeps_the_actionable_code(self):
-        seg = self.seg_or_fail(DAILY, DAILY_VIOLATION_RE, "日报「违规」节")
-        self.assertIn("VERDICT_NOT_QUOTED", seg, "日报违规节丢了唯一可操作的码")
-        self.assertIn("改报告", seg, "VERDICT_NOT_QUOTED 丢了处置动作")
+        bullet = self.not_quoted_bullet(DAILY, DAILY_VIOLATION_RE, "日报「违规」节")
+        self.assertIn("**改报告**,把违规信息里「期望原文」那一句整句抄进该币种节",
+                      bullet, "VERDICT_NOT_QUOTED 的处置不再是「照抄期望原文」")
+        # 正面锚点挡整条替换,这条否定挡更隐蔽的变体:照抄那句留着,后面再补
+        # 一句「不过改报告没用」。兄弟条目的同款措辞落在 bullet 之外,不误伤。
+        self.assertNotIn("没用", bullet, "唯一可操作的码被说成了「改报告没用」")
 
     def test_weekly_violation_section_keeps_the_actionable_code(self):
-        seg = self.seg_or_fail(WEEKLY, WEEKLY_VIOLATION_RE, "周报「违规码」节")
-        self.assertIn("VERDICT_NOT_QUOTED", seg, "周报违规节丢了唯一可操作的码")
-        self.assertIn("改周报", seg, "VERDICT_NOT_QUOTED 丢了处置动作")
+        bullet = self.not_quoted_bullet(WEEKLY, WEEKLY_VIOLATION_RE,
+                                        "周报「违规码」节")
+        self.assertIn("**改周报**,按违规信息里「期望原文」整句照抄", bullet,
+                      "VERDICT_NOT_QUOTED 的处置不再是「照抄期望原文」")
+        self.assertNotIn("没用", bullet, "唯一可操作的码被说成了「改周报没用」")
 
 
 class WeeklySkillTest(SkillDocTestCase):

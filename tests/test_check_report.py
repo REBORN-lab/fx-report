@@ -2,7 +2,6 @@ import contextlib
 import io
 import json
 import os
-import re
 import tempfile
 import unittest
 from unittest import mock
@@ -759,15 +758,20 @@ class WeeklyVerdictQuotingTest(unittest.TestCase):
 
 class NoLegacyExemptionSwitchTest(unittest.TestCase):
     """豁免机制本身会成为下一个绕过点(Design Doc §6)。校验器的 CLI 开关
-    集合被钉死:想加豁免开关就得先改掉这条断言,而那是显式动作。"""
+    集合按**注册表**钉死:开关一旦注册就躲不过这条断言,想加就得先改掉它,
+    而那是显式动作。
+
+    **不能扫 `--help` 的输出**:argparse 对 `help=argparse.SUPPRESS` 的选项
+    根本不打印。实测按 SUPPRESS 注册 `--tolerant` 并在 main 里据它滤掉整类
+    `VERDICT_*` 违规 —— 同一份输入的 rc 由 1(CHECK FAILED 5 条)变成
+    0(CHECK PASSED),而全量 674 全绿、旧断言(扫 --help 文本)照过。
+    """
 
     def test_cli_option_set_is_frozen(self):
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
-            check_report.main(["--help"])
-        opts = set(re.findall(r"--[a-z][a-z-]*", buf.getvalue()))
-        self.assertEqual(opts, {"--help", "--brief", "--mode", "--strict-brief",
-                                "--digest", "--daily"})
+        opts = {s for a in check_report.build_parser()._actions
+                for s in a.option_strings}
+        self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
+                                "--strict-brief", "--digest", "--daily"})
 
 
 DAILY_VERDICT = "当日采到 11 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
