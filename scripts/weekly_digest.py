@@ -23,6 +23,7 @@ from scripts.collect.events import GNEWS_SOFT_CAP, landed_count_capped
 from scripts.collect.events import MAX_RECORDS as GDELT_DAILY_CAP
 from scripts.collect.feeds import MAX_ITEMS as OFFICIAL_DAILY_CAP
 from scripts.fixings import distinct_fixings, num as _num
+from scripts.verdicts import join_verdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERDICTS = ["命中", "未命中", "无法判定", "未判定"]
@@ -64,9 +65,10 @@ def _fixings_verdict(n, unknown_ref, first_ref, last_ref, missing_days, window_d
     if skipped:
         caveats.append("另有 %d 份快照损坏被跳过" % skipped)
     if caveats:
-        return ("区间内观测到 %d 个不同价位,实际定盘次数只多不少(%s);"
-                "周区间是这些价位的高低,不是区间内的真实极值"
-                % (n, "、".join(caveats)))
+        # 只把 head(caveats) 这一段交给拼装口;分号后那句是本函数自己的尾巴
+        return (join_verdict("区间内观测到 %d 个不同价位,实际定盘次数只多不少" % n,
+                             caveats)
+                + ";周区间是这些价位的高低,不是区间内的真实极值")
     return "区间内 %d 次不同定盘(%s 至 %s)" % (n, first_ref, last_ref)
 
 
@@ -473,7 +475,7 @@ def _verdict(stats, window_days, skipped, unit):
         caveats.append("另有 %d 条发布于区间外" % stats["outside_window"])
     if stats["in_window"]:
         head = "区间内至少 %d 条" % stats["in_window"]
-        return head if not caveats else "%s(%s)" % (head, "、".join(caveats))
+        return join_verdict(head, caveats)
     if caveats:
         return "区间内未见%s,但 %s,有无%s无法判定" % (unit, "、".join(caveats), unit)
     return "区间内确实 0 条(全区间采集完整、无截断、时间戳均可解析)"
