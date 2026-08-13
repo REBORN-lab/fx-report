@@ -33,6 +33,22 @@ def block(text, start_re):
 
 BAN_ANCHOR = "自行拼装任何话术"
 
+# 「快照里没有结论句」这一形态的标签串。它不是文案 —— 第 2 步写下它,禁令 9
+# 把它当作豁免的**触发条件**,第 5 步两个降级码各引用一次。四站必须逐字同串:
+# 任一站漏改,那一站的读者就按另一套口径行事,而这正是 I2 那条链的起点。
+NO_VERDICT_LABEL = "结论句不可得(快照未落结论句)"
+
+LABEL_SITES = (
+    ("第 2 步「派生指标」项(定义处)",
+     r"(?m)^    - 派生指标:.*?(?=\n    - )"),
+    ("禁令 9 豁免口(拿它当触发条件)",
+     r"(?m)^9\. \*\*事件结论句.*?(?=\n\n)"),
+    ("第 5 步 VERDICT_SKIPPED_NO_DERIVED 分支二",
+     r"(?m)^- `VERDICT_SKIPPED_NO_DERIVED`.*?(?=\n\n|\n- `|\Z)"),
+    ("第 5 步 VERDICT_SKIPPED_LEGACY",
+     r"(?m)^- `VERDICT_SKIPPED_LEGACY`.*?(?=\n\n|\n- `|\Z)"),
+)
+
 
 def banned_booleans(flat_text):
     """从禁令句本身抽出被点名的字段 —— **哨兵的主语只能有这一个来源**。
@@ -163,10 +179,18 @@ class DailySkillTest(unittest.TestCase):
             "结论句不可得(存量快照)", t,
             "标签把「快照里没有这一句」当成了「快照旧」——当日 derive 崩了的"
             "快照会被错误豁免")
-        self.assertIn("结论句不可得(快照未落结论句)", t, "中性标签不见了")
-        self.assertGreaterEqual(
-            t.count("结论句不可得(快照未落结论句)"), 2,
-            "标签只出现一次 —— 第 2 步的定义与禁令 9 豁免口的引用必须同串")
+        self.assertIn(NO_VERDICT_LABEL, t, "中性标签不见了")
+        # **按站点断言,不数次数**:计数式("≥2 次"或"==4 次")会被别处的
+        # 引用满足 —— 漏改其中一站,另外三站的字样照样把断言喂饱,那一站就
+        # 悄悄按旧口径行事。这与 C1 是同一个缝(断言被别处文字满足、自己不守
+        # 自己那一站)。定成 ==4 又会在正当地多写一处引用时误红,而最省事的
+        # "修法"就是放宽 —— F7 已经否掉那条路。
+        for name, pattern in LABEL_SITES:
+            seg = block(raw(DAILY), pattern)
+            self.assertIsNotNone(seg, "没摘到「%s」,正则或文档结构变了" % name)
+            self.assertIn(NO_VERDICT_LABEL, seg,
+                          "「%s」这一站没用同一个标签串 —— 该站会按旧口径行事"
+                          % name)
 
     def test_ban_nine_carves_out_the_legacy_snapshot_case(self):
         """禁令 9 无条件要求逐字照抄结论句,而第 2 步规定该键不存在或为 null 时
