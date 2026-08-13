@@ -291,23 +291,31 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         # 用集合而不是计数器累加:纯 gnews 日 entry.source_capped 与
         # gnews_filter.capped 由**同一个** raw >= 99 算出,分别 +1 会把同一次
         # 截断记两遍,结论句于是把一件事说两遍(第四轮 S2/S4)
+        # 两个来源必须**各判各的**。第五轮写成"任一为真且 flag 不为 True",
+        # 于是补位日(GDELT 取满 8 条 → flag 为 True,而主通道 raw≥99 是另一次
+        # 完全独立的截断)整条被吞掉,sample_capped_days 由 7 写成 0,滤除条次
+        # 从下界变成了精确值(第六轮 Critical)。
         today_caps = set()
+        sample_now = False
         own_flag = entry.get("source_capped") if isinstance(entry, dict) else None
-        if own_flag is True and isinstance(own_cap, int) \
-                and not isinstance(own_cap, bool) and own_cap > 0:
-            today_caps.add(own_cap)
+        if own_flag is True and flag is not True:
+            # 条目自身的截断,且没被上面那条 caveat 披露过。不过滤的通道上
+            # source_capped 与 count_at_cap 由同一个 raw>=cap 算出,不加这个
+            # 条件会把同一次截断说两遍(第五轮 S2/S6)
+            sample_now = True
+            if (isinstance(own_cap, int) and not isinstance(own_cap, bool)
+                    and own_cap > 0):
+                today_caps.add(own_cap)
         if isinstance(gf, dict) and gf.get("capped") is True:
+            # 主通道那次截断**独立成立**:它说的是滤除前的样本,与补位通道
+            # 自己有没有取满毫无关系,不能被 flag 吞掉
+            sample_now = True
             mcap, m_assumed = _cap(snap, "gnews_records", GNEWS_SOFT_CAP)
             today_caps.add(mcap)
             # 主通道上限的推定单列:并进 cap_assumed_days 会给权威的条目级上限
             # 贴上"上限为推定"的假标注,且让一个"天数"超过它统计的天数
             sample_assumed += 1 if m_assumed else 0
-        # 只在这次截断**没有被上面那条 caveat 披露过**时才另立一笔。GDELT 不过滤,
-        # source_capped 与 count_at_cap 由同一个 raw>=8 算出(采集层注释自陈"两者
-        # 恒等"),两边各记一遍会让结论句把同一次截断说两遍,而且第二句还对一条
-        # 根本不过滤的通道说"滤除后的条数是下界"(第五轮 S2/S6)
-        if (own_flag is True or (isinstance(gf, dict) and gf.get("capped") is True)) \
-                and flag is not True:
+        if sample_now:
             sample_capped += 1
             sample_caps |= today_caps
         if items:

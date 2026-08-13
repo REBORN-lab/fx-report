@@ -464,6 +464,29 @@ class SampleCappedTest(unittest.TestCase):
         snap = self._snap({"articles": [{"title": "g"}], "articles_raw_count": 3})
         self.assertIsNone(derive._sample_capped(snap, "PHP"))
 
+    def test_dropped_malformed_value_reaches_derive_output(self):
+        """第六轮 Critical:这个字段的**值**零断言 —— 恒 None、存量恒 0、读错
+        字段、bool 泄漏四种改法全绿。它是第五轮那条 Critical 的日报半边。"""
+        def snap(entry):
+            return {"date": "2026-08-12", "rates": {"PHP": rate_entry(56.0)},
+                    "events": {"PHP": entry}, "meta": {"caps": {"gdelt_records": 8}}}
+        got = derive.derive(snap({"articles": [], "articles_raw_count": 3,
+                                  "articles_dropped_malformed": 3}), [])[0]
+        self.assertEqual(got["events"]["PHP"]["dropped_malformed"], 3)
+        # 存量快照没有这本账 → None(不知道 ≠ 知道是 0)
+        legacy = derive.derive(snap({"articles": [], "articles_raw_count": 3}), [])[0]
+        self.assertIsNone(legacy["events"]["PHP"]["dropped_malformed"])
+        # 确实一个都没丢 → 0,与 None 必须可分辨
+        zero = derive.derive(snap({"articles": [{"title": "a"}],
+                                   "articles_raw_count": 1,
+                                   "articles_dropped_malformed": 0}), [])[0]
+        self.assertEqual(zero["events"]["PHP"]["dropped_malformed"], 0)
+        self.assertIsNotNone(zero["events"]["PHP"]["dropped_malformed"])
+        # bool 不是计数
+        bad = derive.derive(snap({"articles": [], "articles_raw_count": 3,
+                                  "articles_dropped_malformed": True}), [])[0]
+        self.assertIsNone(bad["events"]["PHP"]["dropped_malformed"])
+
     def test_sample_capped_reaches_derive_output(self):
         """第四轮 S8:四个用例全部直接调私有函数,把整行从 _events_derived 里
         删掉、或改成硬编码 None,532 用例照样全绿。对照 count_capped —— 它既有

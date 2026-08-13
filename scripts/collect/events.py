@@ -375,10 +375,12 @@ def collect(cfg):
         entry = {
             "articles": _dedupe_titles(arts), "articles_raw_count": raw_count,
             "source_cap": MAX_RECORDS,
-            # 本通道不过滤,故"原始样本触顶"与"落盘条数被钉住"恒等 —— 但仍分两个
-            # 字段落盘:下游不该靠"当前是哪条通道"去猜某个布尔是哪个含义
+            # source_capped 说的是**源返回了多少条**(含结构不可识别被跳过的),
+            # count_at_cap 说的是**落盘了多少条**。本通道不过滤,两者通常相等,
+            # 但源返回 8 条里 7 条不可识别时前者为真、后者为假 —— 拿 raw_count
+            # 算 count_at_cap 会让"落盘 1 条"报成"已达当日采集上限"(第六轮)
             "source_capped": known and raw_count >= MAX_RECORDS,
-            "count_at_cap": known and raw_count >= MAX_RECORDS,
+            "count_at_cap": len(arts) >= MAX_RECORDS,
             "articles_dropped_malformed": dropped,
             "channel": "gdelt",
         }

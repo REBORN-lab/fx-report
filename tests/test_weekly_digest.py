@@ -1381,6 +1381,61 @@ class LegacySnapshotCapParityTest(unittest.TestCase):
         self.assertIn("7 天顶到当日采集上限(8 条)", got["articles_verdict"])
         self.assertNotIn("滤除后的条数是下界", got["articles_verdict"])
 
+    def test_backfill_day_discloses_both_truncations(self):
+        """补位日有**两次不同的截断**:主通道 raw=100 顶到 99,补位通道又取满 8。
+        第五轮的抑制条件写成"任一为真且 flag 不为 True",把主通道那次整条吞掉,
+        sample_capped_days 由 7 写成 0,滤除条次从下界变成精确值(第六轮 Critical)。
+        这是 collect() 两趟流程的正常产物:补位条目保留主通道那一趟的账。"""
+        def day(d):
+            return {"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                    "events": {"USD": {
+                        "articles": [{"title": "t%d-%d" % (d, i), "url": "u%d-%d" % (d, i),
+                                      "seendate": "202608%02dT120000Z" % d}
+                                     for i in range(8)],
+                        "articles_raw_count": 8, "source_cap": 8, "source_capped": True,
+                        "count_at_cap": True, "articles_dropped_malformed": 0,
+                        "channel": "gdelt",
+                        "gnews_filter": {"raw": 100, "undated": 0, "out_window": 0,
+                                         "offlist": 100, "kept": 0, "capped": True}}},
+                    "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+        got = wd._events_one([day(d) for d in range(1, 8)], "USD",
+                             "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_capped_days"], 7)
+        self.assertEqual(got["articles_sample_capped_days"], 7)
+        self.assertEqual(got["articles_sample_daily_cap"], 99)
+        self.assertIn("7 天顶到当日采集上限(8 条)", got["articles_verdict"])
+        self.assertIn("7 天源返回的原始样本顶到其上限(99 条)", got["articles_verdict"])
+
+    def test_official_channel_cap_reaches_the_verdict(self):
+        """条目缺席那一路(official 专用)的 capped_caps.add 零覆盖:删掉它
+        542 用例全绿,而它正是真实 W33 官方结论句里「(3 条)」的唯一来源。"""
+        cap = wd.OFFICIAL_DAILY_CAP
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {"articles": None, "official": [
+                      {"issuer": "Fed", "title": "o%d-%d" % (d, i),
+                       "published": "Mon, 0%d Aug 2026 10:00:00 GMT" % d}
+                      for i in range(cap)]}},
+                  "meta": {"caps": {"official_daily": cap}}} for d in (1, 2)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-02", 0)
+        self.assertEqual(got["official_capped_days"], 2)
+        self.assertIn("2 天顶到当日采集上限(%d 条)" % cap, got["official_verdict"])
+        self.assertNotIn("不给单值", got["official_verdict"])
+
+    def test_legacy_entry_cap_reaches_the_verdict(self):
+        """存量条目没有 source_cap,走的是按 cap_key 推定那一支 —— 它的
+        capped_caps.add 同样是结论句里那个数的唯一来源。"""
+        cap = wd.GDELT_DAILY_CAP
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {"articles": [
+                      {"title": "t%d-%d" % (d, i), "url": "u%d-%d" % (d, i),
+                       "seendate": "202608%02dT120000Z" % d} for i in range(cap)],
+                      "articles_raw_count": cap,
+                      "articles_dropped_malformed": 0}},
+                  "meta": {"caps": {"gdelt_records": cap}}} for d in (1, 2)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-02", 0)
+        self.assertEqual(got["articles_capped_days"], 2)
+        self.assertIn("2 天顶到当日采集上限(%d 条)" % cap, got["articles_verdict"])
+
     def test_untruncated_day_does_not_dilute_the_cap_in_the_verdict(self):
         """未触顶的 gnews 日(上限 99)不得把触顶日已知的 8 冲成"不给单值"。
         真实 W33 上 USD/EUR/PHP 都踩中(第五轮 S4/S8)。"""

@@ -353,6 +353,31 @@ class RawCountTest(unittest.TestCase):
         self.assertEqual(events._gnews_entry([], 5, dict(counts, raw=5, kept=0))
                          ["articles_dropped_malformed"], 0)
 
+    def test_zero_articles_is_not_a_gap(self):
+        """`dropped > 0` 这半个判据零覆盖:删掉后源真的 0 条也会被记成缺漏,
+        每天刷出 5 条假 gap(第六轮)。"""
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        with mock.patch.object(events, "_query_with_retry",
+                               return_value=(([], 0, 0), None)):
+            out, gaps = events.collect(cfg)
+        self.assertEqual(gaps, [])
+        self.assertEqual(out["PHP"]["articles"], [])
+        self.assertEqual(out["PHP"]["articles_dropped_malformed"], 0)
+
+    def test_count_at_cap_counts_landed_not_returned(self):
+        """源返回 8 条(顶到上限)但 7 条结构不可识别 → 落盘 1 条。
+        拿 raw_count 算 count_at_cap 会把"落盘 1 条"报成"已达当日采集上限"。"""
+        one = [{"title": "ok", "url": "u", "domain": "reuters.com",
+                "seendate": "20260811T000000Z"}]
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        with mock.patch.object(events, "_query_with_retry",
+                               return_value=((one, events.MAX_RECORDS, 7), None)):
+            out, _ = events.collect(cfg)
+        entry = out["PHP"]
+        self.assertIs(entry["source_capped"], True)    # 源确实返回了 8 条
+        self.assertIs(entry["count_at_cap"], False)    # 但只落盘了 1 条
+        self.assertEqual(entry["articles_dropped_malformed"], 7)
+
     def test_gdelt_branch_lands_count_at_cap(self):
         """count_at_cap 是 landed_count_capped 的第一权威,GDELT 分支此前零覆盖:
         改成恒 False 时 536 用例全绿(第五轮 S3)。"""
