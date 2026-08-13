@@ -17,6 +17,8 @@
 - [x] 2.6 `derive.SCHEMA_VERSION` 升到 2,同步 `EMPTY_EVENTS_DERIVED`;`tests/test_derive.py` 的键集断言会红,那是防漂移哨兵,不得靠放宽断言消除
 - [ ] 2.7 校验器按 `derived.schema_version >= 2` 分流存量快照,并在输出中打印「N 个币种因快照 schema 过旧未校验结论句」——「跳过」与「通过」必须可区分
 
+- [ ] 2.9 日报侧容器与条目兜底:`derived.schema_version >= 2` 时,`derived.events` 非 dict 出 `VERDICT_CONTAINER_MALFORMED`、`covered` 里缺条目的币种出 `VERDICT_ENTRY_MISSING`;闸门只对声称带结论句的快照生效,存量快照照旧跳过
+
 ## 3. SKILL 引用规则
 
 - [ ] 3.1 `skills/fx-daily-report/SKILL.md`:事件结论改为「逐字引用 `derived.events.<币种>` 的结论句」,删去让 LLM 按布尔拼话术的段落

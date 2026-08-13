@@ -1611,6 +1611,175 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
+## Task 6b:日报侧容器与条目的兜底(闸门自己的缝)
+
+对应 tasks.md **2.9**。**T6 的 spec 审查实测发现**:`derived.schema_version=2`
+时,`derived.events` 为 `{}` / `[]` / 键不存在 / 只有 3 个币种,四种形态一律
+`CHECK PASSED`、零声明、**一条结论句都没查** —— 输出上与「全部通过」不可分辨。
+
+根因是同一份判定的两个调用点行为不对称:`check_verdicts` 的 docstring 明写
+「**注意目前没有别处兜底**…**调用方必须自己确认容器存在**」,`check_weekly`
+照做了(`VERDICT_CONTAINER_MALFORMED`),`check_daily` 没有。
+
+**为什么必须在本 change 内关掉**:这条缝就长在本 change 新建的那道闸门里。
+带着它归档,等于让记忆里那条「校验器不验 verdict」的教训**同型复发**。
+
+**闸门只对「声称带结论句」的快照生效**(`ver_ok` 为真时才检查)——
+`data/2026-08-07..10.json` 的 `derived` 是 `null`,存量快照必须照旧跳过,
+否则六天历史日报立刻变红。
+
+**Files:**
+- Modify: `scripts/check_report.py`(`check_daily` 的闸门块)
+- Modify: `tests/test_check_report.py`(追加到文件末尾)
+
+- [ ] **T6b Step 1: 写会红的测试**
+
+在 `tests/test_check_report.py` **文件末尾**追加:
+
+```python
+class DailyContainerGateTest(unittest.TestCase):
+    """闸门声明「这份快照带结论句」之后,容器与条目就都不是可选的。
+
+    check_verdicts 的 docstring 明写「没有别处兜底,调用方必须自己确认容器
+    存在」—— check_weekly 照做了,check_daily 此前没有。同一份判定的两个
+    调用点行为不对称,正是共享判定要防的漂移。"""
+
+    def _run(self, events, ver=2, notes=None):
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": ver, "rates": {}, "real_rate": {},
+                           "events": events}
+        return check_report.check_daily(
+            make_report(), json.dumps(snap, ensure_ascii=False), BRIEF,
+            notes=[] if notes is None else notes)
+
+    def test_non_dict_container_fails_loudly(self):
+        for bad in ([], "x", 7):
+            v = self._run(bad)
+            self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x for x in v),
+                            (bad, v))
+
+    def test_missing_container_key_fails_loudly(self):
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": 2, "rates": {}, "real_rate": {}}
+        v = check_report.check_daily(make_report(),
+                                     json.dumps(snap, ensure_ascii=False), BRIEF)
+        self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x for x in v), v)
+
+    def test_empty_container_reports_every_covered_currency(self):
+        v = self._run({})
+        missing = [x for x in v if "VERDICT_ENTRY_MISSING" in x]
+        self.assertEqual(len(missing), len(check_report.CURRENCIES), v)
+
+    def test_partial_container_reports_only_the_absent_ones(self):
+        v = self._run({c: {"events_verdict": "x"} for c in ("USD", "EUR", "PHP")})
+        names = [c for c in check_report.CURRENCIES
+                 if any("VERDICT_ENTRY_MISSING" in x and c in x for x in v)]
+        self.assertEqual(names, ["THB", "BRL"])
+
+    def test_currency_not_covered_is_not_required(self):
+        """让位仍然成立:报告没写的币种不要求条目。"""
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": 2, "rates": {}, "real_rate": {},
+                           "events": {}}
+        v = check_report.check_daily(make_report(missing="THB"),
+                                     json.dumps(snap, ensure_ascii=False), BRIEF)
+        self.assertFalse([x for x in v
+                          if "VERDICT_ENTRY_MISSING" in x and "THB" in x], v)
+
+    def test_legacy_schema_container_problems_are_still_skipped(self):
+        """闸门只对声称带结论句的快照生效 —— 存量快照照旧跳过,不得变红。"""
+        for bad in (None, [], {}, "x"):
+            v = self._run(bad, ver=1)
+            self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+
+    def test_snapshot_without_derived_is_still_inert(self):
+        notes = []
+        v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes)
+        self.assertEqual((v, notes), ([], []))
+
+
+class CurrenciesCoveredByKeywordsTest(unittest.TestCase):
+    """USD 的 events 条目只因 events.KEYWORDS 里有 "USD" 才存在 —— 实测
+    data/2026-08-12.json 的 rates 只有 4 个键(无 USD)。动一下关键词表,
+    USD 条目就会静默消失,而校验器从不读 KEYWORDS。这条断言是唯一的哨兵。"""
+
+    def test_every_currency_has_keywords(self):
+        from scripts.collect import events as events_mod
+        self.assertLessEqual(set(check_report.CURRENCIES),
+                             set(events_mod.KEYWORDS))
+```
+
+- [ ] **T6b Step 2: 跑测试确认失败**
+
+```bash
+find . -name __pycache__ -type d -exec rm -rf {} +
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | tail -20
+```
+
+Expected(**预测,实跑为准**):`DailyContainerGateTest` 前四条 FAIL(违规列表为空),
+后三条与 `CurrenciesCoveredByKeywordsTest` PASS。
+
+- [ ] **T6b Step 3: 实现**
+
+`scripts/check_report.py` 的 `check_daily`,把
+
+```python
+    covered = {c for c in CURRENCIES if find_section(secs, c)}
+    found, skipped = check_verdicts(report, derived.get("events"),
+                                    VERDICT_FIELD_DAILY, covered,
+                                    required=ver_ok, label="derived.events")
+```
+
+改为
+
+```python
+    covered = {c for c in CURRENCIES if find_section(secs, c)}
+    events = derived.get("events")
+    # 闸门只对「声称带结论句」的快照生效:ver_ok 为假时照旧跳过,否则
+    # 存量快照(derived 为 null 或 schema=1)会集体变红。
+    # ver_ok 为真时容器与条目都不再是可选的 —— 与 check_weekly 对称,
+    # 谓词不越权判结构,兜底在调用点(见 check_verdicts 的 docstring)。
+    if ver_ok and not isinstance(events, dict):
+        v.append("VERDICT_CONTAINER_MALFORMED: 快照的 derived.events 不是对象"
+                 "(实为 %s),derived.events 下的结论句一条都未校验"
+                 % type(events).__name__)
+    elif ver_ok:
+        # 日报五个币种都应有事件派生量(derive 按 rates ∪ events.KEYWORDS
+        # 逐币种填充),整条缺失不是合法形态 —— 与周报的 rates 容器不同,
+        # 那里基准货币本就没有条目
+        for c in sorted(covered - set(events)):
+            v.append("VERDICT_ENTRY_MISSING: derived.events 缺少 %s 的条目;"
+                     "该币种的结论句一条都未校验" % c)
+    found, skipped = check_verdicts(report, events,
+                                    VERDICT_FIELD_DAILY, covered,
+                                    required=ver_ok, label="derived.events")
+```
+
+- [ ] **T6b Step 4: 跑测试确认通过 + 存量快照六天复验**
+
+```bash
+find . -name __pycache__ -type d -exec rm -rf {} +
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail -3
+```
+
+**实跑数字为准。**
+
+```bash
+for d in 2026-08-07 2026-08-08 2026-08-09 2026-08-10 2026-08-11 2026-08-12; do
+  echo "--- $d ---"
+  python3 scripts/check_report.py reports/daily/$d.md data/$d.json \
+    --brief briefs/$d-brief.md
+  echo "rc=$?"
+done
+```
+
+Expected:与 T6 完全一致(07–10 `CHECK PASSED` 无声明;11 声明 + 既有
+`GAP_OMITTED` rc=1;12 声明 + `CHECK PASSED`)。**任何一天变化都是缺陷。**
+
+- [ ] **T6b Step 5: 勾选并提交**
+
+---
+
 ## Task 7:两个 SKILL 的引用规则 + 文档哨兵
 
 对应 tasks.md **3.1 / 3.2**。
