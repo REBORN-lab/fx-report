@@ -937,7 +937,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `tests/test_derive.py`
 - Modify: `tests/test_snapshot.py:177`
 
-- [ ] **T5 Step 1: 写会红的测试**
+- [x] **T5 Step 1: 写会红的测试**
 
 在 `tests/test_derive.py` **文件末尾**追加:
 
@@ -1083,7 +1083,7 @@ class EventsVerdictTest(unittest.TestCase):
         self.assertFalse([k for k in derive.EMPTY_REAL_RATE if "verdict" in k])
 ```
 
-- [ ] **T5 Step 2: 跑测试确认失败**
+- [x] **T5 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1092,7 +1092,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_derive -v 2>&1 | tail -
 
 Expected: `EventsVerdictTest` 里除 `test_rates_and_real_rate_get_no_verdict` 外全部 FAIL(`KeyError: 'events_verdict'` / `assertIn` 失败 / `2 != 1`);另外 `test_schema_version_present` 仍是绿(它断言 1)。
 
-- [ ] **T5 Step 3: 实现 —— `scripts/collect/derive.py` 四处编辑**
+- [x] **T5 Step 3: 实现 —— `scripts/collect/derive.py` 四处编辑**
 
 3a. 第 7 行 `from ..fixings import distinct_fixings, num as _num` **之后**加一行:
 
@@ -1240,7 +1240,7 @@ def _events_verdict(count, count_capped, sample_capped, channel_changed_from,
 
 **不要动** `tests/test_snapshot.py:45`(快照顶层版本号,保持 1)。
 
-- [ ] **T5 Step 4: 跑测试确认通过**
+- [x] **T5 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1256,7 +1256,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`(**实跑数字为准**)。
 
-- [ ] **T5 Step 5: 勾选并提交**
+- [x] **T5 Step 5: 勾选并提交**
 
 把 tasks.md 的 `2.1`、`2.2`、`2.6` 改成 `- [x]`,逐条验证后:
 

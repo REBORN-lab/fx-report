@@ -9,12 +9,12 @@
 
 ## 2. 日报侧:derive 落同构结论句
 
-- [ ] 2.1 先写会红的用例:`derived.events.<币种>` 必须含结论句字段,且其内容随 `count`/`count_capped`/`sample_capped`/`channel_changed_from` 变化
-- [ ] 2.2 `derive.py` 新增事件类结论句(仅 `events` 一类;`rates` 与 `real_rate` 明确非目标)
+- [x] 2.1 先写会红的用例:`derived.events.<币种>` 必须含结论句字段,且其内容随 `count`/`count_capped`/`sample_capped`/`channel_changed_from` 变化
+- [x] 2.2 `derive.py` 新增事件类结论句(仅 `events` 一类;`rates` 与 `real_rate` 明确非目标)
 - [ ] 2.3 存量快照无该字段时的三态:校验器判为"该日不可校验"而非"通过",并在输出中区分于"引用错误"
 - [ ] 2.4 `check_daily` 接入同一套整句包含检查,复用周报侧的实现(禁止两处各写一遍)
 - [x] 2.5 新建 `scripts/verdicts.py`,只含 `join_verdict(head, caveats)`;`weekly_digest._verdict` 与 `_fixings_verdict` 的拼装改经它,判定逻辑一行不改(共享拼装,不共享判定)
-- [ ] 2.6 `derive.SCHEMA_VERSION` 升到 2,同步 `EMPTY_EVENTS_DERIVED`;`tests/test_derive.py` 的键集断言会红,那是防漂移哨兵,不得靠放宽断言消除
+- [x] 2.6 `derive.SCHEMA_VERSION` 升到 2,同步 `EMPTY_EVENTS_DERIVED`;`tests/test_derive.py` 的键集断言会红,那是防漂移哨兵,不得靠放宽断言消除
 - [ ] 2.7 校验器按 `derived.schema_version >= 2` 分流存量快照,并在输出中打印「N 个币种因快照 schema 过旧未校验结论句」——「跳过」与「通过」必须可区分
 
 ## 3. SKILL 引用规则

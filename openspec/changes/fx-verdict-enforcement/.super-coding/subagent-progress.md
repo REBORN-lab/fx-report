@@ -22,16 +22,27 @@
 
 ## 当前状态
 
-- 当前 task: **T5**(`derive` 落 `events_verdict` + `SCHEMA_VERSION` 升 2)
+- 当前 task: **T6**(`check_daily` 接入 + schema 闸门 + 跳过声明)
 - 阶段: `implementing`
 - 审查-修复轮次: 0 / 3
 - 实现提交: (待)
 - RED 证据: (待)
 - GREEN 证据: (待)
-- **T5 要顺带处理**:M2 分隔符收口(`_verdict:480` 仍自写 `"、".join(caveats)`,
-  顿号存在于两处)。T5 让 `derive._events_verdict` 成为 `join_verdict` 的
-  第三个消费者,是收口的自然时机;收口需改 `scripts/verdicts.py`,
-  届时同步 Design Doc「只含 join_verdict」那句
+- **T6 的关键风险**:`data/` 下既有快照的 `derived.schema_version` 仍为 1
+  且无 `events_verdict`。闸门的 `< 2` 分支必须真的跳过并声明跳过条数,
+  否则**今天起所有历史日报校验会集体变红**
+- **T6 必须实测**:`test_missing_section_does_not_double_report` 那条让位断言
+  会不会像 T4 那条一样空过。T4 实测同型断言毫无鉴别力(见下方教训 00)。
+  T6 的形态不同(`make_report()` 本就不含结论句),但**必须施加
+  `covered` 恒取全集的变异确认它被杀**
+- **T6 会让 `check_daily` + `check_weekly` 合计约 145 行**(现 121),
+  逼近拆分阈值 150 —— 但**不要在 T6 拆**(T7/T9 还要引用该文件的逐字代码块)
+- **M2 分隔符收口不塞进 T5 实现**:T5 按计划只 import `join_verdict`,
+  **不碰** `scripts/verdicts.py`(T1 已双审定稿)。收口要加 `CAVEAT_SEP`
+  常量并改 Design Doc「只含 join_verdict」那句,属独立决定。
+  **T5 双审后再评估**:若届时 `derive` 确实需要 verdicts.py 的别的东西,
+  一并做;否则记为有理由的不做。理由:T5 本身已覆盖 derive + schema 升级 +
+  三个测试文件,再塞会重演上一个 change 的七轮循环
 
 ### 必须带进后续任务的五条(实测得来)
 
@@ -42,6 +53,16 @@
    `assertNotIn(<结论句>, bad)`**,让「让位机制」成为不报 VERDICT 的唯一原因。
    T6 的 `test_missing_section_does_not_double_report` 形态不同
    (`make_report()` 本就不含结论句),但**派 T6 时要求实测该变异确被杀**
+
+000. **kill 判定的两个陷阱是不同机制,两个都要防**:
+   - **输出污染**:不能 grep `"FAILED"` —— `tests/test_check_report.py` 自身
+     会向 stdout 打印 `CHECK FAILED (1):`
+   - **退出码被管道吞掉**:`cmd | tail` 拿到的是 `tail` 的退出码。实证:
+     同一条必然失败的命令,经管道 `rc=0`、直接 `rc=1`。
+     T5 修复轮实际中招一次(已自曝)
+   正确做法:输出重定向到文件后取 `$?`,或用 `subprocess.run(...).returncode`。
+   **仓库全局硬规则「守卫调用禁止接 `| tail`/`| grep`」是同一根因** ——
+   那条规则原本从守卫误报事故来,这里在变异验证上又撞了一次
 
 0. **变异还原禁用 `git checkout HEAD -- <file>`,除非改动已提交**。
    T3 修复轮实际事故:修复尚未提交时用它还原,`HEAD` 是修复前的提交,
@@ -67,6 +88,44 @@
   `derived.events`)靠它区分来源,**在 T4/T6 的测试里补一条 label 断言**
 - `if s not in report:` 放宽成 `s.strip() not in report` 存活(M12)。
   `join_verdict` 产出的句子首尾从无空白,可达输入域上近似等价变异,风险极低
+
+### 待立为新任务:结论句里的上限取值与判定不一致(T5 spec 审查实测)
+
+**不是假设形态**:真实 11 条事件条目里 **6 条缺 `source_cap`**,该句在库内
+**5 处实际触发**;同一天 08-11 周报印「上限 8 条」而日报印「上限不可知」。
+
+根因(已自行读码确认):
+- `events.landed_count_capped` 内有闭包 `_cap(key, fallback)`,按通道解析
+  `caps["gnews_records"]` / `caps["gdelt_records"]`,缺则退模块常量
+  `GNEWS_SOFT_CAP=99` / `MAX_RECORDS=8`
+- `derive` 的 `cap` 只取 `entry.get("source_cap")`,没有这两级回退
+- 注意 `landed_count_capped` 的 `own = entry.get("source_capped")` 分支
+  **不查任何 cap 就返回** —— 所以「判定用了哪个 cap」并非总有定义
+
+**质量审查补充的关键点**:**不要**简单改成「读 `meta.caps` 就完事」——
+`count_at_cap` 分支下采集层是拿 `source_cap` 算的,**那条路上 `source_cap`
+才是对的数**。所以必须由 `landed_count_capped` **自己吐出它用了哪个上限**,
+而不是在外面另立一套优先级。
+
+质量审查还实跑出了发散场景(比 spec 审查的更尖锐):
+```
+count=50 / count_capped=True(判据用了 meta.caps.gnews_records=50)
+verdict = 当日采到 50 条(已顶到当日采集上限(99 条),实际篇数只多不少)
+```
+一句话里「50 条」与「上限 99 条」并列,而这句会被日报**逐字引用**。
+今天不可达(`__main__.py` 把 `meta.caps` 写成同一对常量),但
+`landed_count_capped` 的签名与 docstring 就是为 caps 可变而存在的;
+上限一旦可配置,这条立刻活。
+
+**正确的修法**:在 `events.py` 的 `landed_count_capped` 旁加兄弟函数,
+复用同一段 `_cap()` 与通道分支,返回**它实际用来判定的那个上限**;
+无分支消费 cap 时(`own = entry.get("source_capped")` 那条路**不查任何 cap
+就返回**)回落到 `entry["source_cap"]`,再退模块常量并标 `assumed`
+(沿用 `weekly_digest._cap` 的先例)。derive 用与其余五个 helper 同形的
+`_source_cap(snap, currency)` 调它,**不复制通道→键映射**。
+
+**为什么不塞进 T5**:`events.py` 不在 T5 的三文件白名单内;在 derive 里复制
+映射正是本仓库反复栽跟头的「两处各写一遍」。
 
 ### 留给 verify 阶段的待办(T4 质量审查提出,不在 T4 处理)
 
@@ -162,3 +221,26 @@
   违规码改名让 4 条过滤式断言完备、`covered` 与 `CURRENCY_MISSING` 收进
   同一循环(互为补集,物理上保证一起改)、fixture 噪声、文案
 - plan T4 五步 + OpenSpec **1.1 / 1.2 / 1.4 / 1.6**(第 1 组全完)已勾选并验证
+
+### T5 —— derive 落 events_verdict + SCHEMA_VERSION 升 2 ✅
+
+- 提交: `d85f357`(实现 + 14 测试)→ `df4dd0a`(改名 + 关键字调用 + bool 直测)
+- RED: `Ran 79 tests` / `FAILED (failures=3, errors=10)`(14 条新用例 13 红;
+  第 14 条是非目标守卫,天然从绿开始)
+- GREEN: `Ran 96 tests` / `OK`;全量 `Ran 628 tests` / `OK`
+- **真实数据上第一次产出日报结论句**(五句,修复前后逐字不变):
+  USD「当日采到 11 条(源返回的原始样本顶到其上限,滤后条数是下界)」/
+  EUR「当日采到 1 条」/ PHP「当日采到 12 条」/ THB「当日采到 7 条」/
+  BRL「当日采到 5 条」;`schema_version: 2`,`gaps: []`
+  —— USD 句自洽:`sampled=True` 且 `capped=False`,说的是「原始样本触顶」
+  而非「已达采集上限」(这两句话在本仓库被混用过六次)
+- spec 合规审查 ✅ —— **键集哨兵断言原文一字未改**(无 diff hunk 覆盖),
+  靠两侧同步补键转绿;`_events_verdict` 跑 **432 组全组合**,caveat 与
+  传入事实 **0 处不一致**。**注意:那 432 组是审查者的一次性 sweep,
+  不在提交代码里,不构成回归保护**
+- 代码质量审查 ✅ —— 7 变异 6 杀;实证「采集失败走**正常分支**、只有派生层
+  真异常才落 except」,推翻了「一个问题两处报」的疑虑
+- 已修:`_cap_phrase` → `_daily_cap_phrase` + 禁止合并的 docstring
+  (原 docstring 建立关联却没写禁止,**反而在助推合并**);调用改关键字;
+  bool 守卫直测(两名审查者各自独立复现过这条幸存变异)
+- plan T5 五步 + OpenSpec **2.1 / 2.2 / 2.6** 已勾选并验证
