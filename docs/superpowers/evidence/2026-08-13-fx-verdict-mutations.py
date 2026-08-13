@@ -62,13 +62,22 @@
 7. **事实源在电池之外(T8c 新增)+ 跑前必须干净(T8d 补)** ——
    开跑前 `git status --porcelain` **必须为空**,否则拒跑并列出脏文件;
    开跑前与 `finally` 末尾各取一次,不相等就炸。
-   **只比「前后相等」是不够的**(T8d 实证,不是对抗构造):把靶点换成一条
-   **纯注释改写**(行为零影响),干净树上跑是 `SURVIVED / KILLED 0 / 执行 1`、
-   **rc=1**;而在 `tests/test_check_report.py` 的既有方法里加两行 sha256
-   钉死(**不新增测试、不改测试数**)再跑同一份电池 → **rc=0**、
-   `KILLED 1 / 执行 1 / 登记 1`、`BASELINE OK — Ran … tests`(与提交态同数)、
-   5 个文件指纹**与干净态逐字节相同**、第 7 道**完全静默**
-   —— 因为 ` M tests/test_check_report.py` 在 before 与 after 里都在,两者相等。
+   **只比「前后相等」是不够的**(T8d 实证,不是对抗构造。跑在提交
+   `3824b8c` 上,用的是 **acdd7de 版本的本文件**、靶点缩到 1 条的副本,
+   本机无 `FRED_API_KEY`):把靶点换成一条**纯注释改写**(把
+   `# ---- 违规处置文案:**唯一事实源在这里,SKILL 不再复述** ----`
+   的强调号去掉,行为零影响)——
+   - **干净树**:`SURVIVED / KILLED 0 / 执行 1 / 登记 1`、**rc=1**
+     (证明该变异真的没有断言抓得住);
+   - 在 `tests/test_check_report.py` 的既有方法
+     `test_disposition_constants_are_frozen_verbatim` 里加**两行** sha256
+     钉死(`import hashlib` + 一句 `assertEqual`;**不新增测试、不改测试数**)
+     再跑**同一份**电池 → **rc=0**、`KILLED 1 / 执行 1 / 登记 1`、
+     `BASELINE OK — Ran 686 tests`(与提交态同数)、5 个文件指纹
+     **与干净态逐字节相同**(`check_report.py` 两次都是 `70fbdba2…`)、
+     第 7 道**完全静默** —— 因为 ` M tests/test_check_report.py` 在 before
+     与 after 里都在,两者相等。
+   同一棵脏树上跑**本文件**:rc=1「工作树不干净,拒绝跑电池」并列出脏文件。
    **「先改测试、跑电池、再提交」是本仓库的正常工序**,顺序一颠倒,归档报告
    里的「KILLED n/n」就归属到一棵没人能复跑的树上。所以判据升级为
    **「跑前干净」+「跑前跑后相等」**,并把 HEAD 与 `tests/` 指纹一并入档。
@@ -372,8 +381,9 @@ def target_fp(name, path, old, new):
 # **开跑前工作树必须干净**(T8d)。判据是 git,不是电池自己的内存快照。
 # 只要求「跑前跑后相等」是不够的:未提交的 `tests/` 改动在 before 与 after
 # 里都在、两者相等,于是第 7 道全程静默,而**杀伤恰恰是 `tests/` 执行的**——
-# 一条纯注释靶点在干净树上 `SURVIVED / rc=1`,在带两行未提交 sha256 钉死的
-# 树上就是 `KILLED 1 / 执行 1 / 登记 1 / rc=0`,指纹与提交态逐字节相同。
+# 一条纯注释靶点在干净树上 `SURVIVED / KILLED 0 / 执行 1 / rc=1`,在带两行
+# 未提交 sha256 钉死的树上就是 `KILLED 1 / 执行 1 / 登记 1 / rc=0`,
+# `Ran 686 tests` 与提交态同数、5 个指纹与提交态逐字节相同(实测见第 7 条)。
 status_before = git_status()
 if status_before.strip():
     print("工作树不干净,拒绝跑电池。")
