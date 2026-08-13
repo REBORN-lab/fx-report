@@ -70,6 +70,24 @@
 - `if s not in report:` 放宽成 `s.strip() not in report` 存活(M12)。
   `join_verdict` 产出的句子首尾从无空白,可达输入域上近似等价变异,风险极低
 
+### 留给 verify 阶段的待办(T4 质量审查提出,不在 T4 处理)
+
+- **退出码不对称**:digest 整体不是 JSON / 不是 dict → `main` 报 rc=2;
+  而 `events` / `rates` 容器坏掉 → `check_weekly` 出违规、rc=1。
+  运行层后果:SKILL 规定「非 0 → 按违规改一次、二次仍非 0 就盖 ⚠ 出稿」,
+  而 LLM 改不动聚合文件,于是烧掉唯一一次重试后盖章出稿。
+  完全对称的做法是在 `main` 里补两个容器的 `isinstance` 门 → rc=2,
+  同时保留库层违规给直调者。审查已验证对真实产出安全(两容器恒为 dict)。
+  **理由不在 T4 做**:计划里没有 `main` 层校验;rc=1 已是响亮失败,
+  核心诉求已达成
+- **拆 `scripts/check_report.py` 的阈值**(现 364 行 / 20 个违规码):
+  文件 > 450 行,或 `check_daily` + `check_weekly` 合计 > 150 行
+  (现 121,T6 后约 145,**即将触线**),或出现第三个 `--mode`。
+  **必须等 T9 全部落地后再拆** —— T5–T9 每步都嵌了 `check_report.py` 的
+  逐字代码块,提前拆会让锚点全部对不上。拆法见审查记录:
+  `scripts/check/{common,verdicts,daily,weekly}.py` + 保留
+  `scripts/check_report.py` 薄壳再导出(SKILL 命令行与测试全按该路径写)
+
 ### 已决定的处置
 
 - **M2 分隔符收口挂到 T5**:`_verdict:480` 仍自写 `"、".join(caveats)`,顿号

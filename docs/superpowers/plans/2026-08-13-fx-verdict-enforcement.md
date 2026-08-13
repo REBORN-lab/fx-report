@@ -792,14 +792,14 @@ class WeeklyVerdictQuotingTest(unittest.TestCase):
             obj = json.loads(DIGEST)
             obj["events"] = bad
             v = self._run(WEEKLY_OK, obj)
-            self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+            self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x
                                 and "digest.events" in x for x in v), (bad, v))
 
     def test_missing_container_key_fails_loudly(self):
         obj = json.loads(DIGEST)
         del obj["rates"]
         v = self._run(WEEKLY_OK, obj)
-        self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+        self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x
                             and "digest.rates" in x for x in v), v)
 
 
@@ -877,7 +877,7 @@ Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caug
                 # 但**没有别处兜底**:main 只校验 week 与 generated_from,
                 # 容器坏掉时会打印 CHECK PASSED 而一条结论句都没查,正是本
                 # change 要消灭的形态。响亮失败在这里。
-                v.append("DIGEST_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
+                v.append("VERDICT_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
                          "(实为 %s),该类结论句一条都未校验"
                          % (label, type(container).__name__))
                 continue
