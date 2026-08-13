@@ -1966,7 +1966,7 @@ Expected(**rc 与违规必须与 T6 完全一致,只多出第 ③ 档的声明**
 - Modify: `skills/fx-daily-report/SKILL.md`(第 75-94 行的事件段;第 4 步禁令表)
 - Modify: `skills/fx-weekly-report/SKILL.md`(「计数与结论纪律」第 1 条)
 
-- [ ] **T7 Step 1: 写会红的测试**
+- [x] **T7 Step 1: 写会红的测试**
 
 创建 `tests/test_skill_docs.py`:
 
@@ -2031,7 +2031,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **T7 Step 2: 跑测试确认失败**
+- [x] **T7 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -2040,7 +2040,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_skill_docs -v
 
 Expected: 5 个用例中 `DailySkillTest` 3 个全 FAIL、`WeeklySkillTest.test_states_the_exact_substring_rule` FAIL;`WeeklySkillTest.test_three_verdict_fields_named` PASS。
 
-- [ ] **T7 Step 3: 实现 —— 三处文档编辑**
+- [x] **T7 Step 3: 实现 —— 三处文档编辑**
 
 3a. `skills/fx-daily-report/SKILL.md`,把「派生指标」那一条里从 `事件数 <count>(前值 <count_prev>,` 开始、到 `**禁止**使用上面任何一句关于变化量的话术)` 结束的整段(现第 75-94 行)替换为:
 
@@ -2088,7 +2088,7 @@ Expected: 5 个用例中 `DailySkillTest` 3 个全 FAIL、`WeeklySkillTest.test_
    `rates` 容器里没有 USD 是正常的(基准货币无定盘价),那一条不用写。
 ```
 
-- [ ] **T7 Step 4: 跑测试确认通过**
+- [x] **T7 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -2097,7 +2097,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_skill_docs -v
 
 Expected: `OK`,`Ran 5 tests`。
 
-- [ ] **T7 Step 5: 勾选并提交**
+- [x] **T7 Step 5: 勾选并提交**
 
 把 tasks.md 的 `3.1`、`3.2` 改成 `- [x]`,逐条验证后:
 

@@ -21,8 +21,8 @@
 
 ## 3. SKILL 引用规则
 
-- [ ] 3.1 `skills/fx-daily-report/SKILL.md`:事件结论改为「逐字引用 `derived.events.<币种>` 的结论句」,删去让 LLM 按布尔拼话术的段落
-- [ ] 3.2 `skills/fx-weekly-report/SKILL.md`:确认三类 verdict 的引用规则写明「整句逐字」,补上此前未明确的部分
+- [x] 3.1 `skills/fx-daily-report/SKILL.md`:事件结论改为「逐字引用 `derived.events.<币种>` 的结论句」,删去让 LLM 按布尔拼话术的段落
+- [x] 3.2 `skills/fx-weekly-report/SKILL.md`:确认三类 verdict 的引用规则写明「整句逐字」,补上此前未明确的部分
 
 ## 4. 历史产物处置
 
