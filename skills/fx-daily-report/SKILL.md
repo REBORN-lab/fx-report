@@ -72,26 +72,17 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
     - 派生指标:日涨跌 <chg_pct_1d>%,5 运行日区间 <range_5d_low>–<range_5d_high>
       (<range_5d_days> 次定盘),双源偏差 <deviation_pct>(前值 <deviation_pct_prev>),
       实际利率 <real_rate.value>(政策利率 <policy_rate> 期 <policy_period>
-      − CPI <cpi> 期 <cpi_period>),事件数 <count>(前值 <count_prev>,
-      变化 <count_delta>;<count_capped> 为 true 时追加"已达当日采集上限,
-      实际篇数只多不少",<count_prev_capped> 亦为 true 时改写为"两日均达采集
-      上限,变化 0 是上限造成的,不表示事件面持平";
-      **`sample_capped` 与 `count_capped` 是两件事,不得互相代用**:前者说源返回的
-      **滤除前**原始样本触顶(gnews 上限 99),此时落盘的条数可能离上限还差得远
-      ——实测 raw=100 而 count=11。`sample_capped` 为 true 时只追加"源返回的原始
-      样本触顶,滤除后的条数是下界",**禁止**据它写上面那两句关于 count 的话;
-      反之 `count_capped` 为 true 才是"这个数被上限钉住"。两者同为 true 时只写 `count_capped`
-      那一句;**是否还有第二次截断由脚本给出**——`main_sample_capped` 为 true 时
-      (且仅在此时)另写一句"主通道当日返回条数触顶,其滤除后的条数是下界"。
-      **禁止**由你自己判断条目带不带 `gnews_filter`:补位日最常见的形态是主通道
-      抓到少量条目、远未触顶、全被白名单挡掉,那天只发生了一次截断;
-      **`dropped_malformed` 大于 0 时**追加"另有 N 条源返回的元素结构不可识别被
-      跳过(源可能已改版)",事件数据据此打折;该值为 null 表示存量快照无此账,
-      **不得**写成"没有被跳过的元素";
-      **`channel_changed_from` 非 null 时**,两日取自不同事件通道(上限与筛选口径
-      都不同),`count_delta` 已由脚本置 null,该处改写为"前一日取自
-      <channel_changed_from> 通道,口径不可比,不给变化量",
-      **禁止**使用上面任何一句关于变化量的话术)
+      − CPI <cpi> 期 <cpi_period>),
+      事件结论:**逐字整句照抄** `derived.events.<币种>.events_verdict`。
+      它已经把当日条数、采集上限触顶、原始样本触顶、通道更换、结构不可识别
+      的条数全部折算进一句话;照抄整句,不要摘出其中的数字另行造句。
+      **禁止**据 `count_capped` / `sample_capped` / `main_sample_capped` /
+      `channel_changed_from` / `dropped_malformed` 自行拼装任何话术 ——
+      同一判定在提示词与脚本两处各写一遍,两份措辞必然漂移,而"哪一份才
+      算数"无处可判(前十二次同型事故的共同根因)。
+      该键不存在或为 null(存量快照)时,本行写"结论句不可得(存量快照)",
+      并且**禁止**自行补一句结论。
+      前值 <count_prev> 与变化 <count_delta> 仍可引用,为 null 时写"不可得"。
       (全部逐字抄快照 derived 节;某项为 null **或该键不存在**时写"不可得",
       禁止自行补算、禁止自己去数文章篇数。事件数为 null 表示该币种事件采集失败,
       与"0 篇"是两回事,不得混写——事件数为 null 只说明 GDELT 那一路失败,
@@ -174,6 +165,10 @@ rates 中 suspect 为 true 的币种,汇率行须注明"(双源偏差超阈,数�
 6. 禁止逐条罗列快照原始数据(流水账);只呈现驱动结论的关键数字。
 7. 无明确驱动的币种如实写"昨日无明确驱动",不编造归因。
 8. 每币种节正文不超过约 300 中文字;执行摘要不超过 6 条。
+9. **事件结论句必须整句照抄进正文。** 要点表里 `events_verdict` 那一句,
+   必须在该币种节内**逐字**出现:校验器对报告正文做**精确子串包含**检查,
+   改动一个字符(含数字、标点、全角半角)或整句缺失即判违规。
+   句子前后可以加你自己的叙述,句内一个字符都不能动。
 
 **决策日志(写完报告立即执行,经脚本代笔,禁止直接编辑 jsonl):**
 把当日五币种"情景与触发条件"整理成 JSON 数组,经 stdin 传入:
@@ -224,3 +219,19 @@ verdict 规则:触发条件未发生 → 无法判定;触发发生且方向核�
 - 非 0:按输出的违规项修改报告**一次**(仍只准用要点表数字),重跑校验。
 - 第二次仍非 0:在报告首行前插入一行
   `> ⚠ 本报告未通过自动自检:<违规项摘要>`,保留落盘,如实结束。
+
+**结论句相关的输出码:**
+
+降级声明(rc 仍为 0,不是违规 —— 但它说明这次「没查」,而不是「查过了」):
+- `VERDICT_SKIPPED_NO_DERIVED`:快照没有 derived 节(derive 没跑,或整体失败),
+  一条结论句都未校验 → **重跑第 1 步采集**。
+- `VERDICT_SKIPPED_LEGACY`:derive 跑过,但 `derived.schema_version` 低于闸门
+  (存量快照) → **用当前 derive 重新派生该日快照**。
+
+违规(退出码非 0):
+- `VERDICT_NOT_QUOTED`:报告未逐字引用结论句 → **改报告**,把违规信息里
+  「期望原文」那一句整句抄进该币种节,一个字符都不改。
+- `VERDICT_ABSENT` / `VERDICT_EMPTY` / `VERDICT_MALFORMED` /
+  `VERDICT_ENTRY_MISSING` / `VERDICT_CONTAINER_MALFORMED`:快照里该有的结论句
+  缺失、为空、类型不对,或条目/容器不成形 → **这几条是脚本缺陷,改报告没用**;
+  重跑第 1 步采集,仍复现就报 bug。
