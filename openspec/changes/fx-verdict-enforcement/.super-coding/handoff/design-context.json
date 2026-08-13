@@ -1,0 +1,15 @@
+{
+  "change": "fx-verdict-enforcement",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "super-coding-handoff.sh",
+  "context_hash": "afeae2f96f8438e56484ff156580796d215f278f348c75b500b32fd10a5103cc",
+  "files": [
+    { "path": "openspec/changes/fx-verdict-enforcement/proposal.md", "sha256": "6e057a27b352030d86df300bec74682e61e4e51a6105f9f2ee3ee11ef1fa9cad" },
+    { "path": "openspec/changes/fx-verdict-enforcement/design.md", "sha256": "16514998235fe6717aad2432dbc6033c3d6f444ca1d52faec3334f3789edb488" },
+    { "path": "openspec/changes/fx-verdict-enforcement/tasks.md", "sha256": "e0847d6550b58959e4099d2fb0df3a56f8a0b6c5aad3e9b592f3c9f24e246f7e" },
+    { "path": "openspec/changes/fx-verdict-enforcement/specs/fx-daily-report/spec.md", "sha256": "3dbad32113696eab94d438df9bf71bc0550681519c56c610d2f52975321822bd" },
+    { "path": "openspec/changes/fx-verdict-enforcement/specs/fx-weekly-report/spec.md", "sha256": "af76539cdce6dc0e617ecfa355beb2fde8a2fc5f5b34bdfa9f16fd5ab0d8d437" }
+  ]
+}
