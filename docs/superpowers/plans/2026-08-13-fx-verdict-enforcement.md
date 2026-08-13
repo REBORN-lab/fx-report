@@ -1624,9 +1624,22 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **为什么必须在本 change 内关掉**:这条缝就长在本 change 新建的那道闸门里。
 带着它归档,等于让记忆里那条「校验器不验 verdict」的教训**同型复发**。
 
-**闸门只对「声称带结论句」的快照生效**(`ver_ok` 为真时才检查)——
-`data/2026-08-07..10.json` 的 `derived` 是 `null`,存量快照必须照旧跳过,
-否则六天历史日报立刻变红。
+**按形态分三档处置**,而不是一律报同一个码:
+
+| 形态 | 处置 |
+|---|---|
+| ① schema ≥ 2 且 `events` 非 dict(含缺键) | 违规 `VERDICT_CONTAINER_MALFORMED`,与 `check_weekly` 对称 |
+| ② schema ≥ 2 且 `events` 是 dict 但缺 `covered` 币种条目 | 违规 `VERDICT_ENTRY_MISSING` |
+| ③ `derived` 缺失 / 为 null / 非 dict(无 schema 可判) | **不是违规**,但出声明 `VERDICT_SKIPPED_NO_DERIVED` |
+
+**第 ③ 档是 T6 质量审查追加的,不能省。** 实测 `data/2026-08-07..10.json`
+四天都是这一形态,跑出来是**裸 `CHECK PASSED`、零声明** —— 与「全部结论句
+已逐字核验通过」在输出上完全不可分辨。六天里占了四天。只做 ①②,本 change
+的核心主张在自家历史产物上**有 2/3 的日子不成立**。
+
+**①② 只对「声称带结论句」的快照生效**(`ver_ok` 为真时才检查)——
+否则存量快照会从「跳过」变成「违规」,六天历史日报立刻变红。
+③ 只出声明不出违规,rc 不变。
 
 **Files:**
 - Modify: `scripts/check_report.py`(`check_daily` 的闸门块)
@@ -1687,15 +1700,79 @@ class DailyContainerGateTest(unittest.TestCase):
                           if "VERDICT_ENTRY_MISSING" in x and "THB" in x], v)
 
     def test_legacy_schema_container_problems_are_still_skipped(self):
-        """闸门只对声称带结论句的快照生效 —— 存量快照照旧跳过,不得变红。"""
+        """①② 只对声称带结论句的快照生效 —— 存量快照照旧跳过,不得变红。"""
         for bad in (None, [], {}, "x"):
-            v = self._run(bad, ver=1)
-            self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+            with self.subTest(events=bad):
+                v = self._run(bad, ver=1)
+                self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
 
-    def test_snapshot_without_derived_is_still_inert(self):
+
+class DailyNoDerivedNoticeTest(unittest.TestCase):
+    """第 ③ 档:快照根本没有 derived 节。
+
+    实测 data/2026-08-07..10.json 四天都是这一形态,此前跑出来是**裸
+    CHECK PASSED、零声明** —— 与「全部结论句已逐字核验通过」在输出上完全
+    不可分辨,六天里占了四天。这是「跳过 vs 通过」的最后一个静默口子。"""
+
+    def test_missing_derived_emits_a_notice_not_a_violation(self):
         notes = []
         v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes)
-        self.assertEqual((v, notes), ([], []))
+        self.assertEqual(v, [])
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("VERDICT_SKIPPED_NO_DERIVED", notes[0])
+
+    def test_null_derived_emits_the_same_notice(self):
+        snap = dict(SNAP)
+        snap["derived"] = None
+        notes = []
+        v = check_report.check_daily(make_report(),
+                                     json.dumps(snap, ensure_ascii=False),
+                                     BRIEF, notes=notes)
+        self.assertEqual(v, [])
+        self.assertIn("VERDICT_SKIPPED_NO_DERIVED", notes[0])
+
+    def test_non_dict_derived_emits_the_same_notice(self):
+        for bad in ("oops", [1], 7):
+            with self.subTest(derived=bad):
+                snap = dict(SNAP)
+                snap["derived"] = bad
+                notes = []
+                v = check_report.check_daily(
+                    make_report(), json.dumps(snap, ensure_ascii=False),
+                    BRIEF, notes=notes)
+                self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+                self.assertIn("VERDICT_SKIPPED_NO_DERIVED", notes[0])
+
+    def test_present_derived_does_not_emit_it(self):
+        """有 derived 节时不出这条 —— 它说的是「没有派生节」,不是「schema 旧」。"""
+        for ver in (1, 2):
+            with self.subTest(ver=ver):
+                notes = []
+                check_report.check_daily(
+                    report_quoting(DAILY_VERDICT),
+                    snap_with_derived(schema_version=ver), BRIEF, notes=notes)
+                self.assertFalse([x for x in notes
+                                  if "VERDICT_SKIPPED_NO_DERIVED" in x], notes)
+
+    def test_notice_is_printed_by_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            for path, text in ((rp, make_report()), (sp, SNAP_TEXT)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("VERDICT_SKIPPED_NO_DERIVED", out)
+        self.assertIn("CHECK PASSED", out)
+
+    def test_library_caller_without_notes_does_not_crash(self):
+        """不传 notes 只是拿不到声明,不该崩(`notes is not None` 那道门)。"""
+        v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF)
+        self.assertEqual(v, [])
 
 
 class CurrenciesCoveredByKeywordsTest(unittest.TestCase):
@@ -1719,12 +1796,64 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 Expected(**预测,实跑为准**):`DailyContainerGateTest` 前四条 FAIL(违规列表为空),
 后三条与 `CurrenciesCoveredByKeywordsTest` PASS。
 
-- [ ] **T6b Step 3: 实现**
+- [ ] **T6b Step 3: 实现 —— `scripts/check_report.py` 四处编辑**
 
-`scripts/check_report.py` 的 `check_daily`,把
+**3a(I1 收口)**:`covered` 与 `SECTION_MISSING` 必须互为补集,建在同一个循环里。
+把 `check_daily` 里既有的
 
 ```python
-    covered = {c for c in CURRENCIES if find_section(secs, c)}
+    for c in CURRENCIES:
+        if not find_section(secs, c):
+            v.append("SECTION_MISSING: 缺少币种节 %s" % c)
+```
+
+改为
+
+```python
+    covered = set()
+    for c in CURRENCIES:
+        if find_section(secs, c):
+            covered.add(c)
+        else:
+            # covered 与 SECTION_MISSING 必须互为补集 —— check_verdicts 的
+            # 「让位 ①」依赖这一点。建在同一个循环里,物理上保证两者一起改
+            # (check_weekly 的注释这么写,而日报侧此前分两处算)
+            v.append("SECTION_MISSING: 缺少币种节 %s" % c)
+```
+
+**先读出该循环的实际原文**再改 —— 上面是预期形态,以实际为准。
+
+**3b(I2)**:给 `check_daily` 加 docstring(它此前一行都没有,而 `notes`
+出参的契约无处可读):
+
+```python
+    """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
+
+    notes : **出参**。传入的 list 会被追加「非违规的降级声明」
+            (VERDICT_SKIPPED_LEGACY / VERDICT_SKIPPED_NO_DERIVED)。
+            不传等于放弃这些声明 —— 此时退出码 0 既可能表示「全查过了」
+            也可能表示「一条都没查」,两者不可分辨,正是本检查要消灭的形态。
+            CLI 调用方必须传并打印。
+            check_weekly 没有对应参数:那一侧 required 恒为 True,缺字段
+            直接进 violations,不会产生跳过。
+    """
+```
+
+**3c**:`derived` 解析处加 `has_derived`(**先读出实际原文**):
+
+```python
+    derived = snap.get("derived") if isinstance(snap, dict) else None
+    has_derived = isinstance(derived, dict)
+    derived = derived if has_derived else {}
+```
+
+**3d(I3)**:`VERDICT_SKIPPED_LEGACY` 的 `%s` 改 `%r` —— 实测 `ver='2'`(str)
+会打印「schema 过旧(derived.schema_version=2)」而闸门常量恰好是 2,
+读者只会认为校验器坏了。`%r` 让 `'2'` / `2.0` / `True` / `None` 全部可辨。
+
+**3e**:把
+
+```python
     found, skipped = check_verdicts(report, derived.get("events"),
                                     VERDICT_FIELD_DAILY, covered,
                                     required=ver_ok, label="derived.events")
@@ -1733,9 +1862,14 @@ Expected(**预测,实跑为准**):`DailyContainerGateTest` 前四条 FAIL(违规
 改为
 
 ```python
-    covered = {c for c in CURRENCIES if find_section(secs, c)}
     events = derived.get("events")
-    # 闸门只对「声称带结论句」的快照生效:ver_ok 为假时照旧跳过,否则
+    # ③ 没有派生节:不是违规,但**必须出声明** —— 此前这一形态跑出裸
+    # CHECK PASSED、零声明,与「全部结论句已核验」不可分辨,而实测
+    # data/2026-08-07..10.json 四天都是它,六天里占了四天
+    if not has_derived and notes is not None:
+        notes.append("VERDICT_SKIPPED_NO_DERIVED: 快照无 derived 节,"
+                     "本次未校验任何结论句")
+    # ①② 只对「声称带结论句」的快照生效:ver_ok 为假时照旧跳过,否则
     # 存量快照(derived 为 null 或 schema=1)会集体变红。
     # ver_ok 为真时容器与条目都不再是可选的 —— 与 check_weekly 对称,
     # 谓词不越权判结构,兜底在调用点(见 check_verdicts 的 docstring)。
@@ -1755,6 +1889,42 @@ Expected(**预测,实跑为准**):`DailyContainerGateTest` 前四条 FAIL(违规
                                     required=ver_ok, label="derived.events")
 ```
 
+**3f(I5 / I7 / I8)**:三条既有测试的加固,只动 `tests/test_check_report.py`:
+
+- `test_bool_schema_version_is_not_a_number` 现在是**恒真用例**(`True >= 2`
+  在 Python 里本就是 `False`,有没有 bool 门都成立;变异实测存活)。
+  改成把闸门压到 1 才能让 bool 门真正承重:
+
+```python
+    def test_bool_schema_version_is_not_a_number(self):
+        """把闸门压到 1 才能让 bool 门真正承重:True >= 1 会误判为新 schema。"""
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": True, "events": {"USD": {}}}
+        notes = []
+        with mock.patch.object(check_report, "DERIVED_VERDICT_SCHEMA", 1):
+            v = check_report.check_daily(make_report(),
+                                         json.dumps(snap, ensure_ascii=False),
+                                         BRIEF, notes=notes)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+        self.assertEqual(len(notes), 1)
+```
+
+  (顶部 import 段补 `from unittest import mock`,若已有则不重复。)
+
+- `test_missing_section_does_not_double_report` 补一行反向锚(教训 00:
+  这类「让位」用例极易空过。今天它被变异杀掉是**运气** —— 仅因
+  `make_report()` 恰好不含 `DAILY_VERDICT`):
+
+```python
+        report = make_report(missing="THB")
+        # 让位机制是不报 VERDICT 的唯一原因 —— 报告本就不含结论句时,
+        # 下面的 assertFalse 会因为「本来就引不到」而恒真
+        self.assertNotIn(DAILY_VERDICT, report)
+```
+
+- `test_derived_not_a_dict_does_not_crash` 的四态循环加 `with self.subTest(bad=bad):`
+  (首个形态失败会掩盖后三个;仓库已有先例)。
+
 - [ ] **T6b Step 4: 跑测试确认通过 + 存量快照六天复验**
 
 ```bash
@@ -1773,8 +1943,15 @@ for d in 2026-08-07 2026-08-08 2026-08-09 2026-08-10 2026-08-11 2026-08-12; do
 done
 ```
 
-Expected:与 T6 完全一致(07–10 `CHECK PASSED` 无声明;11 声明 + 既有
-`GAP_OMITTED` rc=1;12 声明 + `CHECK PASSED`)。**任何一天变化都是缺陷。**
+Expected(**rc 与违规必须与 T6 完全一致,只多出第 ③ 档的声明**):
+
+| 日期 | rc | 期望 |
+|---|---|---|
+| 07–10 | 0 | `VERDICT_SKIPPED_NO_DERIVED` + `CHECK PASSED`(**这四行是本任务新增的**) |
+| 11 | 1 | `VERDICT_SKIPPED_LEGACY` + `CHECK FAILED (1): GAP_OMITTED`(既有问题) |
+| 12 | 0 | `VERDICT_SKIPPED_LEGACY` + `CHECK PASSED` |
+
+**任何 rc 变化、或任何新增违规,都是缺陷。**声明增加是本任务的目的。
 
 - [ ] **T6b Step 5: 勾选并提交**
 
