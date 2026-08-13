@@ -1645,7 +1645,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/check_report.py`(`check_daily` 的闸门块)
 - Modify: `tests/test_check_report.py`(追加到文件末尾)
 
-- [ ] **T6b Step 1: 写会红的测试**
+- [x] **T6b Step 1: 写会红的测试**
 
 在 `tests/test_check_report.py` **文件末尾**追加:
 
@@ -1786,7 +1786,7 @@ class CurrenciesCoveredByKeywordsTest(unittest.TestCase):
                              set(events_mod.KEYWORDS))
 ```
 
-- [ ] **T6b Step 2: 跑测试确认失败**
+- [x] **T6b Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1796,7 +1796,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 Expected(**预测,实跑为准**):`DailyContainerGateTest` 前四条 FAIL(违规列表为空),
 后三条与 `CurrenciesCoveredByKeywordsTest` PASS。
 
-- [ ] **T6b Step 3: 实现 —— `scripts/check_report.py` 四处编辑**
+- [x] **T6b Step 3: 实现 —— `scripts/check_report.py` 四处编辑**
 
 **3a(I1 收口)**:`covered` 与 `SECTION_MISSING` 必须互为补集,建在同一个循环里。
 把 `check_daily` 里既有的
@@ -1925,7 +1925,7 @@ Expected(**预测,实跑为准**):`DailyContainerGateTest` 前四条 FAIL(违规
 - `test_derived_not_a_dict_does_not_crash` 的四态循环加 `with self.subTest(bad=bad):`
   (首个形态失败会掩盖后三个;仓库已有先例)。
 
-- [ ] **T6b Step 4: 跑测试确认通过 + 存量快照六天复验**
+- [x] **T6b Step 4: 跑测试确认通过 + 存量快照六天复验**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1953,7 +1953,7 @@ Expected(**rc 与违规必须与 T6 完全一致,只多出第 ③ 档的声明**
 
 **任何 rc 变化、或任何新增违规,都是缺陷。**声明增加是本任务的目的。
 
-- [ ] **T6b Step 5: 勾选并提交**
+- [x] **T6b Step 5: 勾选并提交**
 
 ---
 

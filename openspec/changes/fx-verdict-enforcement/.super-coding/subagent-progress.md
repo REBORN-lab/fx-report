@@ -22,20 +22,12 @@
 
 ## 当前状态
 
-- 当前 task: **T6b**(日报侧三档兜底 —— 闸门自己的缝)
+- 当前 task: **T7**(两个 SKILL 的引用规则 + 文档哨兵)
 - 阶段: `implementing`
 - 审查-修复轮次: 0 / 3
 - 实现提交: (待)
-- **T6b 是 T6 两轮审查合并出来的任务**,不在原计划里。它同时承载:
-  三档兜底(新)+ T6 的 I1/I2 两条 Important + I3/I5/I7/I8 四条 Minor
-- **最关键的一档是 ③**(无 `derived` 节 → 出声明):实测
-  `data/2026-08-07..10.json` 四天跑出**裸 `CHECK PASSED`、零声明**,
-  与「全部结论句已逐字核验」不可分辨。只做 ①②,本 change 的核心主张
-  **在自家历史产物上有 2/3 的日子不成立**
-- **验收硬线**:六天 rc 与违规必须与 T6 完全一致,**只多出声明**。
-  任何 rc 变化或新增违规都是缺陷
-- **OpenSpec 2.3 留给 T6b**:它写的是「校验器判为『该日不可校验』而非
-  『通过』」—— 无 derived 节那一档在 T6 之后仍然判「通过」,现在勾就是假勾选
+- **T7 必须额外完成**(T6b 质量审查实测):三个 `VERDICT_*` 码在 `skills/` 里
+  0 处出现,运维读到码查不到处置。见下方「T7 必须包含的」一节
 - **M2 分隔符收口不塞进 T5 实现**:T5 按计划只 import `join_verdict`,
   **不碰** `scripts/verdicts.py`(T1 已双审定稿)。收口要加 `CAVEAT_SEP`
   常量并改 Design Doc「只含 join_verdict」那句,属独立决定。
@@ -126,6 +118,34 @@ verdict = 当日采到 50 条(已顶到当日采集上限(99 条),实际篇数�
 **为什么不塞进 T5**:`events.py` 不在 T5 的三文件白名单内;在 derive 里复制
 映射正是本仓库反复栽跟头的「两处各写一遍」。
 
+### T7 必须包含的(T6b 质量审查实测 grep 得来)
+
+- **三个 `VERDICT_SKIPPED_*` / `VERDICT_*` 码在 `skills/` 里目前 0 处出现**。
+  运维读到码却查不到处置。T7 必须让两份 SKILL.md 逐字包含
+  `VERDICT_SKIPPED_NO_DERIVED` / `VERDICT_SKIPPED_LEGACY`,并写明各自该做什么:
+  前者 = 快照根本没跑过 derive(或 derive 整体失败)→ **重跑采集**;
+  后者 = 跑过但版本低于闸门 → **用当前 `derive` 重新派生该日快照**
+- **加一条哨兵测试**:遍历 `check_report.py` 里所有 `VERDICT_*` 前缀,
+  断言每一个都在某份 SKILL.md 中出现。这是「码与文档同步」的唯一自动防线
+
+### `check_daily` 的拆分边界(verify 待办,T8 归档后才动)
+
+现 114 行 = 九件事顺序拼接。切成 **4 个私有函数 + 15 行编排壳**:
+
+| 新函数 | 吃什么 | 返回 |
+|---|---|---|
+| `_daily_structure(secs)` | covered/SECTION_MISSING、摘要条数、币种节字数、复盘节 | `(violations, covered)` |
+| `_daily_gaps(secs, snap)` | `GAPS_NOT_DISCLOSED` / `GAPS_MISMATCH` / `GAP_OMITTED` | violations |
+| `_daily_verdicts(report, snap, covered, notes)` | 三档兜底 + `check_verdicts` + 两条声明 | violations |
+| `_daily_numbers(report, snapshot_text, brief_text, strict_brief)` | 两条数字溯源 | violations |
+
+**三条必须一并写进待办的约束**,否则拆分会把本 change 刚建立的性质拆没:
+1. **`covered` 必须由产出 `SECTION_MISSING` 的那个函数返回**(二元组)——
+   3a 的全部价值就是「两者物理同源」,单独算一遍就回退了
+2. **`notes` 只能是 `_daily_verdicts` 的出参**,保持「声明只有一个产地」
+3. 拆前先把 T8 的 9 条变异锚点原文抄进新 change 的 plan(锚点是行文本,
+   拆分后需逐条重新定位)
+
 ### 留给 verify 阶段的待办(T4 质量审查提出,不在 T4 处理)
 
 - **退出码不对称**:digest 整体不是 JSON / 不是 dict → `main` 报 rc=2;
@@ -136,7 +156,19 @@ verdict = 当日采到 50 条(已顶到当日采集上限(99 条),实际篇数�
   同时保留库层违规给直调者。审查已验证对真实产出安全(两容器恒为 dict)。
   **理由不在 T4 做**:计划里没有 `main` 层校验;rc=1 已是响亮失败,
   核心诉求已达成
-- **拆 `scripts/check_report.py` 的阈值**(现 364 行 / 20 个违规码):
+- **拆 `scripts/check_report.py`:阈值已实测越线,本 change 内不拆**。
+  T6b 后实测 `check_daily` + `check_weekly` = **181 行**(阈值 150),
+  文件 **428** 行(阈值 450)。**不在本 change 内拆的理由**:
+  ①T8 的变异电池有 **9 条靶点锚在这个文件里**,拆了全部 STALE
+  ②本 change 的范围是「结论句强制引用」,不是「重构校验器」
+  ③临近收尾动结构,风险与收益不成比例。
+  拆法(质量审查给的,已验证 SKILL 命令行与测试全按 `scripts/check_report.py`
+  这个路径写,须保留薄壳再导出):
+  `scripts/check/{common,verdicts,daily,weekly}.py` + `check_report.py` 保留
+  `main()` 并再导出。顺带把 `check_weekly` 挪到 `main` 之前(现在定义在
+  `main` 之后,是这个文件唯一真正碍眼的地方,既有问题非本 change 引入)
+
+- ~~拆 `scripts/check_report.py` 的阈值(现 364 行 / 20 个违规码)~~(下同,已合并到上一条):
   文件 > 450 行,或 `check_daily` + `check_weekly` 合计 > 150 行
   (现 121,T6 后约 145,**即将触线**),或出现第三个 `--mode`。
   **必须等 T9 全部落地后再拆** —— T5–T9 每步都嵌了 `check_report.py` 的
@@ -260,8 +292,32 @@ verdict = 当日采到 50 条(已顶到当日采集上限(99 条),实际篇数�
   + I5(`test_bool_schema_version_is_not_a_number` 是恒真用例,变异存活)
   + I6(`notes is not None` 门无测试,变异存活)+ I7(让位断言补反向锚)
   + I8(subTest)
-- **拆分阈值确认不会触线**:审查者读完计划确认 T7/T8/T9/T10 都不改
-  `check_report.py`,故 143(收口后 146)是本 change 终值,阈值 150
+- ~~拆分阈值确认不会触线:143(收口后 146)是本 change 终值,阈值 150~~
+  **此条已被 T6b 实测证伪,逐字更正**:实测 `check_daily` 76 → **114** 行、
+  `check_weekly` 67 行不变,**合计 181,超阈值 150 共 31 行**;文件
+  390 → **428** 行(仍在 450 内)。质量审查估的是 +3,实际 +38 ——
+  光 3b 的 docstring 就 10 行、3e 净增 22 行。
+  **处置见下方 verify 待办,本 change 内不拆**
 - **T8 前置情报**:电池 10 条靶点里落在 `check_report.py` 的 9 条已逐条
   `count()` 验过,**每条恰好匹配 1 处**,不会 STALE
 - plan T6 五步 + OpenSpec **2.4 / 2.7** 已勾选;**2.3 留给 T6b**
+
+### T6b —— 日报侧三档兜底(闸门自己的缝)✅
+
+**这个任务不在原计划里,是 T6 两轮审查合并出来的。**
+
+- 提交: `adbb36d`(三档 + T6 的 2 Important + 4 Minor)→ `75c9e51`(同族剩余三口子)
+- RED: `Ran 116` / `FAILED (failures=6, errors=4)`;修复轮 `Ran 116` / `failures=10`
+- GREEN: `Ran 117` / `OK`;全量 `Ran 660` / `OK`(基线 554 → 660)
+- **六天 rc 全程未变**(`0,0,0,0,1,0`),零新增违规,只多出声明
+- **协调者复验:十种形态静默通过数 = 0**(此前 4 种静默)
+- 审查共堵掉**同族四个口子**:
+  ①容器非 dict ②缺币种条目 ③无 derived 节
+  ④(修复轮)条目在但不是 dict / schema 旧且无可查条目
+- 两条声明现带分母:`5/5 个覆盖币种因快照 schema 过旧(derived.schema_version=1)`
+- spec 合规审查 ✅ —— 三条既有测试变更**逐条判定为期望行为**;审查者把
+  fixture 默认值改回 `("USD",)` 反证,恰好只有那两条失败
+- 代码质量审查 ✅ —— 8 变异 6 杀,2 条存活项(O1/O2)已在修复轮关掉并配哨兵
+- **关键克制**:`check_verdicts` 全程一字节未动。O2 那种缝的诱惑是去改共享
+  谓词,但那个沉默在周报侧是**必需的**(基准货币在 `rates` 里本就没条目)
+- plan T6b 五步 + OpenSpec **2.3 / 2.9** 已勾选并验证
