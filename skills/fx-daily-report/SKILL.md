@@ -33,6 +33,16 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       未必属于昨日:seendate 的日期部分不是 DATE 前一日的,行尾标
       "(采见日非昨日)";seendate 缺失或无法辨认的标"(采见日不明)"。
       与 official 同理——采样口径不等于当日市场事件。
+      **`channel` 为 `gnews` 时**:`url` 是 Google 跳转链、**不是原文直链**,
+      引用一律以 `domain` 标出处,禁止把跳转链当原文地址写进报告;该通道的
+      seendate 是**发布时间**(比采见时间更准),`channel` 为 `gdelt` 时才是采见时间。
+      **`attributable_source_absent`**(脚本算好,三态,与 `articles` 一一对应):
+      为 **true** 时含义是"未取得可署名来源的报道",**不是"该国昨日无新闻"**
+      ——写成后者即违反禁令 5;为 **false** 时不得使用这句话,哪怕
+      `gnews_filter.kept` 为 0(那说明补位拿到了条目,正列在上面);为 **null**
+      时(`articles` 为 null,两条通道当日都没跑成)两句话都不准写,只按
+      缺漏节如实陈述该币种事件采集失败。
+      `source_capped` 为 true 时,该币种条目取自被截断的样本,任何条数都是下界。
     - 官方公告:<title>(<issuer>,发布于 <published>)……至多 3 条,取自
       events.<币种>.official(央行官方 RSS,可署名高可信;该币种无 official 键
       时写"无")。**每条必须带 published 原文**;RSS 只给"最新 N 条"、不按日期
@@ -65,7 +75,23 @@ description: 生成五币种(USD/EUR/PHP/THB/BRL)中文外汇日报。先跑采�
       − CPI <cpi> 期 <cpi_period>),事件数 <count>(前值 <count_prev>,
       变化 <count_delta>;<count_capped> 为 true 时追加"已达当日采集上限,
       实际篇数只多不少",<count_prev_capped> 亦为 true 时改写为"两日均达采集
-      上限,变化 0 是上限造成的,不表示事件面持平")
+      上限,变化 0 是上限造成的,不表示事件面持平";
+      **`sample_capped` 与 `count_capped` 是两件事,不得互相代用**:前者说源返回的
+      **滤除前**原始样本触顶(gnews 上限 99),此时落盘的条数可能离上限还差得远
+      ——实测 raw=100 而 count=11。`sample_capped` 为 true 时只追加"源返回的原始
+      样本触顶,滤除后的条数是下界",**禁止**据它写上面那两句关于 count 的话;
+      反之 `count_capped` 为 true 才是"这个数被上限钉住"。两者同为 true 时只写 `count_capped`
+      那一句;**是否还有第二次截断由脚本给出**——`main_sample_capped` 为 true 时
+      (且仅在此时)另写一句"主通道当日返回条数触顶,其滤除后的条数是下界"。
+      **禁止**由你自己判断条目带不带 `gnews_filter`:补位日最常见的形态是主通道
+      抓到少量条目、远未触顶、全被白名单挡掉,那天只发生了一次截断;
+      **`dropped_malformed` 大于 0 时**追加"另有 N 条源返回的元素结构不可识别被
+      跳过(源可能已改版)",事件数据据此打折;该值为 null 表示存量快照无此账,
+      **不得**写成"没有被跳过的元素";
+      **`channel_changed_from` 非 null 时**,两日取自不同事件通道(上限与筛选口径
+      都不同),`count_delta` 已由脚本置 null,该处改写为"前一日取自
+      <channel_changed_from> 通道,口径不可比,不给变化量",
+      **禁止**使用上面任何一句关于变化量的话术)
       (全部逐字抄快照 derived 节;某项为 null **或该键不存在**时写"不可得",
       禁止自行补算、禁止自己去数文章篇数。事件数为 null 表示该币种事件采集失败,
       与"0 篇"是两回事,不得混写——事件数为 null 只说明 GDELT 那一路失败,

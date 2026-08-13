@@ -19,6 +19,7 @@ from email.utils import parsedate_to_datetime
 if __package__ in (None, ""):   # 直接 `python3 scripts/weekly_digest.py` 时补 path
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from scripts.collect.events import GNEWS_SOFT_CAP, landed_count_capped
 from scripts.collect.events import MAX_RECORDS as GDELT_DAILY_CAP
 from scripts.collect.feeds import MAX_ITEMS as OFFICIAL_DAILY_CAP
 from scripts.fixings import distinct_fixings, num as _num
@@ -167,12 +168,20 @@ def _one_cap(caps):
     return next(iter(caps)) if len(caps) == 1 else None
 
 
+def _cap_phrase(cap):
+    """上限的中文括注。cap 为 None = 区间内上限不唯一,此时**不给数值** ——
+    直接插值会把字面量 None 印进结论句。"""
+    return ("(%s 条)" % cap) if cap is not None else "(区间内上限随通道不同,不给单值)"
+
+
 def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     """一个事件通道的跨日统计。两个通道**共用这一份实现** —— official 与 GDELT
     曾各写一份,于是 official 有截断披露而 GDELT 没有(第三轮 I10);同一个
     change 里已经因为"复制粘贴判定逻辑"栽过一次(见 scripts/fixings.py)。
 
-    observations: [(snap, items | None, raw_count | None)] 按日期序;items 为 None
+    observations: [(snap, items | None, raw_count | None, entry | None)] 按日期序;
+    entry 是该币种的快照条目,用于读取采集层算好的 source_capped/source_cap;
+    items 为 None
     表示当日该通道无数据(采集失败,或该币种压根没接这个通道)。raw_count 是采集层
     去重**之前**的条数——GDELT 落盘前已按标题去重,只看 len(items) 会把
     "取满 8 条、其中 2 条重复"读成"只有 6 条,没触顶",漏报截断。
@@ -184,26 +193,146 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
 
     返回 (stats, per_day, published_by_date)。
     """
-    sampled = distinct = in_win = outside = undated = 0
+    sampled = distinct = in_win = outside = undated = malformed = 0
+    filtered_days = filtered_items = filtered_blank_days = 0
+    malformed_days = malformed_items = malformed_unknown_days = 0
     days_collected = days_nonempty = capped = assumed = 0
-    seen, caps = set(), set()
+    sample_capped = sample_assumed = main_failed_days = 0
+    seen, caps, capped_caps, sample_caps = set(), set(), set(), set()
     per_day, published_by_date = [], {}
-    for snap, items, raw_count in observations:
+    for snap, items, raw_count, entry in observations:
         if items is None:
             per_day.append((False, None))
             continue
         days_collected += 1
         sampled += len(items)
         per_day.append((True, len(items)))
+        # 源侧闸门滤掉的条次。判据是 raw - kept,对**每个两数皆知的日子**成立。
+        #
+        # 第二轮写的是 `raw > 0 且 kept == 0`,只在整日归零时才响;真实数据里
+        # 绝大多数天 kept > 0,于是整层滤除量退出了结论判定 —— 实测
+        # data/2026-08-12.json 的 BRL(raw=34、offlist=29、kept=5)由"无法判定"
+        # 翻成"确实 0 条"。同一个错误第四次:不变量陈述在了太窄的定义域上。
+        gf = entry.get("gnews_filter") if isinstance(entry, dict) else None
+        # 主通道**跑了但没跑成**:键在、值为 None。此前整条绕过不变量 ——
+        # 单调性因此被违反:主通道跑成了、抓到 20 条全被挡掉 → "有无事件无法
+        # 判定";主通道整条跑失败(信息严格更少)→ "确实 0 条、全区间采集完整"。
+        # 判据必须是"键在且值为 None"而不是"值不是 dict":README 写明的整通道
+        # 回滚(删掉白名单文件)下这个键根本不存在,那是有意停用、不是缺口
+        if isinstance(entry, dict) and "gnews_filter" in entry and gf is None:
+            main_failed_days += 1
+        lost = 0
+        if isinstance(gf, dict):
+            n_raw, n_kept = gf.get("raw"), gf.get("kept")
+            if (isinstance(n_raw, int) and not isinstance(n_raw, bool)
+                    and isinstance(n_kept, int) and not isinstance(n_kept, bool)
+                    and n_raw > n_kept):
+                lost = n_raw - n_kept
+        if lost:
+            filtered_days += 1
+            filtered_items += lost
+            if not items:
+                # 当日最终一条可用条目都没有。与"补位补上了"必须分开措辞:
+                # 后者写"无一可用"会和同句的"区间内至少 N 条"自相矛盾
+                filtered_blank_days += 1
+        # 采集层跳过的"结构不可识别"元素。源改版成 {"articles": ["<a>", ...]}
+        # 时逐个被跳过,落盘 articles=[] 而 raw_count=3、gaps 为空 —— 与"确实
+        # 一条都没有"完全同形,聚合器据此断言"确实 0 条、全区间采集完整"
+        bad = entry.get("articles_dropped_malformed") if isinstance(entry, dict) else None
+        if isinstance(bad, int) and not isinstance(bad, bool):
+            if bad > 0:
+                malformed_days += 1
+                malformed_items += bad
+        elif isinstance(entry, dict):
+            # 本 change 之前落的快照没有这本账 —— 那几天**不知道**有没有被跳过的
+            # 元素,不是知道没有。当成 0 会让上面那条不变量在全部存量快照上失效
+            # (仓库里 6 份真实快照实测无一带此键)。official 那一路 entry 为 None,
+            # 它没有这条路径,不受影响
+            malformed_unknown_days += 1
+        # 截断是"源返回了多少条"的属性,与最终留下几条无关 —— 这段必须在
+        # `if items:` 之外,否则滤空的日子会一边 derive 说触顶、一边周报说无截断。
+        # **count_at_cap 才是"落盘条数被上限钉住"**:gnews 的 source_capped 说的
+        # 是滤除前样本触顶(raw=100>=99),而落盘的是滤后的 11 条,拿它当"顶到
+        # 当日采集上限"会把 11 条说成撞了 99 的上限(第四轮 S2/S3/S4)
+        meta = snap.get("meta") if isinstance(snap, dict) else None
+        # 判定与 derive 共用 events.landed_count_capped —— 两处各写一遍必然漂移
+        flag = landed_count_capped(
+            entry, meta.get("caps") if isinstance(meta, dict) else None)
+        own_cap = entry.get("source_cap") if isinstance(entry, dict) else None
+        # 两个集合分工:caps 是**区间内出现过的采集上限**(daily_cap 字段的含义,
+        # 不因某天没触顶而缺席);capped_caps 只收**真触顶那些天**的上限,专供结论
+        # 句。混用会让未触顶日的上限稀释掉触顶日的 —— 实测真实 W33 里 USD/EUR/PHP
+        # 的触顶日全是上限 8 的 GDELT 日,却因为 08-12 那个没触顶的 gnews 日
+        # (上限 99)混进来,结论句把已知的 8 印成"上限随通道不同,不给单值"
+        # (第五轮 S4/S8)。assumed 照旧对每个**依赖了推定上限去判断**的日子计数:
+        # 没触顶的日子同样是拿那个推定值判出来的,推错了就会漏报触顶
+        if isinstance(flag, bool):
+            if (isinstance(own_cap, int) and not isinstance(own_cap, bool)
+                    and own_cap > 0):
+                caps.add(own_cap)          # 条目自带上限即权威值
+                if flag:
+                    capped_caps.add(own_cap)
+            else:
+                cap, was_assumed = _cap(snap, cap_key, cap_fallback)
+                caps.add(cap)
+                assumed += 1 if was_assumed else 0
+                if flag:
+                    capped_caps.add(cap)
+            capped += 1 if flag else 0
+        else:
+            # 条目缺席(official 那一路)或无从判断。判据不能门在 `items` 上:
+            # GDELT 返回 8 个畸形元素时落盘是 articles=[] 而 raw_count=8,
+            # 门在 items 上会让 derive 说触顶、周报说无截断
+            n = raw_count if raw_count is not None else (len(items) if items else None)
+            if n is not None:
+                cap, was_assumed = _cap(snap, cap_key, cap_fallback)
+                caps.add(cap)
+                assumed += 1 if was_assumed else 0
+                if n >= cap:
+                    capped_caps.add(cap)
+                    capped += 1
+        # **原始样本触顶**是另一件事:它说"被滤除/未取回的条数是下界",与落盘
+        # 几条无关。两条通道各有各的上限,哪一条真的触顶就记哪一条的上限;两条
+        # 都触顶时集合有两个值,_one_cap 自然给 None(不给单值)。
+        #
+        # 用集合而不是计数器累加:纯 gnews 日 entry.source_capped 与
+        # gnews_filter.capped 由**同一个** raw >= 99 算出,分别 +1 会把同一次
+        # 截断记两遍,结论句于是把一件事说两遍(第四轮 S2/S4)
+        # 两个来源必须**各判各的**。第五轮写成"任一为真且 flag 不为 True",
+        # 于是补位日(GDELT 取满 8 条 → flag 为 True,而主通道 raw≥99 是另一次
+        # 完全独立的截断)整条被吞掉,sample_capped_days 由 7 写成 0,滤除条次
+        # 从下界变成了精确值(第六轮 Critical)。
+        today_caps = set()
+        sample_now = False
+        own_flag = entry.get("source_capped") if isinstance(entry, dict) else None
+        if own_flag is True and flag is not True:
+            # 条目自身的截断,且没被上面那条 caveat 披露过。不过滤的通道上
+            # source_capped 与 count_at_cap 由同一个 raw>=cap 算出,不加这个
+            # 条件会把同一次截断说两遍(第五轮 S2/S6)
+            sample_now = True
+            if (isinstance(own_cap, int) and not isinstance(own_cap, bool)
+                    and own_cap > 0):
+                today_caps.add(own_cap)
+        if isinstance(gf, dict) and gf.get("capped") is True:
+            # 主通道那次截断**独立成立**:它说的是滤除前的样本,与补位通道
+            # 自己有没有取满毫无关系,不能被 flag 吞掉
+            sample_now = True
+            mcap, m_assumed = _cap(snap, "gnews_records", GNEWS_SOFT_CAP)
+            today_caps.add(mcap)
+            # 主通道上限的推定单列:并进 cap_assumed_days 会给权威的条目级上限
+            # 贴上"上限为推定"的假标注,且让一个"天数"超过它统计的天数
+            sample_assumed += 1 if m_assumed else 0
+        if sample_now:
+            sample_capped += 1
+            sample_caps |= today_caps
         if items:
             days_nonempty += 1
-            cap, was_assumed = _cap(snap, cap_key, cap_fallback)
-            caps.add(cap)
-            assumed += 1 if was_assumed else 0
-            if (raw_count if raw_count is not None else len(items)) >= cap:
-                capped += 1
         for item in items:
             if not isinstance(item, dict):
+                # 看到过、却既进不了窗口账也进不了 undated。此前只是 continue,
+                # 于是它们被 sampled 计入、被 dup_dropped 说成"去重掉的重复"
+                # (周报 SKILL 让报告直接引这个数),而结论照旧"确实 0 条"
+                malformed += 1
                 continue
             try:
                 key = key_of(item)
@@ -230,12 +359,26 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         # 一天都没采到 → null:0 会被读成"确实没有新闻"
         "sampled": sampled if got else None,
         "distinct": distinct if got else None,
-        # 差值由脚本给出,报告不必自己减(LLM 禁算)
-        "dup_dropped": (sampled - distinct) if got else None,
+        # 差值由脚本给出,报告不必自己减(LLM 禁算)。减去 malformed:结构不可
+        # 识别的元素不是"重复",把丢弃量伪装成重复量会让报告写出假的去重叙述
+        "dup_dropped": (sampled - malformed - distinct) if got else None,
         "in_window": in_win if got else None,
         "outside_window": outside if got else None,
         "undated": undated if got else None,
+        "malformed": malformed if got else None,
         "capped_days": capped,
+        # 结论句用触顶那些天的上限,daily_cap 仍是"区间内出现过的上限"
+        "capped_cap": _one_cap(capped_caps),
+        "sample_capped_days": sample_capped,
+        "sample_daily_cap": _one_cap(sample_caps),
+        "sample_cap_assumed_days": sample_assumed,
+        "filtered_days": filtered_days,
+        "filtered_items": filtered_items,
+        "filtered_blank_days": filtered_blank_days,
+        "malformed_days": malformed_days,
+        "malformed_items": malformed_items,
+        "malformed_unknown_days": malformed_unknown_days,
+        "main_failed_days": main_failed_days,
         "daily_cap": _one_cap(caps),
         "cap_assumed_days": assumed,
         "days_collected": days_collected,
@@ -286,8 +429,48 @@ def _verdict(stats, window_days, skipped, unit):
     if stats["undated"]:
         caveats.append("%d 条时间戳无法解析" % stats["undated"])
     if stats["capped_days"]:
-        caveats.append("%d 天顶到每日上限 %s 条"
-                       % (stats["capped_days"], stats["daily_cap"]))
+        # daily_cap 为 None = 区间内上限不唯一(两条通道混用)。直接插值会把
+        # 字面量 None 印进中文结论句
+        caveats.append("%d 天顶到当日采集上限%s"
+                       % (stats["capped_days"],
+                          _cap_phrase(stats.get("capped_cap", stats["daily_cap"]))))
+    if stats.get("sample_capped_days"):
+        # 与上一条分开:触顶的是**滤除前的原始样本**,上限是它自己的那个数。
+        # 纯 gnews 日两者由同一个 raw>=99 算出,上面那条不会响,只出这一条
+        caveats.append("%d 天源返回的原始样本顶到其上限%s,已采到的条数是下界"
+                       % (stats["sample_capped_days"],
+                          _cap_phrase(stats.get("sample_daily_cap"))))
+    if stats.get("malformed_items"):
+        caveats.append("%d 天共 %d 条次结构不可识别被跳过(源可能已改版)"
+                       % (stats["malformed_days"], stats["malformed_items"]))
+    if stats.get("main_failed_days"):
+        caveats.append("%d 天主通道未跑成(补位通道的读数是下界)"
+                       % stats["main_failed_days"])
+    if stats.get("malformed_unknown_days"):
+        caveats.append("%d 天的不可识别条数不可知(存量快照无此账)"
+                       % stats["malformed_unknown_days"])
+    if stats.get("malformed"):
+        caveats.append("另有 %d 条次落盘后结构不可识别" % stats["malformed"])
+    if stats.get("filtered_items"):
+        # 说"条次"不说"条":同一批条目连采数日会被每天数一遍,700 条次可能
+        # 只是 100 条新闻被数了 7 遍。落盘的是逐日计数,去重信息不存在
+        n_days, n_items = stats["filtered_days"], stats["filtered_items"]
+        blank = stats.get("filtered_blank_days") or 0
+        if blank == n_days:
+            caveats.append("%d 天抓到共 %d 条次但无一可用(窗口外/时间戳不可解析/"
+                           "来源不可署名)" % (n_days, n_items))
+        else:
+            # 不能写"由补位通道取得条目":kept > 0 的日子条目来自主通道自己,
+            # 补位压根没触发。这里只陈述能从账上读出来的事 —— 当日仍有条目
+            caveats.append("%d 天主通道抓到共 %d 条次未通过逐层过滤(其中 %d 天"
+                           "当日仍有条目可用)" % (n_days, n_items, n_days - blank))
+    if stats["outside_window"]:
+        # 采到了、却一条都放不进区间 —— 这不是"区间内确实没有",是我们压根
+        # 没观测到区间内那几天。实测 data/2026-08-12.json 的 BRL:5 条真实条目
+        # 发布日全是 08-10/08-11,窗口是 08-12,六条 caveat 一条不响,直接断言
+        # "确实 0 条、全区间采集完整"。判据陈述在 _channel 自己的窗口账上,
+        # 纯 GDELT 条目(根本没有 gnews_filter)同样被覆盖
+        caveats.append("另有 %d 条发布于区间外" % stats["outside_window"])
     if stats["in_window"]:
         head = "区间内至少 %d 条" % stats["in_window"]
         return head if not caveats else "%s(%s)" % (head, "、".join(caveats))
@@ -306,9 +489,11 @@ def _events_one(snapshots, currency, lo, hi, skipped):
         raw = entry.get("articles_raw_count") if isinstance(entry, dict) else None
         if not (isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0):
             raw = None
-        art_obs.append((snap, arts if isinstance(arts, list) else None, raw))
-        # official 落盘前不去重,采到几条就是几条
-        off_obs.append((snap, official if isinstance(official, list) else None, None))
+        art_obs.append((snap, arts if isinstance(arts, list) else None, raw,
+                        entry if isinstance(entry, dict) else None))
+        # official 落盘前不去重,采到几条就是几条;它没有 per-entry 上限字段
+        off_obs.append((snap, official if isinstance(official, list) else None,
+                        None, None))
     a, a_days, a_pub = _channel(art_obs, "gdelt_records", GDELT_DAILY_CAP,
                                 _seen_date, _article_key, lo, hi)
     o, o_days, o_pub = _channel(off_obs, "official_daily", OFFICIAL_DAILY_CAP,
@@ -350,6 +535,21 @@ def _events_one(snapshots, currency, lo, hi, skipped):
         "articles_capped_days": a["capped_days"],
         "articles_daily_cap": a["daily_cap"],
         "articles_cap_assumed_days": a["cap_assumed_days"],
+        # 原始样本触顶的账:上限与条目级那份不同(99 / 8),压成一个数就会
+        # 印出"顶到当日采集上限(8 条)"而当天只采到 3 条
+        "articles_sample_capped_days": a["sample_capped_days"],
+        "articles_sample_daily_cap": a["sample_daily_cap"],
+        "articles_sample_cap_assumed_days": a["sample_cap_assumed_days"],
+        # 结构不可识别被跳过的条次:采集层跳过的 + 落盘后仍不可识别的
+        "articles_malformed_dropped": a["malformed_items"],
+        "articles_malformed_unknown_days": a["malformed_unknown_days"],
+        "articles_main_failed_days": a["main_failed_days"],
+        "articles_malformed_items": a["malformed"],
+        # 源侧闸门逐层滤除的条次(raw - kept 逐日累加)。整日归零的天数单列:
+        # 补位成功的日子不能写"无一可用"
+        "articles_filtered_days": a["filtered_days"],
+        "articles_filtered_items": a["filtered_items"],
+        "articles_filtered_blank_days": a["filtered_blank_days"],
         "days_with_data": a["days_collected"],
         "days_gdelt_failed": (_window_days(lo, hi) or len(snapshots))
                              - a["days_collected"],

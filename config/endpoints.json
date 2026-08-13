@@ -11,5 +11,6 @@
   "ecb_press_rss": "https://www.ecb.europa.eu/rss/press.html",
   "bls_timeseries_url": "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0",
   "bis_cbpol_url": "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.US+XM+PH+TH+BR?format=csv&detail=dataonly&lastNObservations=400",
-  "bis_cpi_url": "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_LONG_CPI/1.0/M.US+XM+PH+TH+BR.771?format=csv&detail=dataonly&lastNObservations=4"
+  "bis_cpi_url": "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_LONG_CPI/1.0/M.US+XM+PH+TH+BR.771?format=csv&detail=dataonly&lastNObservations=4",
+  "gnews_rss_url": "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 }

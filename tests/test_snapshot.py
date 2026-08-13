@@ -50,10 +50,14 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(snap["gaps"], [])
         self.assertIn("collector_version", snap["meta"])
         # 采集上限随快照落盘:常量一改,聚合器拿新上限判旧快照会静默错判触顶
+        # 全等断言是有意的:某个上限悄悄消失必须能被抓到。两条事件通道上限
+        # 不同(gnews 99 / GDELT 8),少记任一个,下游判截断就会拿错的上限去比
         self.assertEqual(snap["meta"]["caps"],
                          {"official_daily": feeds.MAX_ITEMS,
-                          "gdelt_records": events_mod.MAX_RECORDS})
-        self.assertNotEqual(feeds.MAX_ITEMS, events_mod.MAX_RECORDS)  # 互换可被发现
+                          "gdelt_records": events_mod.MAX_RECORDS,
+                          "gnews_records": events_mod.GNEWS_SOFT_CAP})
+        self.assertEqual(len({feeds.MAX_ITEMS, events_mod.MAX_RECORDS,
+                              events_mod.GNEWS_SOFT_CAP}), 3)   # 三者互换可被发现
         self.assertNotIn("us_release_dates", snap)   # 零 key 不出现该键
 
     def test_one_source_down_others_intact(self):
@@ -254,3 +258,25 @@ class OfficialFeedsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
             snap = self._run(tmp, srv, routes)
         self.assertIsNone(snap["derived"]["events"]["USD"]["count"])
+
+
+@mock.patch.dict(os.environ, {"FX_GDELT_DELAY_S": "0", "FX_GDELT_BACKOFF_S": "0"})
+class GnewsCapsTest(unittest.TestCase):
+    """上限不随快照落盘,日后常量一改,聚合器拿新上限判旧快照就会静默错判。"""
+
+    def test_meta_caps_includes_gnews_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_test_root(tmp, {}, indicators=[])
+            cfg = entry.build_cfg("2026-08-10", root=tmp)
+            snap = entry.run(cfg)
+        self.assertEqual(snap["meta"]["caps"]["gnews_records"],
+                         events_mod.GNEWS_SOFT_CAP)
+        self.assertEqual(snap["meta"]["caps"]["gdelt_records"],
+                         events_mod.MAX_RECORDS)
+
+    def test_cfg_points_at_repo_whitelist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_test_root(tmp, {}, indicators=[])
+            cfg = entry.build_cfg("2026-08-10", root=tmp)
+        self.assertEqual(cfg["news_sources_path"],
+                         os.path.join(tmp, "config", "news_sources.json"))

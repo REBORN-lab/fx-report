@@ -1,0 +1,15 @@
+{
+  "comment": "事件主通道(Google News RSS)的域名白名单——相关性闸门。裸主机名、小写、不带 www. 前缀;匹配规则是「完全相等或以点号加该项结尾」,故 philstar.com 自动覆盖 interaksyon.philstar.com。此文件缺失 = 有意停用整个 gnews 通道(全部币种回落 GDELT,即接入前的现状),删掉即回滚。domains 为空数组会把一切过滤成 0 条,采集层视为配置损坏并记缺漏。名单来源:2026-08-12 实测存活域名 + 五国主流财经 + 五家央行官网。白名单外的真新闻会被丢弃,这是有意的「宁可少说」,丢弃量由快照的 gnews_filter.offlist 逐日可见。",
+  "domains": [
+    "reuters.com", "bloomberg.com", "ft.com", "wsj.com", "cnbc.com",
+    "apnews.com", "bbc.com", "economist.com", "marketwatch.com", "barrons.com",
+    "nikkei.com", "scmp.com", "politico.eu", "euronews.com",
+    "handelsblatt.com", "lesechos.fr",
+    "bangkokpost.com", "nationthailand.com", "thainews.prd.go.th",
+    "philstar.com", "inquirer.net", "bworldonline.com", "manilatimes.net",
+    "sunstar.com.ph", "rappler.com", "gmanetwork.com",
+    "valor.globo.com", "globo.com", "folha.uol.com.br", "estadao.com.br",
+    "infomoney.com.br", "poder360.com.br", "agenciabrasil.ebc.com.br",
+    "federalreserve.gov", "ecb.europa.eu", "bcb.gov.br", "bot.or.th", "bsp.gov.ph"
+  ]
+}
