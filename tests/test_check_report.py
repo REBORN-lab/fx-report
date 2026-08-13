@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts import check_report
 from scripts import weekly_digest
@@ -772,8 +773,15 @@ DAILY_VERDICT = "当日采到 11 条(前一日取自 gdelt 通道,口径不可�
 
 
 def snap_with_derived(schema_version=2, verdict=DAILY_VERDICT,
-                      currencies=("USD",)):
-    """在既有 SNAP 上挂一个 derived 节。SNAP 本身不变(浅拷贝后加键)。"""
+                      currencies=tuple(check_report.CURRENCIES)):
+    """在既有 SNAP 上挂一个 derived 节。SNAP 本身不变(浅拷贝后加键)。
+
+    currencies 默认给全五个币种:derive 按 rates ∪ events.KEYWORDS 逐币种
+    填充(实测 data/2026-08-12.json 派生出的 events 恰好五个键),schema 2
+    的真实快照没有「只有一个币种条目」这种形态,而 T6b 的第 ② 档已把它判为
+    VERDICT_ENTRY_MISSING。默认值给少了,此后每个用它的新用例都会白拿四条
+    无关违规 —— 要测部分容器请显式传 currencies。
+    """
     snap = dict(SNAP)
     snap["derived"] = {
         "schema_version": schema_version,
@@ -827,7 +835,9 @@ class DailyVerdictQuotingTest(unittest.TestCase):
         """存量快照 derived.schema_version=1:跳过,不判违规,但必须计数。"""
         notes = []
         v = check_report.check_daily(
-            make_report(), snap_with_derived(schema_version=1, verdict=None),
+            make_report(),
+            snap_with_derived(schema_version=1, verdict=None,
+                              currencies=("USD",)),
             BRIEF, notes=notes)
         self.assertFalse([x for x in v if "VERDICT" in x], v)
         self.assertEqual(len(notes), 1)
@@ -854,13 +864,14 @@ class DailyVerdictQuotingTest(unittest.TestCase):
         self.assertEqual(len(notes), 1)
 
     def test_bool_schema_version_is_not_a_number(self):
-        """True >= 2 在 Python 里是 False,但 True 也不该被当成版本号。"""
+        """把闸门压到 1 才能让 bool 门真正承重:True >= 1 会误判为新 schema。"""
         snap = dict(SNAP)
         snap["derived"] = {"schema_version": True, "events": {"USD": {}}}
         notes = []
-        v = check_report.check_daily(make_report(),
-                                     json.dumps(snap, ensure_ascii=False),
-                                     BRIEF, notes=notes)
+        with mock.patch.object(check_report, "DERIVED_VERDICT_SCHEMA", 1):
+            v = check_report.check_daily(make_report(),
+                                         json.dumps(snap, ensure_ascii=False),
+                                         BRIEF, notes=notes)
         self.assertFalse([x for x in v if "VERDICT" in x], v)
         self.assertEqual(len(notes), 1)
 
@@ -872,27 +883,33 @@ class DailyVerdictQuotingTest(unittest.TestCase):
 
     def test_missing_section_does_not_double_report(self):
         """让位 ①:缺币种节只报 SECTION_MISSING 一条。"""
-        v = check_report.check_daily(
-            make_report(missing="THB"),
-            snap_with_derived(currencies=("THB",)), BRIEF)
+        shared = "四个覆盖币种共用的结论句,逐字出现在报告里"
+        report = report_quoting(shared, missing="THB")
+        # 让位机制是不报 VERDICT 的唯一原因 —— 报告本就不含结论句时,
+        # 下面的 assertFalse 会因为「本来就引不到」而恒真
+        self.assertNotIn(DAILY_VERDICT, report)
+        # 只有未覆盖的 THB 带一条报告里没有的结论句:让位失效时它立刻变成
+        # VERDICT_NOT_QUOTED。其余四个币种条目齐全且被逐字引用 —— 少给条目
+        # 会撞上第 ② 档的 VERDICT_ENTRY_MISSING,把让位这条断言淹掉
+        events = {c: {"events_verdict": shared} for c in check_report.CURRENCIES}
+        events["THB"] = {"events_verdict": DAILY_VERDICT}
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": 2, "rates": {}, "real_rate": {},
+                           "events": events}
+        v = check_report.check_daily(report, json.dumps(snap, ensure_ascii=False),
+                                     BRIEF)
         self.assertTrue(any("SECTION_MISSING" in x and "THB" in x for x in v), v)
         self.assertFalse([x for x in v if "VERDICT" in x], v)
 
-    def test_snapshot_without_derived_is_inert(self):
-        """既有快照(无 derived 节)行为完全不变。"""
-        notes = []
-        v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes)
-        self.assertEqual(v, [])
-        self.assertEqual(notes, [])
-
     def test_derived_not_a_dict_does_not_crash(self):
         for bad in ("oops", [1], 7, None):
-            snap = dict(SNAP)
-            snap["derived"] = bad
-            v = check_report.check_daily(make_report(),
-                                         json.dumps(snap, ensure_ascii=False),
-                                         BRIEF)
-            self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+            with self.subTest(bad=bad):
+                snap = dict(SNAP)
+                snap["derived"] = bad
+                v = check_report.check_daily(make_report(),
+                                             json.dumps(snap, ensure_ascii=False),
+                                             BRIEF)
+                self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
 
 
 class DailySkipNoticeIsPrintedTest(unittest.TestCase):
@@ -957,3 +974,139 @@ class VerdictFieldSyncTest(unittest.TestCase):
         """闸门常量落后于 derive.SCHEMA_VERSION 时,新快照会被当成存量跳过。"""
         self.assertLessEqual(check_report.DERIVED_VERDICT_SCHEMA,
                              derive.SCHEMA_VERSION)
+
+
+class DailyContainerGateTest(unittest.TestCase):
+    """闸门声明「这份快照带结论句」之后,容器与条目就都不是可选的。
+
+    check_verdicts 的 docstring 明写「没有别处兜底,调用方必须自己确认容器
+    存在」—— check_weekly 照做了,check_daily 此前没有。同一份判定的两个
+    调用点行为不对称,正是共享判定要防的漂移。"""
+
+    def _run(self, events, ver=2, notes=None):
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": ver, "rates": {}, "real_rate": {},
+                           "events": events}
+        return check_report.check_daily(
+            make_report(), json.dumps(snap, ensure_ascii=False), BRIEF,
+            notes=[] if notes is None else notes)
+
+    def test_non_dict_container_fails_loudly(self):
+        for bad in ([], "x", 7):
+            v = self._run(bad)
+            self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x for x in v),
+                            (bad, v))
+
+    def test_missing_container_key_fails_loudly(self):
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": 2, "rates": {}, "real_rate": {}}
+        v = check_report.check_daily(make_report(),
+                                     json.dumps(snap, ensure_ascii=False), BRIEF)
+        self.assertTrue(any("VERDICT_CONTAINER_MALFORMED" in x for x in v), v)
+
+    def test_empty_container_reports_every_covered_currency(self):
+        v = self._run({})
+        missing = [x for x in v if "VERDICT_ENTRY_MISSING" in x]
+        self.assertEqual(len(missing), len(check_report.CURRENCIES), v)
+
+    def test_partial_container_reports_only_the_absent_ones(self):
+        v = self._run({c: {"events_verdict": "x"} for c in ("USD", "EUR", "PHP")})
+        names = [c for c in check_report.CURRENCIES
+                 if any("VERDICT_ENTRY_MISSING" in x and c in x for x in v)]
+        self.assertEqual(names, ["THB", "BRL"])
+
+    def test_currency_not_covered_is_not_required(self):
+        """让位仍然成立:报告没写的币种不要求条目。"""
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": 2, "rates": {}, "real_rate": {},
+                           "events": {}}
+        v = check_report.check_daily(make_report(missing="THB"),
+                                     json.dumps(snap, ensure_ascii=False), BRIEF)
+        self.assertFalse([x for x in v
+                          if "VERDICT_ENTRY_MISSING" in x and "THB" in x], v)
+
+    def test_legacy_schema_container_problems_are_still_skipped(self):
+        """①② 只对声称带结论句的快照生效 —— 存量快照照旧跳过,不得变红。"""
+        for bad in (None, [], {}, "x"):
+            with self.subTest(events=bad):
+                v = self._run(bad, ver=1)
+                self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+
+
+class DailyNoDerivedNoticeTest(unittest.TestCase):
+    """第 ③ 档:快照根本没有 derived 节。
+
+    实测 data/2026-08-07..10.json 四天都是这一形态,此前跑出来是**裸
+    CHECK PASSED、零声明** —— 与「全部结论句已逐字核验通过」在输出上完全
+    不可分辨,六天里占了四天。这是「跳过 vs 通过」的最后一个静默口子。"""
+
+    def test_missing_derived_emits_a_notice_not_a_violation(self):
+        notes = []
+        v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes)
+        self.assertEqual(v, [])
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("VERDICT_SKIPPED_NO_DERIVED", notes[0])
+
+    def test_null_derived_emits_the_same_notice(self):
+        snap = dict(SNAP)
+        snap["derived"] = None
+        notes = []
+        v = check_report.check_daily(make_report(),
+                                     json.dumps(snap, ensure_ascii=False),
+                                     BRIEF, notes=notes)
+        self.assertEqual(v, [])
+        self.assertIn("VERDICT_SKIPPED_NO_DERIVED", notes[0])
+
+    def test_non_dict_derived_emits_the_same_notice(self):
+        for bad in ("oops", [1], 7):
+            with self.subTest(derived=bad):
+                snap = dict(SNAP)
+                snap["derived"] = bad
+                notes = []
+                v = check_report.check_daily(
+                    make_report(), json.dumps(snap, ensure_ascii=False),
+                    BRIEF, notes=notes)
+                self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+                self.assertIn("VERDICT_SKIPPED_NO_DERIVED", notes[0])
+
+    def test_present_derived_does_not_emit_it(self):
+        """有 derived 节时不出这条 —— 它说的是「没有派生节」,不是「schema 旧」。"""
+        for ver in (1, 2):
+            with self.subTest(ver=ver):
+                notes = []
+                check_report.check_daily(
+                    report_quoting(DAILY_VERDICT),
+                    snap_with_derived(schema_version=ver), BRIEF, notes=notes)
+                self.assertFalse([x for x in notes
+                                  if "VERDICT_SKIPPED_NO_DERIVED" in x], notes)
+
+    def test_notice_is_printed_by_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            for path, text in ((rp, make_report()), (sp, SNAP_TEXT)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("VERDICT_SKIPPED_NO_DERIVED", out)
+        self.assertIn("CHECK PASSED", out)
+
+    def test_library_caller_without_notes_does_not_crash(self):
+        """不传 notes 只是拿不到声明,不该崩(`notes is not None` 那道门)。"""
+        v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF)
+        self.assertEqual(v, [])
+
+
+class CurrenciesCoveredByKeywordsTest(unittest.TestCase):
+    """USD 的 events 条目只因 events.KEYWORDS 里有 "USD" 才存在 —— 实测
+    data/2026-08-12.json 的 rates 只有 4 个键(无 USD)。动一下关键词表,
+    USD 条目就会静默消失,而校验器从不读 KEYWORDS。这条断言是唯一的哨兵。"""
+
+    def test_every_currency_has_keywords(self):
+        from scripts.collect import events as events_mod
+        self.assertLessEqual(set(check_report.CURRENCIES),
+                             set(events_mod.KEYWORDS))

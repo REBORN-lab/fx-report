@@ -148,14 +148,30 @@ def check_verdicts(report, container, fields, covered, required, label):
 
 
 def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None):
+    """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
+
+    notes : **出参**。传入的 list 会被追加「非违规的降级声明」
+            (VERDICT_SKIPPED_LEGACY / VERDICT_SKIPPED_NO_DERIVED)。
+            不传等于放弃这些声明 —— 此时退出码 0 既可能表示「全查过了」
+            也可能表示「一条都没查」,两者不可分辨,正是本检查要消灭的形态。
+            CLI 调用方必须传并打印。
+            check_weekly 没有对应参数:那一侧 required 恒为 True,缺字段
+            直接进 violations,不会产生跳过。
+    """
     v = []
     secs = sections(report)
     snap, snap_problems = parse_snapshot(snapshot_text)
     for p in snap_problems:
         v.append("SNAPSHOT_MALFORMED: " + p)
 
+    covered = set()
     for c in CURRENCIES:
-        if not find_section(secs, c):
+        if find_section(secs, c):
+            covered.add(c)
+        else:
+            # covered 与 SECTION_MISSING 必须互为补集 —— check_verdicts 的
+            # 「让位 ①」依赖这一点。建在同一个循环里,物理上保证两者一起改
+            # (check_weekly 的注释这么写,而日报侧此前分两处算)
             v.append("SECTION_MISSING: 缺少币种节 %s" % c)
     s = find_section(secs, "执行摘要")
     if not s:
@@ -200,18 +216,40 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     # 判据取 schema 版本而非"这个键在不在":后者会让**新代码产出却漏写该
     # 字段**的缺陷与存量快照完全同形,静默通过。
     derived = snap.get("derived") if isinstance(snap, dict) else None
-    derived = derived if isinstance(derived, dict) else {}
+    has_derived = isinstance(derived, dict)
+    derived = derived if has_derived else {}
     ver = derived.get("schema_version")
     ver_ok = (isinstance(ver, int) and not isinstance(ver, bool)
               and ver >= DERIVED_VERDICT_SCHEMA)
-    covered = {c for c in CURRENCIES if find_section(secs, c)}
-    found, skipped = check_verdicts(report, derived.get("events"),
+    events = derived.get("events")
+    # ③ 没有派生节:不是违规,但**必须出声明** —— 此前这一形态跑出裸
+    # CHECK PASSED、零声明,与「全部结论句已核验」不可分辨,而实测
+    # data/2026-08-07..10.json 四天都是它,六天里占了四天
+    if not has_derived and notes is not None:
+        notes.append("VERDICT_SKIPPED_NO_DERIVED: 快照无 derived 节,"
+                     "本次未校验任何结论句")
+    # ①② 只对「声称带结论句」的快照生效:ver_ok 为假时照旧跳过,否则
+    # 存量快照(derived 为 null 或 schema=1)会集体变红。
+    # ver_ok 为真时容器与条目都不再是可选的 —— 与 check_weekly 对称,
+    # 谓词不越权判结构,兜底在调用点(见 check_verdicts 的 docstring)。
+    if ver_ok and not isinstance(events, dict):
+        v.append("VERDICT_CONTAINER_MALFORMED: 快照的 derived.events 不是对象"
+                 "(实为 %s),derived.events 下的结论句一条都未校验"
+                 % type(events).__name__)
+    elif ver_ok:
+        # 日报五个币种都应有事件派生量(derive 按 rates ∪ events.KEYWORDS
+        # 逐币种填充),整条缺失不是合法形态 —— 与周报的 rates 容器不同,
+        # 那里基准货币本就没有条目
+        for c in sorted(covered - set(events)):
+            v.append("VERDICT_ENTRY_MISSING: derived.events 缺少 %s 的条目;"
+                     "该币种的结论句一条都未校验" % c)
+    found, skipped = check_verdicts(report, events,
                                     VERDICT_FIELD_DAILY, covered,
                                     required=ver_ok, label="derived.events")
     v.extend(found)
     if skipped and notes is not None:
         notes.append("VERDICT_SKIPPED_LEGACY: %d 个币种因快照 schema 过旧"
-                     "(derived.schema_version=%s)未校验结论句" % (skipped, ver))
+                     "(derived.schema_version=%r)未校验结论句" % (skipped, ver))
 
     allowed = numbers_in(snapshot_text) | numbers_in(brief_text) | ALLOWED_SMALL
     for n in sorted(numbers_in(report) - allowed):
