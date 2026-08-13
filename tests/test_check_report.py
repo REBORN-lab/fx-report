@@ -481,6 +481,9 @@ class CheckVerdictsCoreTest(unittest.TestCase):
         v, _ = self._run(s.replace("26", "15"), {"USD": {"articles_verdict": s}})
         self.assertTrue(any(x.startswith("VERDICT_NOT_QUOTED") and "USD" in x
                             for x in v), v)
+        # label 是三个调用点唯一的区分手段(digest.events / digest.rates /
+        # derived.events),抹掉它三类违规就分不出来源
+        self.assertTrue(any("digest.events.USD" in x for x in v), v)
 
     def test_expected_sentence_is_echoed_in_the_violation(self):
         """违规信息必须给出期望的整句原文,否则报告作者无从修。"""
@@ -503,9 +506,11 @@ class CheckVerdictsCoreTest(unittest.TestCase):
             self.assertEqual(skipped, 0)
 
     def test_non_string_is_malformed_and_does_not_crash(self):
-        for bad in ({"a": 1}, 7, ["x"], True, 1.5):
+        for bad, name in (({"a": 1}, "dict"), (7, "int"), (["x"], "list"),
+                          (True, "bool"), (1.5, "float")):
             v, _ = self._run("任意报告", {"USD": {"articles_verdict": bad}})
             self.assertTrue(any("VERDICT_MALFORMED" in x for x in v), (bad, v))
+            self.assertTrue(any(name in x for x in v), (bad, v))
 
     def test_absent_field_when_required_is_a_violation(self):
         v, skipped = self._run("任意报告", {"USD": {}}, required=True)
@@ -563,6 +568,25 @@ class CheckVerdictsCoreTest(unittest.TestCase):
         self.assertTrue(any("official_verdict" in x for x in v), v)
         self.assertFalse([x for x in v if "articles_verdict" in x], v)
 
+    def test_required_true_never_skips(self):
+        """T4 的 `found, _ =` 丢弃之所以无损,靠的是这条不变量。"""
+        for container in ({"USD": {}}, {"USD": {"articles_verdict": None}},
+                          {c: {} for c in check_report.CURRENCIES}):
+            self.assertEqual(self._run("任意报告", container, required=True)[1], 0)
+
+    def test_skip_is_counted_per_currency_not_per_field(self):
+        """同一币种缺两个字段仍只算 1 —— T6 打印的是「N 个币种」。"""
+        v, skipped = check_report.check_verdicts(
+            "任意报告", {"USD": {}}, check_report.VERDICT_FIELDS_EVENTS,
+            {"USD"}, False, "digest.events")
+        self.assertEqual((v, skipped), ([], 1))
+
+    def test_skip_accumulates_across_currencies(self):
+        v, skipped = self._run("任意报告",
+                               {c: {} for c in check_report.CURRENCIES},
+                               required=False)
+        self.assertEqual((v, skipped), ([], 5))
+
 
 class VerdictFieldConstantsTest(unittest.TestCase):
     """字段名 SHALL 显式枚举,MUST NOT 按名字模式搜集 —— digest 顶层的
@@ -574,6 +598,7 @@ class VerdictFieldConstantsTest(unittest.TestCase):
                          ("articles_verdict", "official_verdict"))
         self.assertEqual(check_report.VERDICT_FIELDS_RATES, ("fixings_verdict",))
         self.assertEqual(check_report.VERDICT_FIELD_DAILY, ("events_verdict",))
+        self.assertEqual(check_report.DERIVED_VERDICT_SCHEMA, 2)
 
     def test_counting_structures_are_not_enumerated(self):
         every = (check_report.VERDICT_FIELDS_EVENTS

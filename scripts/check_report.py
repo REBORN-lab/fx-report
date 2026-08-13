@@ -90,15 +90,20 @@ def check_verdicts(report, container, fields, covered, required, label):
     「到哪个容器取哪些字段」—— 判定逻辑复制两份后漂移是本仓库栽过的坑
     (见 scripts/fixings.py);与 events.landed_count_capped 同构。
 
-    container : {币种: {字段: 句子}};非 dict 一律跳过(结构问题由既有检查报告)
+    container : {币种: {字段: 句子}};非 dict 一律返回空结果 —— 谓词不判结构。
+                **注意目前没有别处兜底**:容器缺失/类型错时本检查静默失效,
+                调用方必须自己确认容器存在(T4 已在 check_weekly 加 isinstance
+                门并出 DIGEST_CONTAINER_MALFORMED)
     fields    : 要检查的字段名元组(显式枚举,不按名字模式扫)
     covered   : 报告已覆盖的币种集合;不在其中者跳过,由 SECTION_MISSING /
                 CURRENCY_MISSING 单独报告 —— 同一处缺失不得产生两条违规
     required  : 该来源的 schema 是否保证这些字段存在
     label     : 违规信息里的来源前缀,如 "digest.events" / "derived.events"
 
-    返回 (violations, skipped_currencies)。skipped 不是违规,但**必须被调用方
-    如实打印**:「跳过」与「通过」在输出上不可分辨,正是本检查要解决的问题。
+    返回 (violations, skipped_currencies)。**required=True 时 skipped 恒为 0**
+    (缺字段直接进 violations),调用方可以安全丢弃;required=False 时
+    skipped 必须被如实打印 ——「跳过」与「通过」在输出上不可分辨,正是本
+    检查要解决的问题。
     """
     v, skipped = [], 0
     if not isinstance(container, dict):
@@ -111,15 +116,15 @@ def check_verdicts(report, container, fields, covered, required, label):
             # 容器里没有该币种条目是合法形态(基准货币在定盘类容器中本就没有
             # 条目),不是缺字段;只有条目存在时才要求其结论句字段齐全
             continue
-        missing = False
+        skip_this_currency = False
         for field in fields:
             s = entry.get(field)
             if s is None:
                 if required:
-                    v.append("VERDICT_ABSENT: %s.%s 缺少结论句字段 %s"
+                    v.append("VERDICT_ABSENT: %s.%s 缺少结论句 %s(字段不存在或为 null)"
                              % (label, c, field))
                 else:
-                    missing = True
+                    skip_this_currency = True
                 continue
             if not isinstance(s, str):
                 v.append("VERDICT_MALFORMED: %s.%s 的 %s 应为字符串,实为 %s"
@@ -130,11 +135,15 @@ def check_verdicts(report, container, fields, covered, required, label):
                 v.append("VERDICT_EMPTY: %s.%s 的 %s 为空串或纯空白"
                          % (label, c, field))
                 continue
+            # 逐字节精确子串。前提:产出端(verdicts.join_verdict /
+            # _fixings_verdict)从不产生首尾空白,纯空白已由上一分支拦下 ——
+            # 若哪天产出端会带首尾空白,这里应改成 s.strip() not in report,
+            # 因为 markdown 无法可靠复现首尾空格
             if s not in report:
                 v.append("VERDICT_NOT_QUOTED: %s.%s 的 %s 未逐字出现在报告中;"
-                         "期望原文:%s" % (label, c, field, s))
-        if missing:
-            skipped += 1
+                         "期望原文:「%s」" % (label, c, field, s))
+        if skip_this_currency:
+            skipped += 1        # 按币种计一次,不按字段——T6 打印的是「N 个币种」
     return v, skipped
 
 
