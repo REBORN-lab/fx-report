@@ -14,9 +14,10 @@ def join_verdict(head, caveats):
     """head 与 caveat 列表的唯一拼装口。
 
     caveats 为空时**不得拼出空括号**:「区间内至少 3 条()」会把"没有任何
-    观测缺口"这条最强的结论渲染成一个像是漏填的括号。括号与顿号都用全角 ——
-    整句包含检查是逐字节的,半角会让同一条结论在两处不相等。
+    观测缺口"这条最强的结论渲染成一个像是漏填的括号。括号沿用仓库既有写法
+    (ASCII 0x28/0x29),分隔符用全角顿号(0x3001)——
+    整句包含检查是逐字节的,任何一处改宽度都会让同一条结论在两处不相等。
     """
     if not caveats:
         return head
-    return "%s（%s）" % (head, "、".join(caveats))
+    return "%s(%s)" % (head, "、".join(caveats))
