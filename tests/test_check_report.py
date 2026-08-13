@@ -1,7 +1,11 @@
+import ast
 import contextlib
 import io
 import json
 import os
+import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -779,13 +783,31 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     加法(直接 `add_argument("--tolerant", ...)`,含 `help=argparse.SUPPRESS`
     的隐藏写法 —— 扫 `--help` 文本挡不住,扫 `option_strings` 挡得住)。
 
-    ## 主守卫是行为级的
+    ## 主守卫是行为级的,但它**不是全称命题**
 
-    `test_no_argv_can_make_verdict_violations_disappear`:对一组穷举 argv
-    (在既有 option/choices 上加若干额外 token 与位置参数),断言**没有任何
-    argv** 能让一份必然违规的输入的 `VERDICT_*` 违规消失、或让 rc 从 1 变 0。
-    它不关心开关怎么注册、注册没注册 —— 只关心"有没有一条命令行能把红变绿",
-    而那正是禁令要禁的东西。上面四条变体它逐条都杀。
+    `test_listed_exemption_tokens_cannot_make_verdict_codes_disappear`
+    的名字曾经写成「no argv can …」。那是**全称命题,而实测只做到了四条
+    argv**(T8b 复验),三个有界缺口逐条被真绕过打穿:
+
+    - **V13**:枚举只在 base argv 上**追加** token,从不变动既有选项 ——
+      于是 `if args.strict_brief: violations = [x for x in violations
+      if not x.startswith("VERDICT_")]` 这一行就是豁免扳机:真 CLI 由
+      `CHECK FAILED (5)` rc=1 变 `CHECK PASSED` rc=0,而全量全绿。
+      **skills/fx-daily-report/SKILL.md 的生产调用每次都带 `--strict-brief`**,
+      这条绕过**精确地只在真实运行的那条命令行上生效**。
+      现在 base 覆盖两条 SKILL 里生产命令行的完整形状,并对每个既有开关的
+      取反组合各跑一遍。
+    - **V9**:两份输入产出的违规**全是 `VERDICT_NOT_QUOTED`**,按码族滤掉
+      `ABSENT/EMPTY/MALFORMED`(最该响亮失败的"脚本缺陷"族)时 rc 仍是 1、
+      `VERDICT_` 仍在 stdout,旧断言绿。现在输入按码枚举(8 个码都要触发到,
+      并由 `seen` 集合闭合),判据升级为**基线上出现过的那一组码一个都不许少**。
+    - **V14**:守卫是进程内 `check_report.main(argv)`,`sys.argv` 对它天然
+      不可见 —— 把扳机从 `_rest` 改成 `sys.argv` 就逃掉了。现在
+      `test_production_shapes_stay_red_in_a_real_subprocess` 对生产形状跑
+      **真子进程**,让 `sys.argv` 与进程环境真正参与。
+
+    仍然**不是**"没有任何 argv":守的是 `EXEMPTION_TOKENS` × 句法位置 ×
+    既有开关取反,加上生产形状的子进程复核。词表之外的 token 不在覆盖内。
     """
 
     def test_cli_option_set_is_frozen(self):
@@ -814,14 +836,50 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
             return (e.code if isinstance(e.code, int) else 2), out.getvalue()
         return rc, out.getvalue()
 
-    def _assert_still_red(self, argv):
-        rc, out = self._run_cli(argv)
-        self.assertNotEqual(
-            rc, 0, "argv=%r 让一份必然违规的输入通过了(rc 1→0)\n%s" % (argv, out))
-        if rc == 1:
-            self.assertIn(
-                "VERDICT_", out,
-                "argv=%r 让 VERDICT_* 违规整类消失了\n%s" % (argv, out))
+    CHECK_PY = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "scripts", "check_report.py")
+
+    def _run_subprocess(self, argv):
+        """真子进程跑 CLI。进程内 `main(argv)` 看不见 `sys.argv`,把豁免扳机
+        从 `parse_known_args` 的 `_rest` 改写成 `sys.argv` 就整类逃掉(V14)。
+        只有真子进程能让 `sys.argv` 与进程环境参与判定。"""
+        r = subprocess.run([sys.executable, self.CHECK_PY] + list(argv),
+                           capture_output=True, text=True,
+                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        return r.returncode, r.stdout
+
+    @staticmethod
+    def _codes(out):
+        """stdout 里出现过的 `VERDICT_*` 码集合(违规行与降级声明行同收)。"""
+        found = set()
+        for raw in out.splitlines():
+            m = re.match(r"(VERDICT_[A-Z_]+)[::]", raw.lstrip(" -"))
+            if m:
+                found.add(m.group(1))
+        return found
+
+    def _assert_no_code_lost(self, argv, base_rc, base_codes, run=None):
+        """判据(V9 后升级):**基线上出现过的那一组码,一个都不许少**。
+
+        旧判据是"stdout 里还有 `VERDICT_`":两份输入的违规恰好全是
+        `VERDICT_NOT_QUOTED`,于是"按码族滤掉 ABSENT/EMPTY/MALFORMED"
+        (最该响亮失败的脚本缺陷族)时 rc 仍 1、`VERDICT_` 仍在,断言绿。
+        rc=2 仍算合格 —— argparse 拒收未知参数就是 fail-closed。
+        """
+        rc, out = (run or self._run_cli)(argv)
+        if rc == 2:
+            return
+        if base_rc:
+            self.assertNotEqual(
+                rc, 0,
+                "argv=%r 让一份必然违规的输入通过了(rc %d→0)\n%s"
+                % (argv, base_rc, out))
+        missing = base_codes - self._codes(out)
+        self.assertFalse(
+            missing,
+            "argv=%r 让这些码整类消失了:%s\n%s"
+            % (argv, sorted(missing), out))
 
     def _variants(self, base, free_positional=None):
         """base 之上派生 argv。free_positional 给的是"可塞魔法值的既有位置参数"
@@ -854,37 +912,171 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                 out.append(magic)
         return out
 
-    def test_no_argv_can_make_verdict_violations_disappear(self):
-        """**主守卫**。一份必然违规的输入 + 一组穷举 argv,断言没有一条能把
-        红变绿。判据只有两个:rc 不得为 0;rc 为 1 时输出里必须还有 VERDICT_*
-        (只剩结构违规、VERDICT_* 被整类滤掉,也算失守)。rc=2 合格 ——
-        argparse 拒收未知参数就是 fail-closed。"""
-        with tempfile.TemporaryDirectory() as tmp:
-            drp = os.path.join(tmp, "d.md")
-            dsp = os.path.join(tmp, "d.json")
-            wrp = os.path.join(tmp, "w.md")
-            wdp = os.path.join(tmp, "w.json")
-            for path, text in ((drp, make_report()),
-                               (dsp, snap_with_derived()),
-                               (wrp, WEEKLY_OK.replace(ART_PHP, "改写过")),
-                               (wdp, DIGEST)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
-            daily = [drp, dsp, "--mode", "daily"]
-            weekly = [wrp, dsp, "--mode", "weekly", "--digest", wdp]
-            # 前提自检:两份输入现在**确实**是红的,否则整轮穷举空转
-            for base in (daily, weekly):
-                rc, out = self._run_cli(base)
-                self.assertEqual(rc, 1, (base, out))
-                self.assertIn("VERDICT_", out, (base, out))
-            argvs = (self._variants(daily)
-                     + self._variants(weekly, free_positional=1))
-            for argv in argvs:
+    @classmethod
+    def setUpClass(cls):
+        """按**码**准备输入(V9):8 个 `VERDICT_*` 码都要有基线触发得到。
+
+        日报侧一份快照就凑齐 5 个码 —— 五个币种各带一种缺陷:
+        USD 有句子但报告没抄(NOT_QUOTED)、EUR 条目在但字段缺(ABSENT)、
+        PHP 非字符串(MALFORMED)、THB 纯空白(EMPTY)、BRL 条目整个缺
+        (ENTRY_MISSING)。
+        """
+        cls._tmp = tempfile.TemporaryDirectory()
+        t = cls._tmp.name
+        snap = dict(SNAP)
+        snap["derived"] = {
+            "schema_version": 2, "rates": {}, "real_rate": {},
+            "events": {"USD": {"events_verdict": DAILY_VERDICT},
+                       "EUR": {},
+                       "PHP": {"events_verdict": 7},
+                       "THB": {"events_verdict": "   "}},
+        }
+        container_bad = dict(SNAP)
+        container_bad["derived"] = {"schema_version": 2, "events": 7}
+        wobj = json.loads(DIGEST)
+        wobj["rates"]["PHP"]["fixings_verdict"] = 7            # MALFORMED
+        wobj["events"]["PHP"]["articles_verdict"] = "   "      # EMPTY
+        del wobj["events"]["PHP"]["official_verdict"]          # ABSENT
+        wobj["events"]["USD"] = {"articles_verdict": "报告里不存在的这一句",
+                                 "official_verdict": OFF_PHP}  # NOT_QUOTED
+        wcont = json.loads(DIGEST)
+        wcont["rates"] = 7
+        wcont["events"] = 7
+        files = {
+            "d_report": make_report(),
+            "brief": BRIEF,
+            "d_multi": json.dumps(snap, ensure_ascii=False),
+            "d_container": json.dumps(container_bad, ensure_ascii=False),
+            "d_noderived": SNAP_TEXT,
+            "d_legacy": snap_with_derived(schema_version=1, verdict=None),
+            "w_report": WEEKLY_OK,
+            "w_multi": json.dumps(wobj, ensure_ascii=False),
+            "w_container": json.dumps(wcont, ensure_ascii=False),
+        }
+        cls.paths = {}
+        for name, text in files.items():
+            ext = ".md" if name.endswith(("report", "brief")) else ".json"
+            p = os.path.join(t, name + ext)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(text)
+            cls.paths[name] = p
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def _production_daily(self):
+        """SKILL 第 5 步那一行的**完整形状**,逐字同形(见
+        skills/fx-daily-report/SKILL.md 的 `check_report.py … --strict-brief`)。
+        `--strict-brief` 此前从不出现在任何 base argv 里 —— 那正是 V13。"""
+        p = self.paths
+        return [p["d_report"], p["d_multi"], "--brief", p["brief"],
+                "--mode", "daily", "--strict-brief"]
+
+    def _production_weekly(self):
+        """skills/fx-weekly-report/SKILL.md 第 3 步那一行的完整形状。"""
+        p = self.paths
+        return [p["w_report"], "--mode", "weekly", "--digest", p["w_multi"],
+                "--daily", p["d_report"], "--daily", p["d_report"]]
+
+    def _bases(self):
+        """(标签, base argv, 可塞魔法值的位置参数下标)。
+
+        前两组是**生产命令行 × 每个既有开关的取反**:日报三个开关
+        (`--mode` 显式/缺省、`--brief` 有/无、`--strict-brief` 有/无)共 8 条;
+        周报是 `--daily` 出现 2/1/0 次 × 快照位有/无共 6 条。
+        `--digest` 不参与取反:不给它就是"不做结论句校验",那是设计内的
+        行为(由 test_without_digest_object_no_verdict_check 单独钉),
+        不是豁免。后四条把上面两组触发不到的码补齐。
+        """
+        p = self.paths
+        out = []
+        for use_mode in (True, False):
+            for use_brief in (True, False):
+                for use_strict in (True, False):
+                    argv = [p["d_report"], p["d_multi"]]
+                    if use_brief:
+                        argv += ["--brief", p["brief"]]
+                    if use_mode:
+                        argv += ["--mode", "daily"]
+                    if use_strict:
+                        argv += ["--strict-brief"]
+                    out.append(("daily mode=%d brief=%d strict=%d"
+                                % (use_mode, use_brief, use_strict), argv, None))
+        for n_daily in (2, 1, 0):
+            for snap_slot in (False, True):
+                argv = [p["w_report"]]
+                fp = None
+                if snap_slot:
+                    argv.append(p["d_multi"])
+                    fp = 1
+                argv += ["--mode", "weekly", "--digest", p["w_multi"]]
+                argv += ["--daily", p["d_report"]] * n_daily
+                out.append(("weekly daily=%d snapslot=%d"
+                            % (n_daily, snap_slot), argv, fp))
+        out.append(("daily 容器坏",
+                    [p["d_report"], p["d_container"], "--brief", p["brief"],
+                     "--mode", "daily", "--strict-brief"], None))
+        out.append(("weekly 容器坏",
+                    [p["w_report"], "--mode", "weekly", "--digest",
+                     p["w_container"], "--daily", p["d_report"]], None))
+        out.append(("daily 无 derived(只出降级声明)",
+                    [p["d_report"], p["d_noderived"], "--brief", p["brief"],
+                     "--mode", "daily", "--strict-brief"], None))
+        out.append(("daily schema 过旧(只出降级声明)",
+                    [p["d_report"], p["d_legacy"], "--brief", p["brief"],
+                     "--mode", "daily", "--strict-brief"], None))
+        return out
+
+    def test_listed_exemption_tokens_cannot_make_verdict_codes_disappear(self):
+        """**主守卫**,名字按实测口径:守的是 `EXEMPTION_TOKENS` × 句法位置 ×
+        既有开关取反这一**有界**集合,不是"没有任何 argv"。
+
+        每条 base 先自跑一遍取基线码集合(空集即空转,直接红),然后要求
+        每个变体都不丢码;基线 rc 非 0 的还要求 rc 不得变 0。
+        最后闭合:所有 base 的码集合并起来必须**恰好**是校验器的 8 个码 ——
+        少一个就说明有一族码从来没被这轮枚举看过(V9 的根因)。
+        """
+        seen = set()
+        for label, base, fp in self._bases():
+            base_rc, base_out = self._run_cli(base)
+            base_codes = self._codes(base_out)
+            self.assertTrue(base_codes,
+                            "base「%s」一个 VERDICT_* 都没触发,整轮空转\n%s"
+                            % (label, base_out))
+            seen |= base_codes
+            for argv in self._variants(base, free_positional=fp):
                 # subTest 标签带**整条 argv**(含位置参数):只打 argv[2:] 时,
                 # "把魔法值塞进既有位置参数"那一类变体的失败消息里看不出改了什么
-                with self.subTest(argv=" ".join(
+                with self.subTest(base=label, argv=" ".join(
                         os.path.basename(a) for a in argv)):
-                    self._assert_still_red(argv)
+                    self._assert_no_code_lost(argv, base_rc, base_codes)
+        want = set(VERDICT_VIOLATION_DISPOSITION) | set(VERDICT_NOTE_CODES)
+        self.assertEqual(seen, want, "有码从未被这轮 argv 枚举触发过")
+
+    def test_production_shapes_stay_red_in_a_real_subprocess(self):
+        """V14:进程内 `main(argv)` 对 `sys.argv` 天然免疫,把豁免扳机写成
+        `if "--tolerant" in sys.argv` 就整类逃掉。这里对**两条生产命令行**
+        跑真子进程,基线之外再逐个 token 试"裸追加"与"长选项"两种形状。
+
+        子进程数有意压在 ~42 次(每次约 50ms):句法位置的完整覆盖由上面
+        那条进程内的枚举承担,这一条只负责把 `sys.argv` 与进程环境接进来。
+        """
+        for label, base in (("daily 生产命令行", self._production_daily()),
+                            ("weekly 生产命令行", self._production_weekly())):
+            base_rc, base_out = self._run_subprocess(base)
+            base_codes = self._codes(base_out)
+            self.assertEqual(base_rc, 1, (label, base_out))
+            self.assertTrue(base_codes, (label, base_out))
+            argvs = [base]
+            for tok in self.EXEMPTION_TOKENS:
+                argvs.append(list(base) + [tok])
+                argvs.append(list(base) + ["--" + tok])
+            for argv in argvs:
+                with self.subTest(base=label, argv=" ".join(
+                        os.path.basename(a) for a in argv)):
+                    self._assert_no_code_lost(argv, base_rc, base_codes,
+                                              run=self._run_subprocess)
 
 
 DAILY_VERDICT = "当日采到 11 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
@@ -1287,6 +1479,50 @@ WANT_QUOTE_VERBATIM = ("处置:把上面「期望原文」那一句整句抄进�
 WANT_SCRIPT_BUG_VERBATIM = ("处置:这是脚本缺陷,改报告没用;"
                             "重跑产出这份快照/聚合文件的那一步,仍复现就报 bug")
 
+# ---- 码 → 它**自己那一条**处置 ----
+# 两个常量在 check_report.py 里共 7 个使用点(ABSENT / MALFORMED / EMPTY /
+# NOT_QUOTED / 日报 CONTAINER_MALFORMED / ENTRY_MISSING / 周报
+# CONTAINER_MALFORMED)。T8b 复验实测:逐字钉死的只有 NOT_QUOTED 与
+# ABSENT 两处,把**其余 5 处**的 DISPOSITION_SCRIPT_BUG 全换成
+# DISPOSITION_QUOTE(两个常量本身一字不动)→ 全量 `Ran 680 / OK / rc=0`,
+# 而真 CLI 打出「VERDICT_ENTRY_MISSING: …该币种的结论句一条都未校验;
+# 处置:把上面「期望原文」那一句整句抄进该币种节…」——
+# **校验器亲口叫运维去人工粉饰一个产出端缺陷**,正是假绿的入口。
+# 判据因此不是"带了某条处置",而是"带的是它自己那一条、且不含另一条"。
+VERDICT_VIOLATION_DISPOSITION = {
+    "VERDICT_ABSENT": WANT_SCRIPT_BUG_VERBATIM,
+    "VERDICT_MALFORMED": WANT_SCRIPT_BUG_VERBATIM,
+    "VERDICT_EMPTY": WANT_SCRIPT_BUG_VERBATIM,
+    "VERDICT_NOT_QUOTED": WANT_QUOTE_VERBATIM,
+    "VERDICT_CONTAINER_MALFORMED": WANT_SCRIPT_BUG_VERBATIM,
+    "VERDICT_ENTRY_MISSING": WANT_SCRIPT_BUG_VERBATIM,
+}
+# 两个降级码走 notes 而不是违规行,处置**有意**留在 SKILL(判别标准是采集
+# 窗口,校验器不知道窗口边界 —— 见 check_report.py 顶部注释),由
+# SkippedCodeDispositionTest 守。列在这里只为让下面的"码集合冻结"闭合:
+# check_report.py 里一共 8 个 `VERDICT_*` 码,6 + 2。
+VERDICT_NOTE_CODES = ("VERDICT_SKIPPED_LEGACY", "VERDICT_SKIPPED_NO_DERIVED")
+
+
+def _emitted_verdict_codes(module_path):
+    """扫源码里**被打印出去的**违规/声明码。
+
+    判据:AST 里的字符串字面量,且**以 `VERDICT_…:` 开头**(校验器每一行
+    都是这个形状)。这样注释与 docstring 里提到的 `VERDICT_*` 不会混进来。
+    **已知边界(实测口径,不许写成全称)**:码若由变量或 f-string 拼出来,
+    这个扫描看不到 —— 它守的是"现有 8 个码的清单没被人悄悄加减",
+    不是"任何形式的新码都跑不掉"。
+    """
+    with open(module_path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    codes = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            m = re.match(r"(VERDICT_[A-Z_]+)[::]", node.value)
+            if m:
+                codes.add(m.group(1))
+    return codes
+
 
 class CheckerPrintsItsOwnDispositionTest(unittest.TestCase):
     """每条 `VERDICT_*` 违规行**自带处置**。
@@ -1367,28 +1603,325 @@ class CheckerPrintsItsOwnDispositionTest(unittest.TestCase):
         self.assertTrue(line[0].endswith(WANT_SCRIPT_BUG_VERBATIM),
                         "处置不在违规行结尾:%s" % line[0])
 
-    def test_every_verdict_violation_line_carries_a_disposition(self):
-        """不逐个码列举 —— 列举出来的清单会与校验器漂移。判据是"凡以
-        `VERDICT_` 开头的违规行都带「处置:」",新增码不改测试就自动被守。"""
-        cases = []
+    def _digest_with(self, **patch):
         obj = json.loads(DIGEST)
-        del obj["events"]["PHP"]["official_verdict"]
-        obj["rates"]["PHP"]["fixings_verdict"] = "   "
-        cases.append(self._weekly_stdout(WEEKLY_OK.replace(ART_PHP, "改写过"),
-                                         json.dumps(obj, ensure_ascii=False)))
-        obj2 = json.loads(DIGEST)
-        obj2["rates"] = 7
-        cases.append(self._weekly_stdout(WEEKLY_OK,
-                                         json.dumps(obj2, ensure_ascii=False)))
-        cases.append(self._daily_stdout(make_report(),
-                                        snap_with_derived(verdict=None)))
+        for k, v in patch.items():
+            if k == "rates_verdict":
+                obj["rates"]["PHP"]["fixings_verdict"] = v
+            elif k == "drop_official":
+                del obj["events"]["PHP"]["official_verdict"]
+            else:
+                obj[k] = v
+        return json.dumps(obj, ensure_ascii=False)
+
+    def _snap_with(self, **patch):
+        obj = json.loads(snap_with_derived())
+        obj["derived"].update(patch)
+        return json.dumps(obj, ensure_ascii=False)
+
+    def _disposition_cases(self):
+        """**7 个使用点各一条触发用例**,按码归组。
+
+        (label, 触发码, (rc, stdout))。日报侧与周报侧的
+        VERDICT_CONTAINER_MALFORMED 是**两个独立的拼接点**
+        (check_report.py 的 266 与 487),必须各触发一次 —— 只测一侧时,
+        另一侧的处置被换成相反那条不会有任何测试变红。
+        """
+        wrong = DAILY_VERDICT.replace("11", "12")
+        return [
+            ("日报 NOT_QUOTED", "VERDICT_NOT_QUOTED", self._daily_stdout(
+                report_quoting(DAILY_VERDICT).replace(DAILY_VERDICT, wrong),
+                snap_with_derived())),
+            ("周报 NOT_QUOTED", "VERDICT_NOT_QUOTED", self._weekly_stdout(
+                WEEKLY_OK.replace(ART_PHP, "改写过"), DIGEST)),
+            ("日报 ABSENT", "VERDICT_ABSENT", self._daily_stdout(
+                make_report(), snap_with_derived(verdict=None))),
+            ("周报 ABSENT", "VERDICT_ABSENT", self._weekly_stdout(
+                WEEKLY_OK, self._digest_with(drop_official=True))),
+            ("日报 MALFORMED", "VERDICT_MALFORMED", self._daily_stdout(
+                make_report(), snap_with_derived(verdict=7))),
+            ("周报 MALFORMED", "VERDICT_MALFORMED", self._weekly_stdout(
+                WEEKLY_OK, self._digest_with(rates_verdict=7))),
+            ("日报 EMPTY", "VERDICT_EMPTY", self._daily_stdout(
+                make_report(), snap_with_derived(verdict="   "))),
+            ("周报 EMPTY", "VERDICT_EMPTY", self._weekly_stdout(
+                WEEKLY_OK, self._digest_with(rates_verdict="   "))),
+            ("日报 CONTAINER_MALFORMED", "VERDICT_CONTAINER_MALFORMED",
+             self._daily_stdout(make_report(), self._snap_with(events=7))),
+            ("周报 CONTAINER_MALFORMED", "VERDICT_CONTAINER_MALFORMED",
+             self._weekly_stdout(WEEKLY_OK, self._digest_with(rates=7))),
+            ("日报 ENTRY_MISSING", "VERDICT_ENTRY_MISSING", self._daily_stdout(
+                report_quoting(DAILY_VERDICT),
+                snap_with_derived(currencies=("USD",)))),
+        ]
+
+    def test_every_violation_code_carries_its_own_disposition(self):
+        """**逐码**断言:每个 `VERDICT_*` 违规行末尾带的是
+        `VERDICT_VIOLATION_DISPOSITION` 里给它的那一条,且**不含另一条**。
+
+        旧写法只查"含有「处置:」"(实测口径,不是推测):把 5 个
+        DISPOSITION_SCRIPT_BUG 使用点全换成 DISPOSITION_QUOTE,全量仍
+        `Ran 680 / OK`;把 MALFORMED 与 ENTRY_MISSING 两个码的处置**整段
+        删掉**,全量照样绿(旧地板 `assertGreaterEqual(len(seen), 4)` 恰好
+        只看得见 4 个码,零余量)。
+        """
+        both = (WANT_QUOTE_VERBATIM, WANT_SCRIPT_BUG_VERBATIM)
         seen = set()
-        for rc, out in cases:
-            self.assertEqual(rc, 1, out)
-            for raw_line in out.splitlines():
-                line = raw_line.lstrip(" -")
-                if not line.startswith("VERDICT_"):
-                    continue
-                seen.add(line.split(":")[0])
-                self.assertIn("处置:", line, line)
-        self.assertGreaterEqual(len(seen), 4, seen)
+        for label, code, (rc, out) in self._disposition_cases():
+            with self.subTest(case=label):
+                self.assertEqual(rc, 1, out)
+                want = VERDICT_VIOLATION_DISPOSITION[code]
+                other = [d for d in both if d != want][0]
+                lines = [x.lstrip(" -").rstrip() for x in out.splitlines()
+                         if x.lstrip(" -").startswith(code + ":")]
+                self.assertTrue(lines, "%s 没触发出 %s\n%s" % (label, code, out))
+                for line in lines:
+                    seen.add(code)
+                    self.assertTrue(
+                        line.endswith(want),
+                        "%s 的处置不是它自己那一条(或不在行尾):%s" % (code, line))
+                    self.assertNotIn(
+                        other, line,
+                        "%s 的违规行里同时出现了另一条处置:%s" % (code, line))
+        self.assertEqual(seen, set(VERDICT_VIOLATION_DISPOSITION),
+                         "有映射了处置却没有任何用例触发的码")
+
+    def test_source_verdict_codes_are_exactly_the_mapped_ones(self):
+        """码清单冻结:check_report.py 打印出去的 `VERDICT_*` 码集合,必须
+        恰好等于 `VERDICT_VIOLATION_DISPOSITION` 的键 ∪ 两个降级码。
+
+        它是上一条的闭合件:新增一个码而忘了给它写处置时,这条红
+        (不是"自动被守" —— 是"不改这张表就过不去")。
+        边界见 `_emitted_verdict_codes` 的 docstring:拼接出来的码扫不到。
+        """
+        found = _emitted_verdict_codes(check_report.__file__)
+        want = set(VERDICT_VIOLATION_DISPOSITION) | set(VERDICT_NOTE_CODES)
+        self.assertEqual(found, want,
+                         "校验器的码清单与处置表对不上;新增码必须同时入表")
+        self.assertEqual(len(want), 8, want)
+
+
+
+
+class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
+    """闸门的判定**不得受被查对象自身控制**。
+
+    T8b 复验实测三条真 CLI 全部 `CHECK PASSED` rc=0、全量全绿:
+    - **V7**:聚合文件加一个字段 `verdict_check: "off"`(据它把 digest 视作
+      None,整块结论句校验静默跳过);
+    - **V8**:报告正文首行 `<!-- verdict-exempt -->`;
+    - **V12**:报告文件名以 `.draft.md` 结尾。
+
+    复验者的定性照抄:**被校验的那份报告是 LLM 自己写的,豁免口开在被查
+    对象里等于把闸门钥匙交给被查方。** 逐条加哨兵没有尽头(换字段名、换
+    注释措辞、换后缀各是一条),所以这里改成**正交不变量**:同一份必然违规
+    的输入,在 ①换文件名 ②报告/快照/聚合文件追加任意未知字段与注释
+    ③清空白名单外的环境变量 三种扰动下,rc 必须仍为 1、且基线上出现过的
+    那组码一个都不许少。日报侧与周报侧各跑一遍。
+
+    与 A 类(在受守文字**旁边**追加否定文字)的区别在于**可判定**:
+    "换个名字/加个字段/清掉环境之后判定还一样吗"是能跑出来的等价性,
+    不是"附近有没有一句话否定它"。
+    """
+
+    ENV_WHITELIST = ("PYTHONDONTWRITEBYTECODE",)
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.t = cls._tmp.name
+        snap = dict(SNAP)
+        snap["derived"] = {
+            "schema_version": 2, "rates": {}, "real_rate": {},
+            "events": {"USD": {"events_verdict": DAILY_VERDICT},
+                       "EUR": {},
+                       "PHP": {"events_verdict": 7},
+                       "THB": {"events_verdict": "   "}},
+        }
+        wobj = json.loads(DIGEST)
+        wobj["rates"]["PHP"]["fixings_verdict"] = 7
+        wobj["events"]["PHP"]["articles_verdict"] = "   "
+        del wobj["events"]["PHP"]["official_verdict"]
+        wobj["events"]["USD"] = {"articles_verdict": "报告里不存在的这一句",
+                                 "official_verdict": OFF_PHP}
+        cls.brief = os.path.join(cls.t, "brief.md")
+        with open(cls.brief, "w", encoding="utf-8") as f:
+            f.write(BRIEF)
+        # (标签, 报告正文, 附件正文, 附件扩展名, argv 拼法)
+        cls.MODES = (
+            ("daily", make_report(), json.dumps(snap, ensure_ascii=False),
+             ".json", lambda rp, ap, bp: [rp, ap, "--brief", bp,
+                                          "--mode", "daily", "--strict-brief"]),
+            ("weekly", WEEKLY_OK, json.dumps(wobj, ensure_ascii=False),
+             ".json", lambda rp, ap, bp: [rp, "--mode", "weekly",
+                                          "--digest", ap]),
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def _write(self, name, text):
+        p = os.path.join(self.t, name)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(text)
+        return p
+
+    def _run(self, argv, env=None):
+        r = subprocess.run([sys.executable,
+                            NoLegacyExemptionSwitchTest.CHECK_PY] + list(argv),
+                           capture_output=True, text=True,
+                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+                           if env is None else env)
+        return r.returncode, r.stdout, r.stderr
+
+    def _baseline(self, mode):
+        label, rtext, atext, ext, build = mode
+        rp = self._write("base-%s.md" % label, rtext)
+        ap = self._write("base-%s%s" % (label, ext), atext)
+        argv = build(rp, ap, self.brief)
+        rc, out, err = self._run(argv)
+        codes = NoLegacyExemptionSwitchTest._codes(out)
+        self.assertEqual(rc, 1, (label, out, err))
+        self.assertTrue(codes, (label, out))
+        return argv, codes
+
+    def _assert_same_verdict(self, label, argv, base_codes, env=None):
+        rc, out, err = self._run(argv, env=env)
+        self.assertEqual(rc, 1, "%s:rc 由 1 变 %d\n%s\n%s"
+                         % (label, rc, out, err))
+        missing = base_codes - NoLegacyExemptionSwitchTest._codes(out)
+        self.assertFalse(missing, "%s:这些码消失了 %s\n%s"
+                         % (label, sorted(missing), out))
+
+    def test_filenames_do_not_change_the_verdict(self):
+        """扰动 ①:文件名。含 V12 那条 `.draft.md`,以及无扩展名/随机名。"""
+        for mode in self.MODES:
+            label, rtext, atext, ext, build = mode
+            _, base_codes = self._baseline(mode)
+            ap = self._write("fn-%s%s" % (label, ext), atext)
+            for rn in ("r.draft.md", "2026-08-13-DRAFT.md",
+                       os.urandom(6).hex(), "r.md.bak"):
+                rp = self._write("%s-%s" % (label, rn), rtext)
+                with self.subTest(mode=label, report=rn):
+                    self._assert_same_verdict(
+                        "%s 报告名 %s" % (label, rn),
+                        build(rp, ap, self.brief), base_codes)
+            rp = self._write("fn-%s.md" % label, rtext)
+            for an in ("a.draft" + ext, os.urandom(6).hex()):
+                ap2 = self._write("%s-%s" % (label, an), atext)
+                with self.subTest(mode=label, aux=an):
+                    self._assert_same_verdict(
+                        "%s 附件名 %s" % (label, an),
+                        build(rp, ap2, self.brief), base_codes)
+
+    def test_unknown_fields_and_comments_do_not_change_the_verdict(self):
+        """扰动 ②:被查对象里追加任意未知字段/注释。含 V8 的
+        `<!-- verdict-exempt -->` 与 V7 的 `verdict_check:"off"`。"""
+        for mode in self.MODES:
+            label, rtext, atext, ext, build = mode
+            _, base_codes = self._baseline(mode)
+            ap = self._write("xf-%s%s" % (label, ext), atext)
+            reports = {
+                "首行 verdict-exempt 注释": "<!-- verdict-exempt -->\n" + rtext,
+                "末行 skip-verdict 注释": rtext + "\n<!-- skip-verdict: true -->\n",
+                "正文里的免检声明": rtext.replace(
+                    "\n## ", "\n> 本报告为草稿,verdict_check=off,免于结论句校验\n\n## ", 1),
+            }
+            for i, (rlabel, rtext2) in enumerate(sorted(reports.items())):
+                rp = self._write("xf-%s-%d.md" % (label, i), rtext2)
+                with self.subTest(mode=label, perturb=rlabel):
+                    self._assert_same_verdict(
+                        "%s %s" % (label, rlabel),
+                        build(rp, ap, self.brief), base_codes)
+            rp = self._write("xf-%s-r.md" % label, rtext)
+            extras = (("verdict_check=off", {"verdict_check": "off"}),
+                      ("exempt=true", {"exempt": True, "strict": False}),
+                      ("未知自由字段", {"__note__": "自由文本", "tolerant": 1}))
+            for i, (alabel, extra) in enumerate(extras):
+                obj = json.loads(atext)
+                obj.update(extra)
+                if isinstance(obj.get("derived"), dict):
+                    obj["derived"] = dict(obj["derived"], **extra)
+                ap2 = self._write("xf-%s-%d%s" % (label, i, ext),
+                                  json.dumps(obj, ensure_ascii=False))
+                with self.subTest(mode=label, perturb=alabel):
+                    self._assert_same_verdict(
+                        "%s 附件 %s" % (label, alabel),
+                        build(rp, ap2, self.brief), base_codes)
+
+    def test_clearing_the_environment_does_not_change_the_verdict(self):
+        """扰动 ③:白名单之外的环境变量全清,以及塞满豁免味的环境变量。
+
+        实测(2026-08-13,本机 python3):`env -i python3` 的
+        `sys.stdout.encoding` 仍是 `utf-8`(PEP 538 的 C locale coercion),
+        所以清空环境不会把中文输出变成 UnicodeEncodeError —— 这条扰动
+        测的是判定,不是编码。
+        """
+        for mode in self.MODES:
+            label = mode[0]
+            argv, base_codes = self._baseline(mode)
+            for elabel, env in (
+                    ("环境全清", {}),
+                    ("只留白名单", {k: "1" for k in self.ENV_WHITELIST}),
+                    ("塞满豁免味的环境变量",
+                     dict(os.environ, VERDICT_CHECK="off",
+                          CHECK_REPORT_TOLERANT="1", FX_SKIP_VERDICT="yes",
+                          STRICT="0", PYTHONDONTWRITEBYTECODE="1"))):
+                with self.subTest(mode=label, env=elabel):
+                    self._assert_same_verdict("%s %s" % (label, elabel),
+                                              argv, base_codes, env=env)
+
+    # 环境变量类的名字。`os.environ` / `os.getenv` 两条正门,
+    # `environb` / `putenv` 两条侧门;字符串常量那一条堵的是
+    # `getattr(os, "environ")`。
+    FORBIDDEN_ENV_NAMES = ("environ", "environb", "getenv", "putenv")
+    FORBIDDEN_ENV_MODULES = ("os", "posix", "nt")
+
+    def test_checker_source_never_reads_the_environment(self):
+        """**静态可判定**的不变量:`scripts/check_report.py` 的 AST 里不得
+        出现环境变量访问。
+
+        B8 实测(T8b 复验):在模块加载期用环境变量翻转一个常量,测试进程
+        天然取到未反转的那一支 —— 全量全绿,而真 CLI 在导出该变量后行为
+        变了。环境是**被查对象与运维都够得着、而测试进程够不着**的旋钮,
+        闸门读它就等于把钥匙交出去。
+
+        判据(实测口径,已知边界写在下面,不许写成全称):
+        禁 `environ/environb/getenv/putenv` 的属性访问与裸名字、禁与它们
+        逐字相等的字符串常量(堵 `getattr(os, "environ")`)、禁 import
+        `os/posix/nt`。**够不着的**:`__import__("o"+"s")` 这种把模块名和
+        属性名都拼出来的写法 —— 字符串构造空间无界,静态扫不到。
+        校验器真需要 `os.path` 时,改这条断言是显式动作、会进 diff。
+        """
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        bad = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) \
+                    and node.attr in self.FORBIDDEN_ENV_NAMES:
+                bad.append("第 %d 行 属性 .%s" % (node.lineno, node.attr))
+            elif isinstance(node, ast.Name) \
+                    and node.id in self.FORBIDDEN_ENV_NAMES:
+                bad.append("第 %d 行 名字 %s" % (node.lineno, node.id))
+            elif isinstance(node, ast.Constant) \
+                    and isinstance(node.value, str) \
+                    and node.value in self.FORBIDDEN_ENV_NAMES:
+                bad.append("第 %d 行 字符串常量 %r(getattr 走后门)"
+                           % (node.lineno, node.value))
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name.split(".")[0] in self.FORBIDDEN_ENV_MODULES:
+                        bad.append("第 %d 行 import %s" % (node.lineno, a.name))
+            elif isinstance(node, ast.ImportFrom):
+                mod = (node.module or "").split(".")[0]
+                if mod in self.FORBIDDEN_ENV_MODULES:
+                    bad.append("第 %d 行 from %s import …"
+                               % (node.lineno, node.module))
+                for a in node.names:
+                    if a.name in self.FORBIDDEN_ENV_NAMES:
+                        bad.append("第 %d 行 from … import %s"
+                                   % (node.lineno, a.name))
+        self.assertEqual(bad, [],
+                         "校验器读了环境变量(或引入了能读到的模块):%s"
+                         % "; ".join(bad))

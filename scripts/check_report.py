@@ -41,11 +41,39 @@ DERIVED_VERDICT_SCHEMA = 2
 # 另有一条决定性实测:`grep -rn "改报告|改周报" scripts/` 零命中 —— 那段处置
 # 文本没有任何运行时角色,纯粹是提示词里的散文。
 # 于是改成:校验器发码时自己把处置打出来。守的东西从"散文里有没有某句话"
-# 变成"脚本输出里有没有这句话",后者可被精确断言,且没有第二份可反转。
-# 两串都被 tests/test_check_report.py 的 CheckerPrintsItsOwnDispositionTest
-# **逐字**钉死(assertEqual,不是 assertIn),并且断言它们出现在违规行的**结尾**:
-# 只做子串断言时,"整句留着、句尾追加一句反话"照样全绿(实测 679 全 OK)。
-# 改这里的文案就必须同时改那两个期望值 —— 显式动作、进 diff。
+# 变成"脚本输出里有没有这句话",后者可被精确断言。
+#
+# ---- 上一段最后半句「且没有第二份可反转」**已被证伪**,如实记在这里 ----
+# T8b 复验对这套修法做了四次改写形态、约 15 条实证绕过,协调者据此裁定:
+#   **子串/段落哨兵能守住的是「这句话有没有被删改」,守不住「附近有没有
+#   一句话否定它」。反转不需要第二份拷贝,只需要相邻。**
+# 段级断言看不见节末追加、bullet 级看不见段内追加、行级看不见相邻行追加、
+# SKILL 节内可原地长回一份反向表、节外可用原措辞 —— 每次改写只是把盲区
+# 搬了个地方。这一类(下称 A 类)**结构上封不住**,已封为文档化边界,不再
+# 为它加哨兵。
+# 并且:「把处置收归校验器就没东西可反转」这个判断不但被证伪,**净暴露面
+# 还变大了** —— 处置文案搬进脚本后,它同时成了脚本里的可变异对象
+# (M12 打的就是它),而 SKILL 那一侧的指向句仍然可以被相邻文字否定
+# (M13 打的是它)。这不是一次成功的收口,是一次把风险换了个地方的改法。
+#
+# 能守住的是**有界**的那部分,本轮补的都在这一侧:
+#   ① 码 → 处置的**逐码**对应(CheckerPrintsItsOwnDispositionTest):
+#      两串各自 assertEqual 逐字钉死、必须出现在违规行**结尾**、且每个码
+#      带的必须是它自己那一条、不得同时出现另一条。
+#      (只断言"带了某条处置"时,把 5 个 DISPOSITION_SCRIPT_BUG 使用点全换成
+#      DISPOSITION_QUOTE 照样全量 OK —— 校验器于是亲口叫运维去人工粉饰一个
+#      产出端缺陷。)
+#   ② 码清单冻结:新增码不入表就红,不再自称"自动被守"。
+# 改这里的文案就必须同时改测试里的期望值 —— 显式动作、进 diff。
+#
+# ---- 本文件**不读环境变量**,这是不变量,不是习惯 ----
+# 实测(B8):在模块加载期用一个环境变量翻转常量,测试进程天然取到未翻转
+# 的那一支 —— 全量全绿,而真 CLI 在导出该变量后行为变了。环境是**被查对象
+# 与运维都够得着、测试进程够不着**的旋钮,闸门读它就等于把钥匙交出去。
+# 由 VerdictGateIsOrthogonalToTheCheckedObjectTest 的 AST 静态断言钉住:
+# 不得出现 environ/getenv 等名字,也不得 import os/posix/nt。同类还有
+# 三条正交不变量:换文件名、给报告/快照/聚合文件追加任意未知字段与注释、
+# 清空环境 —— 判定必须一字不变(V7/V8/V12 三条真绕过就死在这里)。
 DISPOSITION_QUOTE = ("处置:把上面「期望原文」那一句整句抄进该币种节,"
                      "一个字符都不改;这一条改报告即可,不要动脚本")
 DISPOSITION_SCRIPT_BUG = ("处置:这是脚本缺陷,改报告没用;"
@@ -333,8 +361,20 @@ def build_parser():
     (`option_strings` 逐字不变);④ 在 main 里把 `parse_args` 换成
     `parse_known_args` 并读 `_rest`(**零注册**,而 `--tolerant` 字面可用)。
     能挡住这四条的是 `tests/test_check_report.py` 里的行为级断言
-    (`test_no_argv_can_make_verdict_violations_disappear`):穷举 argv,
-    没有任何一条能让必然违规的输入变绿。冻结注册表形状只是辅助。
+    (`test_listed_exemption_tokens_cannot_make_verdict_codes_disappear`):
+    在**生产命令行的完整形状**(含 `--brief`/`--strict-brief`/`--daily`)
+    及其每个开关的取反组合上枚举豁免味 token,要求基线上出现过的那组码
+    一个都不许少。冻结注册表形状只是辅助。
+
+    **这条断言不是全称命题**,名字里的 "listed" 就是它的边界:守的是
+    `EXEMPTION_TOKENS` 词表 × 句法位置 × 开关取反。旧名字写成
+    "no argv can …" 时,三条有界缺口逐条被真绕过打穿(T8b 复验):
+    base argv 从不带 `--strict-brief` 而生产调用每次都带(于是
+    `if args.strict_brief: 滤掉 VERDICT_*` 这一行只在真实运行时生效);
+    判据只看"stdout 里还有 VERDICT_"而两份输入的违规恰好全是同一个码;
+    以及守卫跑在进程内、`sys.argv` 对它天然不可见。
+    第三条现在由 `test_production_shapes_stay_red_in_a_real_subprocess`
+    用真子进程补上。
     """
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
