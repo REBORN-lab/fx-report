@@ -31,6 +31,43 @@ def block(text, start_re):
     return "".join(m.group(0).split()) if m else None
 
 
+BAN_ANCHOR = "自行拼装任何话术"
+
+
+def banned_booleans(flat_text):
+    """从禁令句本身抽出被点名的字段 —— **哨兵的主语只能有这一个来源**。
+
+    在测试里另抄一份名单,就是本 change 从头到尾在消灭的形态:同一份判定
+    有两份拷贝,两份必然漂移,而"哪份算数"无处可判。这里漂移的方向还是
+    静默失守:derive 新增第六个布尔、SKILL 禁令也写上了它,而手抄名单没
+    跟上 → 哨兵根本不守它,全绿照过。
+
+    锚点取"自行拼装任何话术"整串:F3 那句写的是"自行拼装任何关于条数多寡
+    的话术",不含本串,不会被误抽 —— 那句里的 `events_verdict` 不是被禁的
+    布尔,抽进来会让整个循环失去意义。实测全文恰有一句含本锚点,且该句的
+    反引号内容恰好只有五个字段名,没有混入别的反引号内容。
+    """
+    for s in sentences(flat_text):
+        if BAN_ANCHOR in s:
+            return re.findall(r"`([^`]+)`", s)
+    return []
+
+
+def mentions(flat_text, field):
+    """字段名现在来自文档,子串包含关系更容易咬人:`sample_capped` 是
+    `main_sample_capped` 的后缀,裸用 `in` 会把后者的每一处提及都算成前者的。
+    两者判据相同所以不出错判,但"某个字段到底被守住没有"就说不清了 ——
+    F8 那轮的失败消息正是这样张冠李戴的。
+
+    改按**标识符边界**判定:前后一位都不能是 [A-Za-z0-9_]。反引号、空白、
+    中文标点都不是标识符字符,故 `sample_capped` 照常命中,而
+    main_sample_capped 里的那一段因前一位是下划线被排除。比"最长优先"稳:
+    不依赖字段在表里的先后顺序。
+    """
+    pat = re.compile(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(field))
+    return [s for s in sentences(flat_text) if pat.search(s)]
+
+
 def sentences(flat_text):
     """按句号切句。**这里不能用空行切段**:禁令那句与曾经教着按布尔拼话术的
     那句同处一个 markdown 列表项(- 派生指标:)之内,中间一个空行都没有,
@@ -60,15 +97,12 @@ class DailySkillTest(unittest.TestCase):
                        "该币种条目取自被截断的样本,任何条数都是下界"):
             self.assertNotIn(phrase, t, phrase)
 
-    # 禁令那句点名的五个布尔。**五个都要守**:只守 count_capped 时,谁把
-    # "`channel_changed_from` 非 null 时改写为……"这类模板句写回去,全绿照过 ——
-    # 「当前状态干净」不等于「有东西在守着它」,这正是本 change 被单列四次的
-    # 「修复本身零覆盖」同型。
-    # 注意 sample_capped 是 main_sample_capped 的子串,后者的提及会被前者一并
-    # 捞到;对"是不是禁令"的判定无害(两个都在禁令里),只是让"提到过没有"
-    # 这半条断言对 sample_capped 略松。
-    BANNED_BOOLEANS = ("count_capped", "sample_capped", "main_sample_capped",
-                       "channel_changed_from", "dropped_malformed")
+    # **这张表不驱动任何检查**,只当地板。循环的主语一律从禁令句里抽
+    # (见 banned_booleans),否则它就成了那五个字段的第二份手抄拷贝。
+    # 地板防的是反向绕过:把布尔从禁令句里删掉,抽出来的集合随之变空,
+    # 循环无事可做,测试反而变绿 —— 靠削禁令句放绿的路必须堵死。
+    BANNED_FLOOR = ("count_capped", "sample_capped", "main_sample_capped",
+                    "channel_changed_from", "dropped_malformed")
 
     def test_every_mention_of_a_banned_boolean_sits_inside_a_ban(self):
         """一边禁止据这些布尔拼话术、一边教着按它们拼话术,两句字面冲突,
@@ -79,15 +113,22 @@ class DailySkillTest(unittest.TestCase):
         的"修法"是把断言改松 —— 靠放宽断言消除红是本仓库明令禁止的。句子级
         判定则相反:新增正当禁令自然通过,把判定话术写回模板段必红。
 
+        主语从禁令句抽,所以 SKILL 禁令新点名一个布尔时,哨兵**不改测试就
+        自动守它**;地板断言则挡住反向绕过。两条合起来才让禁令句成为唯一
+        事实源。
+
         最后一条断言防的是相反的过头修法 —— 直接删掉冲突句会留下真实缺口:
         `count_delta` 仍可引用,而 `events_verdict` 的 caveat 并没有说"delta 为 0
         是上限造成的",LLM 于是可以合法引用 delta=0 并自行解读成"持平"。
         替代规则必须还在,只是不再依赖布尔字段。"""
         t = flat(DAILY)
-        for field in self.BANNED_BOOLEANS:
-            hits = [s for s in sentences(t) if field in s]
-            self.assertTrue(hits, "%s 一次都没提到 —— 禁令本身丢了?" % field)
-            for s in hits:
+        fields = banned_booleans(t)
+        self.assertTrue(fields, "没抽到禁令句(锚点 %r 不在文中?)" % BAN_ANCHOR)
+        missing = sorted(set(self.BANNED_FLOOR) - set(fields))
+        self.assertFalse(
+            missing, "禁令句里少了这些布尔 —— 靠削禁令句放绿?%s" % missing)
+        for field in fields:
+            for s in mentions(t, field):
                 self.assertTrue(
                     "禁止" in s and "拼装" in s,
                     "%s 的这一处提及不是禁止拼装、而是在教着按布尔拼话术:%s"
