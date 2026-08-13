@@ -1,6 +1,7 @@
 import ast
 import contextlib
 import io
+import itertools
 import json
 import os
 import re
@@ -942,11 +943,35 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     推导单独用会犯 T8d 刚治过的「自证」病(源码被变异,推导跟着漂),
     故 `_bases()` 喂的是**推导 ∪ 字面量**,并由那条哨兵要求两者相等。
 
+    ## T8f 一条:第六族只开**单个**不读选项,**合取**扳机整类没人试
+
+    T8d/T8e 两版的第六族**每个变体只打开一个**不读选项,于是「两个不读选项的
+    **合取**」这一形状从来没被任何变体喂到 —— 而它同样只要两行:
+    `if getattr(args, "digest", None) and getattr(args, "daily", None):
+    violations = [x for x in violations if not x.startswith("VERDICT_")]`
+    在 `20aee7a` 上是**完整存活体**(全量 `Ran 687 / OK / rc=0`,哨兵与主守卫
+    一起绿)。写成朴素属性形式 `if args.digest and args.daily:` 时哨兵会响
+    (合取把两个 dest 都变成"读过的",推导塌空),但**主守卫仍然全绿**
+    (`failures=1`)—— 只有哨兵红不算封住,换个 `getattr` 就连哨兵也没了。
+
+    **这一条与前几轮的「无界绕过」不同:它可穷尽。** 不读选项每 mode 只有
+    2 个(`daily = {--digest, --daily}`、`weekly = {--brief, --strict-brief}`),
+    非空子集共 3 个,所以修法是**枚举幂集**而不是再补一条特例:第六族改为
+    「打开不读选项的**每个非空子集**」,带值的仍试真路径值 + 每个豁免味魔法值,
+    `store_true` 裸开。逐条实测(含四条单选项旧变异的回归)记在 `_variants`。
+
+    代价(同机对拍,只换 `tests/test_check_report.py` 一个文件):变体总数
+    **1414 → 1612**(+198,+14.0%);主守卫单跑 **0.94s → 1.08s**(各 3 次取
+    中位,+15%,与变体增幅同量级);本类 4 条 3.11s → 3.26s(该类耗时被
+    `test_production_shapes_stay_red_in_a_real_subprocess` 的 42 次真子进程
+    主导,幂集只加进程内变体);全量 687 条 17.89s → 18.05s(<1%,已在噪声内)。
+
     仍然**不是**"没有任何 argv":守的是 `EXEMPTION_TOKENS` × 句法位置 ×
-    既有开关取反 × 当前 mode 不读的既有选项,加上生产形状的子进程复核。
-    词表之外的 token、以及**测试进程观察不到的通道**(`sys.modules` 探测、
-    未提交的 `tests/` 改动等)不在覆盖内 —— 后者已由协调者与 A 类同列为
-    无界边界,不再为它加哨兵。
+    既有开关取反 × 当前 mode 不读的既有选项的**每个非空子集**,加上生产形状的
+    子进程复核。词表之外的 token、**不读选项与其它输入(如 `--mode` 魔法值、
+    新增位置参数)交叉构成的合取**、以及**测试进程观察不到的通道**
+    (`sys.modules` 探测、未提交的 `tests/` 改动等)不在覆盖内 —— 后两者已由
+    协调者与 A 类同列为无界边界,不再为它加哨兵。
     """
 
     def test_cli_option_set_is_frozen(self):
@@ -1114,11 +1139,46 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         rc=0 PASS,而同一份输入的真 CLI 是 `CHECK PASSED`)。塞进位置参数区、
         或用 `--` 强制当位置参数,才能真正喂到那个 action。
 
-        **第六族(T8d 新增,T8e 改为推导驱动)必须打开一个已注册的既有选项**。
-        前五族只会 *追加* 新 token,从不动既有选项 —— 于是"当前 mode 不读的那
-        几个选项"整类没人试过,而它们是零注册成本的豁免扳机。
+        **第六族(T8d 新增,T8e 改为推导驱动,T8f 改为幂集)必须打开已注册的
+        既有选项**。前五族只会 *追加* 新 token,从不动既有选项 —— 于是"当前
+        mode 不读的那几个选项"整类没人试过,而它们是零注册成本的豁免扳机。
         带值的选项试两次:带**真路径值**一次(扳机只要 truthy 就够),带
         **豁免味魔法值**一次;`store_true` 那种不带值的,裸开一次即可。
+
+        **T8f:打开的是「每个非空子集」,不是「每个单个选项」。** T8d/T8e 两版
+        每个变体只开**一个**不读选项,于是**两个选项的合取**从来没被试过,而
+        合取同样是两行就能写成的扳机。
+
+        实测口径:变异体插在 `violations = check_daily(...)`(weekly 侧为
+        `check_weekly(...)`)**之后**,两行 `if <扳机>:` +
+        `violations = [x for x in violations if not x.startswith("VERDICT_")]`;
+        全量 = `python3 -m unittest discover -s tests -t .`,rc 取 `echo $?`;
+        修前树 = `20aee7a`,修后树 = 本提交;两边都**无** `FRED_API_KEY`
+        (导出它会另外带来 11 条与本族无关的失败)。两边全量都是 `Ran 687`。
+
+        | 变异体(@mode) | 修前 | 修后 |
+        |---|---|---|
+        | `args.digest and args.daily` @daily | `failures=1`,**只有哨兵**红 | `failures=100` = 99 主守卫 + 1 哨兵 |
+        | `getattr` 版合取 @daily | **`OK` rc=0,完整存活** | `failures=99`,**全是主守卫**(哨兵绿) |
+        | `args.brief and args.strict_brief` @weekly | `failures=1`,**只有哨兵**红 | `failures=78` = 77 主守卫 + 1 哨兵 |
+        | `getattr` 版合取 @weekly | 未单测(同型) | `failures=77`,**全是主守卫**(哨兵绿) |
+
+        修前那两条"只有哨兵红"不算封住:哨兵响是因为合取把两个 dest 都变成了
+        "读过的"、推导塌空,而**主守卫全绿**;攻击者改用 `getattr` 绕开 AST
+        推导后,哨兵也不响了 —— 那才是完整存活体。对照组证明存活原因是
+        **合取**而非 `getattr`:同样 `getattr` 但只读**一个**选项
+        (`if getattr(args, "digest", None):`)修前就已经是
+        `failures=99` 全主守卫、哨兵绿。
+
+        四条单选项旧变异(`--digest`/`--daily` @daily、`--brief`/`--strict-brief`
+        @weekly)改后**仍全红且全在主守卫**:`failures=` 199 / 199 / 155 / 85
+        (各含 1 条哨兵)。
+
+        **这一条与前几轮的「无界绕过」不同:它可穷尽。** 推导出的不读选项集合
+        是 `daily = {--digest, --daily}`、`weekly = {--brief, --strict-brief}`,
+        每 mode 只有 2 个,非空子集共 3 个 —— 枚举幂集即**完备**(对"只由不读
+        选项构成的合取扳机"而言),不是打地鼠。选项数若涨到 n,这一族会按
+        2ⁿ−1 涨;n 现在是 2,代价见 `_nonempty_subsets`。
         """
         head = next((i for i, t in enumerate(base) if t.startswith("-")),
                     len(base))
@@ -1128,10 +1188,10 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
             self.fail("推导出的带值「不读选项」没有 fixture 值可喂:%s —— "
                       "在 UNREAD_OPTION_VALUE 里补一个既有文件,别让它被跳过"
                       % ", ".join(need))
+        combos = self._nonempty_subsets(unread_options)
         out = [list(base)]
-        for opt, takes_value in unread_options:               # 第六族:真值/裸开
-            out.append(list(base) + ([opt, self.paths[self.UNREAD_OPTION_VALUE[opt]]]
-                                     if takes_value else [opt]))
+        for combo in combos:                                  # 第六族:真值/裸开
+            out.append(list(base) + self._open_unread(combo))
         for tok in self.EXEMPTION_TOKENS:
             out.append(list(base) + [tok])                    # 裸 token 在尾部
             out.append(base[:head] + [tok] + base[head:])     # 裸 token 在位置参数区
@@ -1147,10 +1207,37 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                 magic = list(base)
                 magic[free_positional] = tok
                 out.append(magic)
-            for opt, takes_value in unread_options:           # 第六族:魔法值
-                if takes_value:
-                    out.append(list(base) + [opt, tok])
+            for combo in combos:                              # 第六族:魔法值
+                # 全是 store_true 的子集喂不进 tok,魔法值形状与上面的裸开
+                # 逐字相同 —— 跳过它只是去重,不减覆盖。
+                if any(takes_value for _, takes_value in combo):
+                    out.append(list(base) + self._open_unread(combo, tok))
         return out
+
+    @staticmethod
+    def _nonempty_subsets(specs):
+        """`((选项名, 是否带值), ...)` 的**所有非空子集**,顺序稳定(先按元素
+        个数、再按选项名)—— 失败消息里的 argv 才不会每次跑都换个样子。
+
+        幂集在这里是**负担得起的完备**:n=2 时非空子集 3 个,比"逐个单开"只多
+        1 条 base 变体 + 每个 token 多 1 条魔法值变体。真要涨到 n=6 以上再谈
+        剪枝(那时也该先问为什么有那么多注册了却没人读的选项)。
+        """
+        specs = sorted(set(specs))
+        return [combo for r in range(1, len(specs) + 1)
+                for combo in itertools.combinations(specs, r)]
+
+    def _open_unread(self, combo, tok=None):
+        """把一组「不读选项」拼成 argv 尾巴:带值的喂 `tok`(None 表示喂
+        fixture 里的**真路径**),`store_true` 的裸开。"""
+        tail = []
+        for opt, takes_value in combo:
+            if takes_value:
+                tail += [opt, tok if tok is not None
+                         else self.paths[self.UNREAD_OPTION_VALUE[opt]]]
+            else:
+                tail.append(opt)
+        return tail
 
     @classmethod
     def setUpClass(cls):
