@@ -627,7 +627,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/check_report.py`(`check_weekly` 的 `if isinstance(digest, dict):` 块)
 - Modify: `tests/test_check_report.py`(第 317-340 行的 `DIGEST` / `WEEKLY_OK` fixture;第 422 行的 `test_valid_digest_still_passes`;末尾追加新类)
 
-- [ ] **T4 Step 1: 改 fixture 并写会红的测试**
+- [x] **T4 Step 1: 改 fixture 并写会红的测试**
 
 4a. 把 `tests/test_check_report.py` 第 317-340 行的 `DIGEST` 与 `WEEKLY_OK` 两个常量整体替换为:
 
@@ -828,7 +828,7 @@ import tempfile
 import unittest
 ```
 
-- [ ] **T4 Step 2: 跑测试确认失败**
+- [x] **T4 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -837,7 +837,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 
 Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caught` / `test_official_verdict_missing_is_caught` / `test_fixings_verdict_missing_is_caught` / `test_empty_verdict_string_is_a_violation` / `test_non_string_verdict_is_malformed` / `test_missing_field_on_existing_entry_is_absent` 共 6 个 FAIL(违规列表为空);`NoLegacyExemptionSwitchTest` PASS(现有开关集合已符合)。其余为 PASS。
 
-- [ ] **T4 Step 3: 实现**
+- [x] **T4 Step 3: 实现**
 
 `scripts/check_report.py` 的 `check_weekly`,把现有的
 
@@ -864,11 +864,13 @@ Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caug
             for source in sorted(by_source):
                 if isinstance(source, str) and source and source not in gap_sec[1]:
                     v.append("GAP_OMITTED: 缺漏汇总未提及 %s" % source)
+        # `covered` 不在这里推导:它与既有的 CURRENCY_MISSING 循环建在一起
+        # (函数前部),两者必须互为补集 —— T3 的「让位 ①」依赖这一点,
+        # 分开写会静默分家。
         # 结论句逐字引用。digest 为 None(未给 --digest)时整块不执行 ——
         # 取不到结论句不等于漏写,不得报 VERDICT_ABSENT。
         # 聚合器的 _rates_digest / _events_one 对每个落盘的币种条目都必写这些
         # 字段,故 required=True:缺失即脚本缺陷。
-        covered = {c for c in CURRENCIES if c in report}
         for container, fields, label in (
                 (digest.get("events"), VERDICT_FIELDS_EVENTS, "digest.events"),
                 (digest.get("rates"), VERDICT_FIELDS_RATES, "digest.rates")):
@@ -878,8 +880,8 @@ Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caug
                 # 容器坏掉时会打印 CHECK PASSED 而一条结论句都没查,正是本
                 # change 要消灭的形态。响亮失败在这里。
                 v.append("VERDICT_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
-                         "(实为 %s),该类结论句一条都未校验"
-                         % (label, type(container).__name__))
+                         "(实为 %s),%s 下的结论句一条都未校验"
+                         % (label, type(container).__name__, label))
                 continue
             found, _ = check_verdicts(report, container, fields, covered,
                                       required=True, label=label)
@@ -887,7 +889,7 @@ Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caug
     return v
 ```
 
-- [ ] **T4 Step 4: 跑测试确认通过**
+- [x] **T4 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -905,7 +907,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`,总数 > 554(预期 +25 左右;**实跑数字为准,不要预填**)。
 
-- [ ] **T4 Step 5: 勾选并提交**
+- [x] **T4 Step 5: 勾选并提交**
 
 把 tasks.md 的 `1.2`、`1.4`、`1.6` 三行改成 `- [x]`,逐条验证后:
 

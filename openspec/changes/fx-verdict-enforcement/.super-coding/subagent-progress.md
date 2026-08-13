@@ -22,18 +22,16 @@
 
 ## 当前状态
 
-- 当前 task: **T4**
+- 当前 task: **T5**(`derive` 落 `events_verdict` + `SCHEMA_VERSION` 升 2)
 - 阶段: `implementing`
 - 审查-修复轮次: 0 / 3
 - 实现提交: (待)
 - RED 证据: (待)
 - GREEN 证据: (待)
-- **T4 必须额外完成**(T3 质量审查 I1 的调用点配套,已写进计划文本):
-  `digest.get("events")` / `("rates")` 非 dict 时出
-  `DIGEST_CONTAINER_MALFORMED`,并补 label 正向断言
-- **OpenSpec 1.1 由 T4 勾选**,不在 T3 勾 —— 它写的是「digest 的
-  `articles_verdict` 改一个字后**校验**必须失败」,那是 `check_weekly` 层面的
-  行为,T3 明确不接线,只有谓词层覆盖。在 T3 勾就是假勾选
+- **T5 要顺带处理**:M2 分隔符收口(`_verdict:480` 仍自写 `"、".join(caveats)`,
+  顿号存在于两处)。T5 让 `derive._events_verdict` 成为 `join_verdict` 的
+  第三个消费者,是收口的自然时机;收口需改 `scripts/verdicts.py`,
+  届时同步 Design Doc「只含 join_verdict」那句
 
 ### 必须带进后续任务的五条(实测得来)
 
@@ -146,3 +144,21 @@
 - **「RED 不红」判定成立**:复审把生产代码换回修复前、测试不变重跑,6 条新
   测试全绿 —— 它们锁的是**已正确但未覆盖**的行为,牙齿由变异杀灭证明
 - plan T3 五步 + OpenSpec **1.3 / 1.5** 已勾选;**1.1 留给 T4**(见上)
+
+### T4 —— check_weekly 接入三类结论句 ✅
+
+- 提交: `e5d8873`(接线 + 16 测试)→ `96192ec`(四条 Minor)
+- RED: `Ran 84 tests` / `FAILED (failures=9)`
+- GREEN: `Ran 85 tests` / `OK`;全量 `Ran 613 tests` / `OK`
+- **真实周报按预期从「词袋放行」变为响亮失败**:`CHECK FAILED (22)` rc=1,
+  违规差集**恰好** +11 条 `VERDICT_NOT_QUOTED`(无意外增减);
+  实测 digest 14 条结论句、**已逐字引用仅 3 条**(events 的 PHP/THB/BRL
+  `official_verdict`,且那 3 条是静态串);日报 `CHECK PASSED` rc=0 不变
+- spec 合规审查 ✅ —— 并**证伪了「计划原用例够用」**:M5 变异在全部 85 条下
+  KILLED,禁用那条自补用例后 **SURVIVED**(`Ran 84 / OK` rc=0),
+  证明增补必要;另加跑 8 条变异全杀
+- 代码质量审查 ✅ —— 14 条变异 13 杀,存活 1 条经证明是**等价变异**
+  (`continue` 与 `pass` 在 T3 契约下行为相同)。4 条 Minor 已修:
+  违规码改名让 4 条过滤式断言完备、`covered` 与 `CURRENCY_MISSING` 收进
+  同一循环(互为补集,物理上保证一起改)、fixture 噪声、文案
+- plan T4 五步 + OpenSpec **1.1 / 1.2 / 1.4 / 1.6**(第 1 组全完)已勾选并验证

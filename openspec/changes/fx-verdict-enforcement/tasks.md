@@ -1,11 +1,11 @@
 ## 1. 周报侧:结论句逐字引用
 
-- [ ] 1.1 先写会红的用例:digest 的 `articles_verdict` 改一个字后校验必须失败;整句缺失必须失败;完整引用必须通过
-- [ ] 1.2 `check_weekly` 新增 `VERDICT_NOT_QUOTED` 检查,覆盖 `articles_verdict` / `official_verdict` / `fixings_verdict` 三类
+- [x] 1.1 先写会红的用例:digest 的 `articles_verdict` 改一个字后校验必须失败;整句缺失必须失败;完整引用必须通过
+- [x] 1.2 `check_weekly` 新增 `VERDICT_NOT_QUOTED` 检查,覆盖 `articles_verdict` / `official_verdict` / `fixings_verdict` 三类
 - [x] 1.3 三态处理:digest 中该字段缺失或非字符串时不得当成空串通过(空串会让任意报告都"包含"它)
-- [ ] 1.4 只对报告实际覆盖的币种要求引用;digest 有而报告未覆盖的币种走既有 `CURRENCY_MISSING`,不重复报错
+- [x] 1.4 只对报告实际覆盖的币种要求引用;digest 有而报告未覆盖的币种走既有 `CURRENCY_MISSING`,不重复报错
 - [x] 1.5 字段名显式枚举为模块级常量,不按 `*verdict*` 模式扫(digest 顶层的 `verdicts` 是计数 dict、`verdict_details` 是 list,会被模式匹配扫进字符串比对)
-- [ ] 1.6 容器中不存在某币种条目时跳过(`digest["rates"]` 没有 USD 是合法形态,不是缺字段);未提供 `--digest` 时不得报 `VERDICT_ABSENT`
+- [x] 1.6 容器中不存在某币种条目时跳过(`digest["rates"]` 没有 USD 是合法形态,不是缺字段);未提供 `--digest` 时不得报 `VERDICT_ABSENT`
 
 ## 2. 日报侧:derive 落同构结论句
 
