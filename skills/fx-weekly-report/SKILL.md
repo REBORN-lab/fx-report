@@ -132,13 +132,12 @@ description: 聚合最近 7 个自然日的外汇日报与决策日志,按主题
 - 二次仍非 0:报告首行前插入 `> ⚠ 本报告未通过自动自检:<违规摘要>`,
   保留落盘,如实结束。
 
-**结论句相关的违规码(退出码非 0):**
-- `VERDICT_NOT_QUOTED`:周报未逐字引用某条结论句 → **改周报**,按违规信息里
-  「期望原文」整句照抄。
-- `VERDICT_ABSENT` / `VERDICT_EMPTY` / `VERDICT_MALFORMED` /
-  `VERDICT_CONTAINER_MALFORMED`:digest 里该有的结论句缺失、为空、类型不对,
-  或容器不成形 → **脚本缺陷,改周报没用**;重跑第 1 步的 `weekly_digest.py`,
-  仍复现就报 bug。
+**结论句相关的违规码(退出码非 0):** `VERDICT_NOT_QUOTED` / `VERDICT_ABSENT` /
+`VERDICT_EMPTY` / `VERDICT_MALFORMED` / `VERDICT_CONTAINER_MALFORMED`。
+**处置以校验器打印的那一行为准** —— 每条违规行末尾都带「处置:…」,照它执行。
+本文件**不复述处置内容**(理由同 fx-daily-report 第 5 步:散文里的第二份可被
+整体反转,而脚本输出可以被精确断言)。唯一事实源是 `scripts/check_report.py`
+里的 `DISPOSITION_QUOTE` / `DISPOSITION_SCRIPT_BUG`。
 
 (周报侧结论句字段恒为必需,不会出现日报那两个降级码;
 `VERDICT_SKIPPED_NO_DERIVED` / `VERDICT_SKIPPED_LEGACY` / `VERDICT_ENTRY_MISSING`

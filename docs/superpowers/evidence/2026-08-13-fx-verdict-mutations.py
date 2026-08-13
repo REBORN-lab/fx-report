@@ -2,30 +2,47 @@
 
 在**仓库根目录**运行:python3 docs/superpowers/evidence/2026-08-13-fx-verdict-mutations.py
 
-自带五道自检,每一条都来自实际事故:
+自带六道自检,每一条都来自实际事故:
 1. **基线自检** —— 基线不绿就拒跑并非零退出。一次超时留下的变异体让
    「15/15 KILLED」全部为假杀。
 2. **逐字节校验** —— 变异体应用后校验落盘内容与预期逐字节相同,还原后
-   校验与原文逐字节相同。写坏或没写进去必须就地炸,不能悄悄跑完。
-   **两处都是显式判断 + raise,不是 assert**:`python3 -O` / `PYTHONOPTIMIZE=1`
-   会把 assert 语句整条删掉,于是这两道护栏在优化模式下集体消失,电池照样
-   打印满屏 KILLED 并退出 0 —— 而那正是它存在的理由。实测(修前):把 write
-   改成少写一个字符,`python3 -O` 下电池打印「KILLED 1 / 执行 1 / 登记 1」
-   退出 0,不带 -O 时同一份代码在第 1 条靶点上就 AssertionError 退出 1。
+   校验与原文逐字节相同,**`finally` 的兜底还原之后同样校验**。写坏或没写
+   进去必须就地炸,不能悄悄跑完。
+   **三处都是显式判断 + raise,不是 assert**:`python3 -O` / `PYTHONOPTIMIZE=1`
+   会把 assert 语句整条删掉,于是这几道护栏在优化模式下集体消失,电池照样
+   打印满屏 KILLED 并退出 0 —— 而那正是它们存在的理由。
+   兜底那一处是 T8b 补的:此前 `finally` 里的还原**一个字都不校验**。实测
+   (修前,plain python3、**与 -O 无关**):循环内两处 write 全好、只让兜底
+   那轮少写一个字符 → 电池打印「KILLED 14 / 执行 14 / 登记 14」并**退出 0**,
+   而 FILES 里那 5 个文件全部变成 `git status` 的 M、每份比备份少 1 字节
+   (25304→25303 / 19377→19376 / 2130→2129 / 17281→17280 / 9057→9056)——
+   **工作树被静默写坏而电池报绿**。补上校验后同一份代码退出 1,并打印
+   「兜底还原未逐字节复原…」逐个列出这 5 个文件。
 3. **STALE 硬失败** —— 靶点原文与源码不匹配(0 处或多处)时非零退出。
    归档电池曾在干净副本上只有 26/35,9 个陈旧靶点静默 PATCH-FAIL 却退出 0。
 4. **最小条数地板** —— `EXPECTED_TARGETS` 是与 `len(M)` **无关**的常量。
    汇总行里的「登记」就是 `len(M)`,它不是独立事实源:实测删掉一部分靶点
    (`M = M[:2]`)三个数一起缩水、仍退出 0;把 M 清空则打印
    「KILLED 0 / 执行 0 / 登记 0」退出 0。地板让「靶点被删」在下一次跑时炸。
-5. **源码指纹** —— 每次跑都打印被变异文件的 sha256。靶点是照着某一版源码
-   写的字面串,源码改了而靶点没跟上时 STALE 才会响;指纹让「这次跑的到底
-   是不是那一版字节」在归档报告里可核对。本 change 内 M3 就腐坏过一次
-   (T6b 改 check_daily 后锚点 0 处匹配),是人工前置复验才发现的。
+5. **源码指纹** —— 每次跑都打印被变异文件的 sha256,**以及电池自身的 sha256**。
+   靶点是照着某一版源码写的字面串,源码改了而靶点没跟上时 STALE 才会响;
+   指纹让「这次跑的到底是不是那一版字节」在归档报告里可核对。本 change 内
+   M3 就腐坏过一次(T6b 改 check_daily 后锚点 0 处匹配),是人工前置复验才
+   发现的。电池自身此前**不打指纹** —— 针对电池的篡改连人读的线索都没有。
+6. **靶点指纹** —— 每条靶点打印 `sha256(name+old+new)[:8]`。第 4 道地板守的是
+   `len(M)`,**不是靶点身份**,对「等量替换」完全失明。实测:把 M14 从带
+   `SUPPRESS` 的隐藏开关弱化成不带 SUPPRESS 的可见开关(条数不变、名字不变),
+   **修前**版本对这两份靶点表打印的内容完全一致(两次跑的启动段输出 diff
+   为空)—— 它根本不打印任何靶点身份信息;**修后**同一对照下 M14 的靶点
+   指纹由 `23d65785` 变为 `06ddceb1`,电池自身的 sha256 也随之改变,
+   两条线索都在归档报告里肉眼可分。
+   **注意:只打印、不比对** —— 把上一次的指纹记进仓库并自动比对是另一个
+   设计决定,不在本轮范围。
 
 汇总行格式:KILLED k / 执行 n / 登记 m。三者不相等即非零退出 —— 但**三者
 相等只是必要条件**:它们同源(登记=len(M)),一起变小时仍然相等,所以
-「登记」的下界由第 4 道自检的常量单独钉,不由这一行自证。
+「登记」的下界由第 4 道自检的常量单独钉,不由这一行自证;而「靶点还是不是
+那几条」由第 6 道的指纹留痕,同样不由这一行自证。
 
 M11(BOUND)由 T7 代码质量复审移交,计划里没有:「在文件尾部追加内容,
 喂饱段级断言」是本仓库同型缺陷最新的一种伪装 —— 段级正则若贪婪到 EOF
@@ -89,41 +106,43 @@ M = [
      "        # 与日报的 GAP_OMITTED 对称",
      "    if digest is None or isinstance(digest, dict):\n"
      "        # 与日报的 GAP_OMITTED 对称"),
-    # M11:BOUND —— 删掉违规节里真正那一条 bullet,同时在文件尾部追加一节,
-    # 内容含 `VERDICT_NOT_QUOTED` 与 `改报告`。日报违规节眼下正好是文件最后
-    # 一节,所以锚点从那条 bullet 一路取到 EOF,一次替换即完成「删 + 追加」。
+    # M11:BOUND —— 把违规节里那句「指向校验器输出」删掉,同时在文件尾部追加
+    # 一节,内容含 `VERDICT_NOT_QUOTED` 与同一句指向。日报违规节眼下正好是
+    # 文件最后一节,所以锚点从该句一路取到 EOF,一次替换即完成「删 + 追加」。
     # 当前 DAILY_VIOLATION_RE 是有界写法(`.*?` 到 `\n\n` 或 `\Z`),追加的一节
     # 被空行挡在段外 → 应当 KILLED;若改成贪婪到 EOF 的 `.*\Z`,追加的一节会
     # 被吞进段内把断言喂饱 → 会 SURVIVED。
     ("M11 尾部追加喂饱段级断言", S,
-     "- `VERDICT_NOT_QUOTED`:报告未逐字引用结论句 → **改报告**,把违规信息里\n"
-     "  「期望原文」那一句整句抄进该币种节,一个字符都不改。\n"
-     "- `VERDICT_ABSENT` / `VERDICT_EMPTY` / `VERDICT_MALFORMED` /\n"
-     "  `VERDICT_ENTRY_MISSING` / `VERDICT_CONTAINER_MALFORMED`:快照里该有的结论句\n"
-     "  缺失、为空、类型不对,或条目/容器不成形 → **这几条是脚本缺陷,改报告没用**;\n"
-     "  重跑第 1 步采集,仍复现就报 bug。\n",
-     "- `VERDICT_ABSENT` / `VERDICT_EMPTY` / `VERDICT_MALFORMED` /\n"
-     "  `VERDICT_ENTRY_MISSING` / `VERDICT_CONTAINER_MALFORMED`:快照里该有的结论句\n"
-     "  缺失、为空、类型不对,或条目/容器不成形 → **这几条是脚本缺陷,改报告没用**;\n"
-     "  重跑第 1 步采集,仍复现就报 bug。\n"
+     "**处置以校验器打印的那一行为准** —— 每条违规行末尾都带「处置:…」,照它执行。\n"
+     "本文件**不复述处置内容**:唯一事实源是 `scripts/check_report.py` 里的\n"
+     "`DISPOSITION_QUOTE` / `DISPOSITION_SCRIPT_BUG`。这里曾经复述过一份处置表,\n"
+     "而散文里的第二份可以被整体反转(把唯一可操作的那条说成「这是脚本缺陷」),\n"
+     "三种反转措辞都躲过了针对文档的子串断言;脚本输出躲不过。\n",
+     "本文件**不复述处置内容**:唯一事实源是 `scripts/check_report.py` 里的\n"
+     "`DISPOSITION_QUOTE` / `DISPOSITION_SCRIPT_BUG`。这里曾经复述过一份处置表,\n"
+     "而散文里的第二份可以被整体反转(把唯一可操作的那条说成「这是脚本缺陷」),\n"
+     "三种反转措辞都躲过了针对文档的子串断言;脚本输出躲不过。\n"
      "\n"
      "## 附录:违规码速查\n"
      "\n"
-     "- `VERDICT_NOT_QUOTED` → **改报告**\n"),
-    # M12/M13:同型伪装的第二种 —— 不删条目,把**唯一可操作**的违规码的处置
-    # 整体换成相反指令(「这条是脚本缺陷,改报告没用」)。段级断言查「改报告」
-    # 会被同段兄弟条目喂饱(兄弟原文就写着「改报告没用」),实测两条各自
-    # SURVIVED、失败集 0 条。断言改到 bullet 内 + 取该处置独有的整句后应 KILLED。
-    ("M12 日报处置反转", S,
-     "- `VERDICT_NOT_QUOTED`:报告未逐字引用结论句 → **改报告**,把违规信息里\n"
-     "  「期望原文」那一句整句抄进该币种节,一个字符都不改。\n",
-     "- `VERDICT_NOT_QUOTED`:报告未逐字引用结论句 → **这条是脚本缺陷,改报告没用**;\n"
-     "  重跑第 1 步采集,仍复现就报 bug。\n"),
-    ("M13 周报处置反转", W,
-     "- `VERDICT_NOT_QUOTED`:周报未逐字引用某条结论句 → **改周报**,按违规信息里\n"
-     "  「期望原文」整句照抄。\n",
-     "- `VERDICT_NOT_QUOTED`:周报未逐字引用某条结论句 → **这条是脚本缺陷,改周报没用**;\n"
-     "  重跑第 1 步的 `weekly_digest.py`,仍复现就报 bug。\n"),
+     "- `VERDICT_NOT_QUOTED`:**处置以校验器打印的那一行为准**。\n"),
+    # M12:T8b 换修法后,处置文案的唯一事实源在校验器里,于是「处置反转」这条
+    # 靶点也跟着从文档搬进了源码 —— 把 DISPOSITION_QUOTE 换成相反指令。
+    # 旧 M12/M13(在 SKILL 里反转 bullet)已随那张处置表一起删除:表没了,
+    # 靶点无处可打;而 T8b 复验用三条绕过(句尾追加否定 / 节末尾追加「统一
+    # 口径」/ 拆成「旧口径已废弃」+新口径)证明了针对散文的子串哨兵有结构上限,
+    # 再往那个方向加靶点只是继续追措辞。现在守的是**脚本 stdout**:
+    # 措辞空间有界,断言得到,且没有第二份可反转。
+    ("M12 校验器的可操作处置被反转", C,
+     'DISPOSITION_QUOTE = ("处置:把上面「期望原文」那一句整句抄进该币种节,"\n'
+     '                     "一个字符都不改;这一条改报告即可,不要动脚本")\n',
+     'DISPOSITION_QUOTE = ("处置:这是脚本缺陷,改报告没用;"\n'
+     '                     "重跑第 1 步采集,仍复现就报 bug")\n'),
+    # M13:文档侧剩下的唯一可反转物 —— 那句「以校验器输出为准」的指向。
+    # 反转它不再能改掉处置内容(内容在脚本里),但能让运维不去读那一行。
+    ("M13 周报把指向反转成「仅供参考」", W,
+     "**处置以校验器打印的那一行为准** —— 每条违规行末尾都带「处置:…」,照它执行。\n",
+     "校验器打印的那一行仅供参考,不必照做;结论句相关的码统一按脚本缺陷处理。\n"),
     # M14:OpenSpec 4.2 禁的「历史产物豁免开关」。变异只做**注册**这一半 ——
     # 用 help=argparse.SUPPRESS 挂一个 --tolerant,argparse 不会把它打进 --help。
     # 使用那一半(据它滤掉整类 VERDICT_* 违规)不与注册处相邻,无法用单锚点
@@ -155,11 +174,36 @@ for p in FILES:
     with open(p, encoding="utf-8") as f:
         orig[p] = f.read()
 env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+# `PYTHONOPTIMIZE` **必须显式清掉**,不能原样继承进被判定的子进程:实测
+# `PYTHONOPTIMIZE=1` 会传下去(子进程耗时 12.9s→20.9s)。今天没有实害
+# (全仓裸 assert 为 0),但哪天 tests/ 里出现一条裸 assert,优化模式下那条
+# 断言会被整条剥掉,判决**悄悄变弱**而汇总行照样满屏 KILLED ——
+# 而本轮加固的出发点恰恰是「有人会在优化模式下跑」。
+env.pop("PYTHONOPTIMIZE", None)
+
+
+def sha(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def target_fp(name, path, old, new):
+    """靶点身份指纹。地板守的是 `len(M)`,守不住**等量替换**:实测把 M14 从
+    带 SUPPRESS 的隐藏开关弱化成不带 SUPPRESS 的可见开关,登记数仍 14、
+    地板不响、rc=0,输出与基线逐字节相同(只差耗时那一行)。"""
+    return sha(name + old + new)[:8]
+
 
 print("被变异文件指纹(sha256):")
 for p in FILES:
-    print("  %-40s %s" % (p, hashlib.sha256(
-        orig[p].encode("utf-8")).hexdigest()))
+    print("  %-40s %s" % (p, sha(orig[p])))
+# 电池自身也打指纹 —— 否则针对电池的篡改连人读的线索都没有
+with open(os.path.abspath(__file__), encoding="utf-8") as f:
+    print("  %-40s %s" % ("(电池自身)" + os.path.basename(__file__), sha(f.read())))
+print()
+print("靶点指纹(sha256(name+old+new)[:8],只打印不比对):")
+for name, path, old, new in M:
+    print("  %-8s %-26s %s" % (target_fp(name, path, old, new),
+                               name, path))
 print()
 
 
@@ -194,15 +238,17 @@ killed = executed = 0
 stale = []
 try:
     for name, path, old, new in M:
+        fp = target_fp(name, path, old, new)
         hits = orig[path].count(old)
         if hits != 1:
             stale.append(name)
-            print("%-9s %-26s (匹配 %d 处)" % ("STALE", name, hits))
+            print("%-9s %-26s %-8s (匹配 %d 处)" % ("STALE", name, fp, hits))
             continue
         want = orig[path].replace(old, new, 1)
         write(path, want)
         # 显式判断 + raise,**不能用 assert**:python3 -O / PYTHONOPTIMIZE=1
-        # 会把 assert 整条剥掉,这两道护栏一起消失,电池照样满屏 KILLED 退出 0
+        # 会把 assert 整条剥掉,这里两道加上 finally 里那道会一起消失,
+        # 电池照样满屏 KILLED 退出 0
         if read(path) != want:
             raise RuntimeError("变异未逐字节落盘:" + path)
         run = suite()
@@ -214,12 +260,24 @@ try:
         outcome = "KILLED" if run.returncode else "SURVIVED"
         killed += outcome == "KILLED"
         executed += 1
-        print("%-9s %-26s %s" % (outcome, name, ", ".join(fails[:2])[:58]))
+        print("%-9s %-26s %-8s %s"
+              % (outcome, name, fp, ", ".join(fails[:2])[:48]))
 finally:
+    # 兜底还原**也要校验**。此前这一轮一个字都不查:实测(修前)循环内两处
+    # write 全好、只让兜底这轮少写一个字符 → 电池打印满屏 KILLED、三数相等、
+    # 退出 0,而 `git status --porcelain` 是 5 个文件 M。工作树被静默写坏而
+    # 电池报绿,**与 -O 无关,plain python3 下就会发生**。
+    broken = []
     for p, text in orig.items():
         write(p, text)
+        if read(p) != text:
+            broken.append(p)
     subprocess.run("find . -name __pycache__ -type d -exec rm -rf {} +",
                    shell=True, capture_output=True)
+    if broken:
+        raise RuntimeError(
+            "兜底还原未逐字节复原,工作树已被写坏,立即 git diff 核对:%s"
+            % ", ".join(broken))
 
 print("\nKILLED %d / 执行 %d / 登记 %d(地板 %d)"
       % (killed, executed, len(M), EXPECTED_TARGETS))

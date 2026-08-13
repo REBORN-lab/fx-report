@@ -31,6 +31,32 @@ VERDICT_FIELD_DAILY = ("events_verdict",)
 # 的缺陷与存量快照完全同形,静默通过。
 DERIVED_VERDICT_SCHEMA = 2
 
+# ---- 违规处置文案:**唯一事实源在这里,SKILL 不再复述** ----
+# 此前两份 SKILL 各写了一遍处置表。散文里的第二份可以被整体反转,而反转的
+# 措辞空间无界 —— T8 复验实测三条绕过全部存活:①锚点整句一字不动、句尾追加
+# 「但这条其实也是脚本缺陷,照抄只是走个形式」;②bullet 一字不动、在违规节
+# 末尾追加「统一口径:本节所有违规码都按脚本缺陷处理」(bullet 级断言结构上
+# 看不见它);③把 bullet 拆成两条、第一条标注「旧口径,已废弃」并原样保留
+# 锚点整句,第二条写反向口径(非贪婪正则只取首个匹配)。
+# 另有一条决定性实测:`grep -rn "改报告|改周报" scripts/` 零命中 —— 那段处置
+# 文本没有任何运行时角色,纯粹是提示词里的散文。
+# 于是改成:校验器发码时自己把处置打出来。守的东西从"散文里有没有某句话"
+# 变成"脚本输出里有没有这句话",后者可被精确断言,且没有第二份可反转。
+# 两串都被 tests/test_check_report.py 的 CheckerPrintsItsOwnDispositionTest
+# **逐字**钉死(assertEqual,不是 assertIn),并且断言它们出现在违规行的**结尾**:
+# 只做子串断言时,"整句留着、句尾追加一句反话"照样全绿(实测 679 全 OK)。
+# 改这里的文案就必须同时改那两个期望值 —— 显式动作、进 diff。
+DISPOSITION_QUOTE = ("处置:把上面「期望原文」那一句整句抄进该币种节,"
+                     "一个字符都不改;这一条改报告即可,不要动脚本")
+DISPOSITION_SCRIPT_BUG = ("处置:这是脚本缺陷,改报告没用;"
+                          "重跑产出这份快照/聚合文件的那一步,仍复现就报 bug")
+# **两个降级码(VERDICT_SKIPPED_NO_DERIVED / VERDICT_SKIPPED_LEGACY)的处置
+# 仍留在 SKILL,这是有意的**,不是漏改。它们的处置分两支,判别标准是"采集
+# 窗口是否还覆盖 DATE" —— 校验器不知道窗口边界(那在 collect/events.py 的
+# GNEWS_WINDOW_H 与 GDELT timespan 里,且与运行时刻有关),写不出可执行的
+# 单一处置。凡是脚本自己说得出的才搬进来;说不出的搬进来只会变成第三份
+# 会漂移的拷贝。守它们的是 SkippedCodeDispositionTest。
+
 
 def sections(md):
     out, cur, buf = [], None, []
@@ -121,19 +147,20 @@ def check_verdicts(report, container, fields, covered, required, label):
             s = entry.get(field)
             if s is None:
                 if required:
-                    v.append("VERDICT_ABSENT: %s.%s 缺少结论句 %s(字段不存在或为 null)"
-                             % (label, c, field))
+                    v.append("VERDICT_ABSENT: %s.%s 缺少结论句 %s(字段不存在或为 null);%s"
+                             % (label, c, field, DISPOSITION_SCRIPT_BUG))
                 else:
                     skip_this_currency = True
                 continue
             if not isinstance(s, str):
-                v.append("VERDICT_MALFORMED: %s.%s 的 %s 应为字符串,实为 %s"
-                         % (label, c, field, type(s).__name__))
+                v.append("VERDICT_MALFORMED: %s.%s 的 %s 应为字符串,实为 %s;%s"
+                         % (label, c, field, type(s).__name__,
+                            DISPOSITION_SCRIPT_BUG))
                 continue
             if not s.strip():
                 # 任意报告都"包含"空串 —— 最直接的假绿入口
-                v.append("VERDICT_EMPTY: %s.%s 的 %s 为空串或纯空白"
-                         % (label, c, field))
+                v.append("VERDICT_EMPTY: %s.%s 的 %s 为空串或纯空白;%s"
+                         % (label, c, field, DISPOSITION_SCRIPT_BUG))
                 continue
             # 逐字节精确子串。前提:产出端(verdicts.join_verdict /
             # _fixings_verdict)从不产生首尾空白,纯空白已由上一分支拦下 ——
@@ -141,7 +168,8 @@ def check_verdicts(report, container, fields, covered, required, label):
             # 因为 markdown 无法可靠复现首尾空格
             if s not in report:
                 v.append("VERDICT_NOT_QUOTED: %s.%s 的 %s 未逐字出现在报告中;"
-                         "期望原文:「%s」" % (label, c, field, s))
+                         "期望原文:「%s」;%s"
+                         % (label, c, field, s, DISPOSITION_QUOTE))
         if skip_this_currency:
             skipped += 1        # 按币种计一次,不按字段——T6 打印的是「N 个币种」
     return v, skipped
@@ -234,8 +262,8 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     # 谓词不越权判结构,兜底在调用点(见 check_verdicts 的 docstring)。
     if ver_ok and not isinstance(events, dict):
         v.append("VERDICT_CONTAINER_MALFORMED: 快照的 derived.events 不是对象"
-                 "(实为 %s),derived.events 下的结论句一条都未校验"
-                 % type(events).__name__)
+                 "(实为 %s),derived.events 下的结论句一条都未校验;%s"
+                 % (type(events).__name__, DISPOSITION_SCRIPT_BUG))
     elif ver_ok:
         # 日报五个币种都应有事件派生量(derive 按 rates ∪ events.KEYWORDS
         # 逐币种填充),整条缺失不是合法形态 —— 与周报的 rates 容器不同,
@@ -248,7 +276,8 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
         # 原样静默通过 —— 与「条目缺失」同因同果,必须同判
         for c in sorted(covered - present):
             v.append("VERDICT_ENTRY_MISSING: derived.events 缺少 %s 的条目;"
-                     "该币种的结论句一条都未校验" % c)
+                     "该币种的结论句一条都未校验;%s"
+                     % (c, DISPOSITION_SCRIPT_BUG))
     found, skipped = check_verdicts(report, events,
                                     VERDICT_FIELD_DAILY, covered,
                                     required=ver_ok, label="derived.events")
@@ -290,11 +319,22 @@ def _read_file(path, label):
 
 
 def build_parser():
-    """CLI 开关的**唯一注册处**。单独成函数是为了让测试查得到注册表本身:
-    从 `--help` 的输出反推开关集合守不住 `help=argparse.SUPPRESS` 的隐藏开关
-    (argparse 根本不打印它),而"悄悄加一个豁免开关"正是 Design Doc §6 点名
-    要挡的绕过点。实测:以 SUPPRESS 注册 `--tolerant` 并在 main 里据它滤掉
-    整类 `VERDICT_*` 违规,rc 由 1 变 0,而全量 674 全绿。
+    """选项的注册处。单独成函数是为了让测试查得到注册表本身:从 `--help` 的
+    输出反推开关集合守不住 `help=argparse.SUPPRESS` 的隐藏开关(argparse 根本
+    不打印它),而"悄悄加一个豁免开关"正是 Design Doc §6 点名要挡的绕过点。
+    实测:以 SUPPRESS 注册 `--tolerant` 并在 main 里据它滤掉整类 `VERDICT_*`
+    违规,rc 由 1 变 0,而全量 674 全绿。
+
+    **它不是"CLI 开关的唯一注册处"** —— 这句旧说法已被四条实测证伪
+    (T8b 复验,四种各自一行的改法都让同一份输入 rc 1→0):
+    ① 这里加一个**位置参数**(`option_strings` 为空,冻结选项名集合的断言
+    收不到它);② 根本不动注册表,直接复用既有参数的**魔法值**
+    (weekly 模式下 `args.snapshot` 不读);③ 只给 `--mode` 加一个 choices
+    (`option_strings` 逐字不变);④ 在 main 里把 `parse_args` 换成
+    `parse_known_args` 并读 `_rest`(**零注册**,而 `--tolerant` 字面可用)。
+    能挡住这四条的是 `tests/test_check_report.py` 里的行为级断言
+    (`test_no_argv_can_make_verdict_violations_disappear`):穷举 argv,
+    没有任何一条能让必然违规的输入变绿。冻结注册表形状只是辅助。
     """
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
@@ -442,8 +482,9 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None):
                 # 容器坏掉时会打印 CHECK PASSED 而一条结论句都没查,正是本
                 # change 要消灭的形态。响亮失败在这里。
                 v.append("VERDICT_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
-                         "(实为 %s),%s 下的结论句一条都未校验"
-                         % (label, type(container).__name__, label))
+                         "(实为 %s),%s 下的结论句一条都未校验;%s"
+                         % (label, type(container).__name__, label,
+                            DISPOSITION_SCRIPT_BUG))
                 continue
             found, _ = check_verdicts(report, container, fields, covered,
                                       required=True, label=label)

@@ -757,21 +757,134 @@ class WeeklyVerdictQuotingTest(unittest.TestCase):
 
 
 class NoLegacyExemptionSwitchTest(unittest.TestCase):
-    """豁免机制本身会成为下一个绕过点(Design Doc §6)。校验器的 CLI 开关
-    集合按**注册表**钉死:开关一旦注册就躲不过这条断言,想加就得先改掉它,
-    而那是显式动作。
+    """豁免机制本身会成为下一个绕过点(Design Doc §6)。
 
-    **不能扫 `--help` 的输出**:argparse 对 `help=argparse.SUPPRESS` 的选项
-    根本不打印。实测按 SUPPRESS 注册 `--tolerant` 并在 main 里据它滤掉整类
-    `VERDICT_*` 违规 —— 同一份输入的 rc 由 1(CHECK FAILED 5 条)变成
-    0(CHECK PASSED),而全量 674 全绿、旧断言(扫 --help 文本)照过。
+    ## 集合冻结冻的是**形状**,不是语义 —— 已被四条实测证伪
+
+    `test_cli_option_set_is_frozen` 收的是 `a.option_strings` 的并集,也就是
+    「长/短选项名的集合」。它**不是注册表**,更不是「豁免语义」。T8b 的复验者
+    用四种**各自一行**的改法做出真绕过(同一份输入 rc 1→0、`CHECK FAILED (3)`
+    → `CHECK PASSED`),而全量每次 `Ran 674 / OK / rc=0`、该断言**全程绿**:
+
+    1. **位置参数** `ap.add_argument("tolerant", nargs="?")` —— 货真价实**已
+       注册**的 action(`('tolerant', [])` 在 `_actions` 里看得见),只是
+       `option_strings` 为空,集合收不到它。
+    2. **复用既有参数的魔法值** `args.snapshot == 'legacy'` —— 注册表**零改动**
+       (weekly 模式下那个位置参数本来就不读)。
+    3. **给 `--mode` 加一个 choices `"lenient"`** —— `option_strings` 逐字不变。
+    4. **`parse_known_args()` + `if '--tolerant' in _rest`** —— **零注册**,而
+       `--tolerant` 字面可用,和守卫想挡的那个开关同名。
+
+    所以集合冻结在这里**降级为辅助**:它只钉住"选项名的形状",挡住最笨的那种
+    加法(直接 `add_argument("--tolerant", ...)`,含 `help=argparse.SUPPRESS`
+    的隐藏写法 —— 扫 `--help` 文本挡不住,扫 `option_strings` 挡得住)。
+
+    ## 主守卫是行为级的
+
+    `test_no_argv_can_make_verdict_violations_disappear`:对一组穷举 argv
+    (在既有 option/choices 上加若干额外 token 与位置参数),断言**没有任何
+    argv** 能让一份必然违规的输入的 `VERDICT_*` 违规消失、或让 rc 从 1 变 0。
+    它不关心开关怎么注册、注册没注册 —— 只关心"有没有一条命令行能把红变绿",
+    而那正是禁令要禁的东西。上面四条变体它逐条都杀。
     """
 
     def test_cli_option_set_is_frozen(self):
+        """**辅助**断言,不是主守卫 —— 冻的是选项名集合,不是豁免语义。
+        位置参数(option_strings 为空)与 parse_known_args(零注册)都能绕过它,
+        见类注释的四条实测。"""
         opts = {s for a in check_report.build_parser()._actions
                 for s in a.option_strings}
         self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
                                 "--strict-brief", "--digest", "--daily"})
+
+    # 豁免味的 token。**不是穷举所有单词**,而是穷举"要加豁免开关的人会起的
+    # 名字"× 它能出现的每一种句法位置(裸位置参数 / 长选项 / 长选项带值 /
+    # 既有选项的魔法值)。守的是句法位置的覆盖面,不是词表的完备性。
+    EXEMPTION_TOKENS = ("tolerant", "legacy", "lenient", "exempt", "relaxed",
+                        "compat", "skip-verdict", "no-verdict", "force", "off")
+
+    def _run_cli(self, argv):
+        """跑 main(argv),返回 (rc, stdout)。argparse 拒绝未知参数时会
+        `sys.exit(2)` —— 那是**合格的失败**(fail-closed),记为 rc=2。"""
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = check_report.main(argv)
+        except SystemExit as e:
+            return (e.code if isinstance(e.code, int) else 2), out.getvalue()
+        return rc, out.getvalue()
+
+    def _assert_still_red(self, argv):
+        rc, out = self._run_cli(argv)
+        self.assertNotEqual(
+            rc, 0, "argv=%r 让一份必然违规的输入通过了(rc 1→0)\n%s" % (argv, out))
+        if rc == 1:
+            self.assertIn(
+                "VERDICT_", out,
+                "argv=%r 让 VERDICT_* 违规整类消失了\n%s" % (argv, out))
+
+    def _variants(self, base, free_positional=None):
+        """base 之上派生 argv。free_positional 给的是"可塞魔法值的既有位置参数"
+        在 base 里的下标(weekly 模式下 snapshot 位不读,正是变体 2 的落点)。
+
+        **裸 token 必须试三种位置**,这是实测出来的:只把它追加在**末尾**时,
+        argparse 已经在前面那段位置参数区里把 `nargs="?"` 的新位置参数配成
+        None,末尾这个 token 变成 "unrecognized arguments" → rc=2 → 变体 1
+        (`ap.add_argument("tolerant", nargs="?")`)**照样存活**(实测:新断言
+        rc=0 PASS,而同一份输入的真 CLI 是 `CHECK PASSED`)。塞进位置参数区、
+        或用 `--` 强制当位置参数,才能真正喂到那个 action。
+        """
+        head = next((i for i, t in enumerate(base) if t.startswith("-")),
+                    len(base))
+        out = [list(base)]
+        for tok in self.EXEMPTION_TOKENS:
+            out.append(list(base) + [tok])                    # 裸 token 在尾部
+            out.append(base[:head] + [tok] + base[head:])     # 裸 token 在位置参数区
+            out.append(list(base) + ["--", tok])              # `--` 后强制为位置参数
+            out.append(list(base) + ["--" + tok])             # 长选项(store_true)
+            out.append(list(base) + ["--" + tok, "1"])        # 长选项带值
+            if "--mode" in base:                              # 既有 choices 加值
+                i = base.index("--mode") + 1
+                mode = list(base)
+                mode[i] = tok
+                out.append(mode)
+            if free_positional is not None:                   # 既有位置参数魔法值
+                magic = list(base)
+                magic[free_positional] = tok
+                out.append(magic)
+        return out
+
+    def test_no_argv_can_make_verdict_violations_disappear(self):
+        """**主守卫**。一份必然违规的输入 + 一组穷举 argv,断言没有一条能把
+        红变绿。判据只有两个:rc 不得为 0;rc 为 1 时输出里必须还有 VERDICT_*
+        (只剩结构违规、VERDICT_* 被整类滤掉,也算失守)。rc=2 合格 ——
+        argparse 拒收未知参数就是 fail-closed。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            drp = os.path.join(tmp, "d.md")
+            dsp = os.path.join(tmp, "d.json")
+            wrp = os.path.join(tmp, "w.md")
+            wdp = os.path.join(tmp, "w.json")
+            for path, text in ((drp, make_report()),
+                               (dsp, snap_with_derived()),
+                               (wrp, WEEKLY_OK.replace(ART_PHP, "改写过")),
+                               (wdp, DIGEST)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            daily = [drp, dsp, "--mode", "daily"]
+            weekly = [wrp, dsp, "--mode", "weekly", "--digest", wdp]
+            # 前提自检:两份输入现在**确实**是红的,否则整轮穷举空转
+            for base in (daily, weekly):
+                rc, out = self._run_cli(base)
+                self.assertEqual(rc, 1, (base, out))
+                self.assertIn("VERDICT_", out, (base, out))
+            argvs = (self._variants(daily)
+                     + self._variants(weekly, free_positional=1))
+            for argv in argvs:
+                # subTest 标签带**整条 argv**(含位置参数):只打 argv[2:] 时,
+                # "把魔法值塞进既有位置参数"那一类变体的失败消息里看不出改了什么
+                with self.subTest(argv=" ".join(
+                        os.path.basename(a) for a in argv)):
+                    self._assert_still_red(argv)
 
 
 DAILY_VERDICT = "当日采到 11 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
@@ -1155,3 +1268,127 @@ class CurrenciesCoveredByKeywordsTest(unittest.TestCase):
     def test_every_currency_has_keywords(self):
         self.assertLessEqual(set(check_report.CURRENCIES),
                              set(events_mod.KEYWORDS))
+
+
+# 处置文案的**期望值**写在测试里,断言的对象是**校验器的 stdout** —— 不是
+# SKILL 散文。T8 复验实测:针对散文的子串哨兵挡不住三种反转措辞
+# (句尾追加否定 / 违规节末尾追加"统一口径" / 拆成"旧口径已废弃"+新口径),
+# 三条全部 SURVIVED。散文的措辞空间无界,脚本输出的没有。
+WANT_QUOTE_DISPOSITION = "把上面「期望原文」那一句整句抄进该币种节,一个字符都不改"
+WANT_SCRIPT_BUG_DISPOSITION = "这是脚本缺陷,改报告没用"
+# **逐字**期望值,给下面的 assertEqual 用。子串断言对"锚点整句一字不动、
+# 句尾追加一句否定"(T8b 的 M-A 形态)天然免疫 —— 实测在 DISPOSITION_QUOTE
+# 末尾追加「;不过这条其实也是脚本缺陷,照抄只是走个形式,改了也白搭」,
+# 全量 `Ran 679 / OK / rc=0`,一条都没红。散文挡不住这一手是因为措辞空间无界;
+# 而**常量有确定的期望值**,逐字钉死就没有追加的余地。代价是改文案必须同时
+# 改这里 —— 那正是要的:显式动作、进 diff,与 CLI 开关集合冻结同一形制。
+WANT_QUOTE_VERBATIM = ("处置:把上面「期望原文」那一句整句抄进该币种节,"
+                       "一个字符都不改;这一条改报告即可,不要动脚本")
+WANT_SCRIPT_BUG_VERBATIM = ("处置:这是脚本缺陷,改报告没用;"
+                            "重跑产出这份快照/聚合文件的那一步,仍复现就报 bug")
+
+
+class CheckerPrintsItsOwnDispositionTest(unittest.TestCase):
+    """每条 `VERDICT_*` 违规行**自带处置**。
+
+    此前处置只存在于两份 SKILL 的散文里 —— 那是同一份判定的第二份拷贝,
+    可以被整体反转,而反转后的措辞空间无界(见上方注释的三条实测绕过)。
+    把处置搬进校验器输出后,守的东西从"散文里有没有某句话"变成"脚本输出里
+    有没有这句话",后者可被精确断言,且不存在可反转的第二份。
+    """
+
+    def _daily_stdout(self, report, snap_text):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            for path, text in ((rp, report), (sp, snap_text)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp])
+            return rc, buf.getvalue()
+
+    def _weekly_stdout(self, report, digest_text):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "w.md")
+            dp = os.path.join(tmp, "d.json")
+            for path, text in ((rp, report), (dp, digest_text)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, "--mode", "weekly", "--digest", dp])
+            return rc, buf.getvalue()
+
+    def test_disposition_constants_are_frozen_verbatim(self):
+        """两个处置串**逐字**钉死。见 WANT_*_VERBATIM 上方的实测:只做子串断言
+        时,"整句留着、句尾追加一句反话"照样全绿。改文案就得改这两行。"""
+        self.assertEqual(check_report.DISPOSITION_QUOTE, WANT_QUOTE_VERBATIM)
+        self.assertEqual(check_report.DISPOSITION_SCRIPT_BUG,
+                         WANT_SCRIPT_BUG_VERBATIM)
+
+    def test_daily_not_quoted_line_carries_the_actionable_disposition(self):
+        rc, out = self._daily_stdout(report_quoting(DAILY_VERDICT).replace(
+            DAILY_VERDICT, DAILY_VERDICT.replace("11", "12")),
+            snap_with_derived())
+        self.assertEqual(rc, 1, out)
+        line = [x.strip() for x in out.splitlines() if "VERDICT_NOT_QUOTED" in x]
+        self.assertTrue(line, out)
+        self.assertIn(WANT_QUOTE_DISPOSITION, line[0],
+                      "唯一可操作的码在校验器输出里不带处置")
+        # **位置也钉住**:处置必须是整行的结尾。只查"含有"时,在同一行后面再
+        # 缀一句「不过改了也白搭」照样绿(与常量冻结互补:那条堵改常量,
+        # 这条堵在拼接处另加尾巴)。
+        self.assertTrue(line[0].endswith(WANT_QUOTE_VERBATIM),
+                        "处置不在违规行结尾 —— 后面还跟着别的话:%s" % line[0])
+
+    def test_weekly_not_quoted_line_carries_the_actionable_disposition(self):
+        rc, out = self._weekly_stdout(WEEKLY_OK.replace(ART_PHP, "改写过"), DIGEST)
+        self.assertEqual(rc, 1, out)
+        line = [x.strip() for x in out.splitlines() if "VERDICT_NOT_QUOTED" in x]
+        self.assertTrue(line, out)
+        self.assertIn(WANT_QUOTE_DISPOSITION, line[0],
+                      "周报侧的可操作码在校验器输出里不带处置")
+        self.assertTrue(line[0].endswith(WANT_QUOTE_VERBATIM),
+                        "处置不在违规行结尾 —— 后面还跟着别的话:%s" % line[0])
+
+    def test_script_defect_codes_carry_the_other_disposition(self):
+        """反过来同样要守:"脚本缺陷"那几条若被写成"改报告",运维就会去人工
+        粉饰一个产出端缺陷 —— 那正是假绿的入口。两句处置互为对照。"""
+        obj = json.loads(DIGEST)
+        del obj["events"]["PHP"]["official_verdict"]
+        rc, out = self._weekly_stdout(WEEKLY_OK,
+                                      json.dumps(obj, ensure_ascii=False))
+        self.assertEqual(rc, 1, out)
+        line = [x.strip() for x in out.splitlines() if "VERDICT_ABSENT" in x]
+        self.assertTrue(line, out)
+        self.assertIn(WANT_SCRIPT_BUG_DISPOSITION, line[0])
+        self.assertTrue(line[0].endswith(WANT_SCRIPT_BUG_VERBATIM),
+                        "处置不在违规行结尾:%s" % line[0])
+
+    def test_every_verdict_violation_line_carries_a_disposition(self):
+        """不逐个码列举 —— 列举出来的清单会与校验器漂移。判据是"凡以
+        `VERDICT_` 开头的违规行都带「处置:」",新增码不改测试就自动被守。"""
+        cases = []
+        obj = json.loads(DIGEST)
+        del obj["events"]["PHP"]["official_verdict"]
+        obj["rates"]["PHP"]["fixings_verdict"] = "   "
+        cases.append(self._weekly_stdout(WEEKLY_OK.replace(ART_PHP, "改写过"),
+                                         json.dumps(obj, ensure_ascii=False)))
+        obj2 = json.loads(DIGEST)
+        obj2["rates"] = 7
+        cases.append(self._weekly_stdout(WEEKLY_OK,
+                                         json.dumps(obj2, ensure_ascii=False)))
+        cases.append(self._daily_stdout(make_report(),
+                                        snap_with_derived(verdict=None)))
+        seen = set()
+        for rc, out in cases:
+            self.assertEqual(rc, 1, out)
+            for raw_line in out.splitlines():
+                line = raw_line.lstrip(" -")
+                if not line.startswith("VERDICT_"):
+                    continue
+                seen.add(line.split(":")[0])
+                self.assertIn("处置:", line, line)
+        self.assertGreaterEqual(len(seen), 4, seen)

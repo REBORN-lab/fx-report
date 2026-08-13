@@ -250,10 +250,10 @@ verdict 规则:触发条件未发生 → 无法判定;触发发生且方向核�
   重跑 `python3 -m scripts.collect --date DATE` 是**重新采集**(采集窗口已移动,
   拿到的不是当日那批条目),不是重新派生,**不构成本码的补救手段**。
 
-违规(退出码非 0):
-- `VERDICT_NOT_QUOTED`:报告未逐字引用结论句 → **改报告**,把违规信息里
-  「期望原文」那一句整句抄进该币种节,一个字符都不改。
-- `VERDICT_ABSENT` / `VERDICT_EMPTY` / `VERDICT_MALFORMED` /
-  `VERDICT_ENTRY_MISSING` / `VERDICT_CONTAINER_MALFORMED`:快照里该有的结论句
-  缺失、为空、类型不对,或条目/容器不成形 → **这几条是脚本缺陷,改报告没用**;
-  重跑第 1 步采集,仍复现就报 bug。
+违规(退出码非 0):`VERDICT_NOT_QUOTED` / `VERDICT_ABSENT` / `VERDICT_EMPTY` /
+`VERDICT_MALFORMED` / `VERDICT_ENTRY_MISSING` / `VERDICT_CONTAINER_MALFORMED`。
+**处置以校验器打印的那一行为准** —— 每条违规行末尾都带「处置:…」,照它执行。
+本文件**不复述处置内容**:唯一事实源是 `scripts/check_report.py` 里的
+`DISPOSITION_QUOTE` / `DISPOSITION_SCRIPT_BUG`。这里曾经复述过一份处置表,
+而散文里的第二份可以被整体反转(把唯一可操作的那条说成「这是脚本缺陷」),
+三种反转措辞都躲过了针对文档的子串断言;脚本输出躲不过。
