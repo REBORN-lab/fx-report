@@ -337,6 +337,26 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None):
             for source in sorted(by_source):
                 if isinstance(source, str) and source and source not in gap_sec[1]:
                     v.append("GAP_OMITTED: 缺漏汇总未提及 %s" % source)
+        # 结论句逐字引用。digest 为 None(未给 --digest)时整块不执行 ——
+        # 取不到结论句不等于漏写,不得报 VERDICT_ABSENT。
+        # 聚合器的 _rates_digest / _events_one 对每个落盘的币种条目都必写这些
+        # 字段,故 required=True:缺失即脚本缺陷。
+        covered = {c for c in CURRENCIES if c in report}
+        for container, fields, label in (
+                (digest.get("events"), VERDICT_FIELDS_EVENTS, "digest.events"),
+                (digest.get("rates"), VERDICT_FIELDS_RATES, "digest.rates")):
+            if not isinstance(container, dict):
+                # check_verdicts 对非 dict 容器静默返回空 —— 谓词不越权判结构。
+                # 但**没有别处兜底**:main 只校验 week 与 generated_from,
+                # 容器坏掉时会打印 CHECK PASSED 而一条结论句都没查,正是本
+                # change 要消灭的形态。响亮失败在这里。
+                v.append("DIGEST_CONTAINER_MALFORMED: 聚合文件的 %s 不是对象"
+                         "(实为 %s),该类结论句一条都未校验"
+                         % (label, type(container).__name__))
+                continue
+            found, _ = check_verdicts(report, container, fields, covered,
+                                      required=True, label=label)
+            v.extend(found)
     return v
 
 

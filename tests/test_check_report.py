@@ -1,5 +1,8 @@
+import contextlib
+import io
 import json
 import os
+import re
 import tempfile
 import unittest
 
@@ -314,10 +317,21 @@ if __name__ == "__main__":
     unittest.main()
 
 
-DIGEST = json.dumps({"week": "2026-W33",
-                     "rates": {"PHP": {"chg_pct_week": -0.192, "range_low": 60.75,
-                                       "range_high": 60.867, "fixings": 2}},
-                     "verdicts": {"命中": 1, "未命中": 0, "无法判定": 15, "未判定": 10}})
+FIX_PHP = "区间内 2 次不同定盘(2026-08-07 至 2026-08-10)"
+ART_PHP = "区间内至少 3 条(1/5 天未采到)"
+OFF_PHP = "未接入或全区间采集失败,有无公告无法判定"
+
+DIGEST_OBJ = {"week": "2026-W33",
+              "generated_from": ["2026-08-07", "2026-08-10"],
+              "rates": {"PHP": {"chg_pct_week": -0.192, "range_low": 60.75,
+                                "range_high": 60.867, "fixings": 2,
+                                "fixings_verdict": FIX_PHP}},
+              "events": {"PHP": {"articles_verdict": ART_PHP,
+                                 "official_verdict": OFF_PHP}},
+              "verdicts": {"命中": 1, "未命中": 0, "无法判定": 15, "未判定": 10},
+              "verdict_details": [{"date": "2026-08-07", "currency": "PHP",
+                                   "verdict": "命中"}]}
+DIGEST = json.dumps(DIGEST_OBJ, ensure_ascii=False)
 
 WEEKLY_OK = """# 外汇周报 2026-W33
 
@@ -327,7 +341,7 @@ WEEKLY_OK = """# 外汇周报 2026-W33
 - 比索本周走强
 
 ## 各币种一周归因
-USD / EUR / PHP 周涨跌 -0.192%,区间 60.75–60.867(2 次定盘) / THB / BRL
+USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%s / THB / BRL
 
 ## 复盘汇总
 - 命中 1、未命中 0、无法判定 15、未判定 10
@@ -337,7 +351,7 @@ USD / EUR / PHP 周涨跌 -0.192%,区间 60.75–60.867(2 次定盘) / THB / BRL
 
 ## 缺漏汇总
 - 无
-"""
+""" % (FIX_PHP, ART_PHP, OFF_PHP)
 
 
 class WeeklyDigestTraceabilityTest(unittest.TestCase):
@@ -420,15 +434,10 @@ class DigestFailClosedTest(unittest.TestCase):
             self.assertEqual(self._run(tmp, None, ["--daily", daily]), 2)
 
     def test_valid_digest_still_passes(self):
+        """fixture 必须是**真实 digest 形态** —— _rates_digest 与 _events_one
+        永远会写结论句字段,缺了就是脚本缺陷,不该由校验器放行。"""
         with tempfile.TemporaryDirectory() as tmp:
-            body = json.dumps({"week": "2026-W33", "generated_from": [],
-                               "rates": {"PHP": {"chg_pct_week": -0.192,
-                                                 "range_low": 60.75,
-                                                 "range_high": 60.867,
-                                                 "fixings": 2}},
-                               "verdicts": {"命中": 1, "未命中": 0,
-                                            "无法判定": 15, "未判定": 10}})
-            self.assertEqual(self._run(tmp, body), 0)
+            self.assertEqual(self._run(tmp, DIGEST), 0)
 
 
 class WeeklyGapOmittedTest(unittest.TestCase):
@@ -621,3 +630,135 @@ class VerdictFieldConstantsTest(unittest.TestCase):
             check_report.VERDICT_FIELDS_EVENTS,
             set(check_report.CURRENCIES), True, "digest.verdict_details")
         self.assertEqual((v, skipped), ([], 0))
+
+
+class WeeklyVerdictQuotingTest(unittest.TestCase):
+    """周报三类结论句的逐字引用(delta spec:结论句与聚合文件不一致 /
+    三类结论句全覆盖 / 基准货币在定盘容器中无条目 / 未提供聚合文件 /
+    周报未覆盖某币种 / 结论句为空串)。"""
+
+    def _run(self, report, digest_obj=None):
+        return check_report.check_weekly(
+            report, DIGEST, (), digest_obj if digest_obj is not None else DIGEST_OBJ)
+
+    def test_fully_quoted_weekly_passes(self):
+        self.assertEqual(self._run(WEEKLY_OK), [])
+
+    def test_articles_verdict_reworded_is_caught(self):
+        """实测形态:正文写「至少 15 条(3/5 天未采到)」而 digest 是
+        「至少 26 条(3/6 天未采到、…)」,词袋检查照样打印通过。"""
+        bad = WEEKLY_OK.replace(ART_PHP, "区间内至少 3 条")
+        v = self._run(bad)
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x and "articles_verdict" in x
+                            for x in v), v)
+
+    def test_official_verdict_missing_is_caught(self):
+        bad = WEEKLY_OK.replace(OFF_PHP, "公告方面本周平静")
+        v = self._run(bad)
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x and "official_verdict" in x
+                            for x in v), v)
+
+    def test_fixings_verdict_missing_is_caught(self):
+        """三类只查一类的变异必须被杀:定盘类在 rates 容器,与 events 分开取。"""
+        bad = WEEKLY_OK.replace(FIX_PHP, "全周仅 2 次定盘")
+        v = self._run(bad)
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x and "fixings_verdict" in x
+                            for x in v), v)
+
+    def test_base_currency_absent_from_rates_container_is_legal(self):
+        """digest["rates"] 没有 USD 是合法形态(基准货币无定盘价)。
+        WEEKLY_OK 覆盖了 USD,但 rates 容器里没有它 —— 不得报字段缺失。"""
+        v = self._run(WEEKLY_OK)
+        self.assertFalse([x for x in v if "USD" in x and "VERDICT" in x], v)
+
+    def test_currency_not_covered_reports_only_currency_missing(self):
+        bad = WEEKLY_OK.replace("USD / EUR / PHP", "EUR / 比索")
+        self.assertNotIn("PHP", bad)
+        v = self._run(bad)
+        self.assertTrue(any("CURRENCY_MISSING" in x and "PHP" in x for x in v), v)
+        self.assertFalse([x for x in v if "VERDICT" in x and "PHP" in x], v)
+
+    def test_currency_wholly_absent_is_not_double_reported(self):
+        """上一条对「covered 恒取全集」的变异无鉴别力:那里只删掉币种名,
+        三句结论句还留在正文里,两种取法结果相同(自跑变异实测存活)。
+        这条把整行归因删掉 —— PHP 的三句一并消失,让位机制成了不报
+        VERDICT 的唯一原因,同一处缺失才真的只产生一条违规。"""
+        line = [x for x in WEEKLY_OK.splitlines() if x.startswith("USD / EUR / PHP")]
+        self.assertEqual(len(line), 1)
+        bad = WEEKLY_OK.replace(line[0], "USD / EUR / THB / BRL")
+        self.assertNotIn("PHP", bad)
+        self.assertNotIn(ART_PHP, bad)
+        v = self._run(bad)
+        self.assertTrue(any("CURRENCY_MISSING" in x and "PHP" in x for x in v), v)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+
+    def test_empty_verdict_string_is_a_violation(self):
+        obj = json.loads(DIGEST)
+        obj["events"]["PHP"]["articles_verdict"] = "   "
+        v = self._run(WEEKLY_OK, obj)
+        self.assertTrue(any("VERDICT_EMPTY" in x for x in v), v)
+
+    def test_non_string_verdict_is_malformed(self):
+        obj = json.loads(DIGEST)
+        obj["rates"]["PHP"]["fixings_verdict"] = {"text": FIX_PHP}
+        v = self._run(WEEKLY_OK, obj)
+        self.assertTrue(any("VERDICT_MALFORMED" in x for x in v), v)
+
+    def test_missing_field_on_existing_entry_is_absent(self):
+        obj = json.loads(DIGEST)
+        del obj["events"]["PHP"]["official_verdict"]
+        v = self._run(WEEKLY_OK, obj)
+        self.assertTrue(any("VERDICT_ABSENT" in x and "official_verdict" in x
+                            for x in v), v)
+
+    def test_without_digest_object_no_verdict_check(self):
+        """未提供 --digest 时 digest 为 None:不执行结论句检查,
+        更不得因取不到而报「字段缺失」。"""
+        v = check_report.check_weekly(WEEKLY_OK.replace(ART_PHP, "改写过"), DIGEST)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+
+    def test_top_level_counting_structures_are_not_scanned(self):
+        """digest 顶层的 verdicts(计数 dict)与 verdict_details(list)
+        不得被当成结论句 —— 按 *verdict* 模式扫就会。"""
+        v = self._run(WEEKLY_OK)
+        self.assertFalse([x for x in v if "verdict_details" in x
+                          or "digest.verdicts" in x], v)
+
+    def test_violation_carries_the_source_label(self):
+        """label 是三个调用点唯一的区分手段(digest.events / digest.rates /
+        derived.events)。抹掉它,三类违规就分不出来源,而其余断言只看
+        字段名与币种名,照样全绿 —— 代码质量审查实测该变异存活。"""
+        bad = WEEKLY_OK.replace(ART_PHP, "改写过").replace(FIX_PHP, "也改写过")
+        v = self._run(bad)
+        self.assertTrue(any("digest.events.PHP" in x for x in v), v)
+        self.assertTrue(any("digest.rates.PHP" in x for x in v), v)
+
+    def test_missing_container_fails_loudly(self):
+        """产出端坏掉时,校验器 MUST NOT 打印通过却一条都没查。
+        谓词对非 dict 容器静默返回空(不越权判结构),兜底在调用点。"""
+        for bad in (None, [], "x", 7):
+            obj = json.loads(DIGEST)
+            obj["events"] = bad
+            v = self._run(WEEKLY_OK, obj)
+            self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+                                and "digest.events" in x for x in v), (bad, v))
+
+    def test_missing_container_key_fails_loudly(self):
+        obj = json.loads(DIGEST)
+        del obj["rates"]
+        v = self._run(WEEKLY_OK, obj)
+        self.assertTrue(any("DIGEST_CONTAINER_MALFORMED" in x
+                            and "digest.rates" in x for x in v), v)
+
+
+class NoLegacyExemptionSwitchTest(unittest.TestCase):
+    """豁免机制本身会成为下一个绕过点(Design Doc §6)。校验器的 CLI 开关
+    集合被钉死:想加豁免开关就得先改掉这条断言,而那是显式动作。"""
+
+    def test_cli_option_set_is_frozen(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit):
+            check_report.main(["--help"])
+        opts = set(re.findall(r"--[a-z][a-z-]*", buf.getvalue()))
+        self.assertEqual(opts, {"--help", "--brief", "--mode", "--strict-brief",
+                                "--digest", "--daily"})
