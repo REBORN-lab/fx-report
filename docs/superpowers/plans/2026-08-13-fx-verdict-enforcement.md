@@ -74,7 +74,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 - Create: `scripts/verdicts.py`
 - Create: `tests/test_verdicts.py`
 
-- [ ] **Step 1: 写会红的测试**
+- [x] **T1 Step 1: 写会红的测试**
 
 创建 `tests/test_verdicts.py`,内容为:
 
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **T1 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -144,7 +144,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts -v
 
 Expected: 收集阶段即报 `ModuleNotFoundError: No module named 'scripts.verdicts'`(5 个用例一个都跑不起来)。
 
-- [ ] **Step 3: 最小实现**
+- [x] **T1 Step 3: 最小实现**
 
 创建 `scripts/verdicts.py`:
 
@@ -175,7 +175,7 @@ def join_verdict(head, caveats):
     return "%s(%s)" % (head, "、".join(caveats))
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **T1 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -184,7 +184,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts -v
 
 Expected: `OK`,`Ran 6 tests`。
 
-- [ ] **Step 5: 勾选并提交**
+- [x] **T1 Step 5: 勾选并提交**
 
 把 `openspec/changes/fx-verdict-enforcement/tasks.md` 里 `- [ ] 2.5` 那一行的 `- [ ]` 改成 `- [x]`(该 task 同时覆盖 Task 2,两个任务都完成后再勾;本步先只提交代码)。
 
@@ -205,7 +205,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/weekly_digest.py`(import 段;`_fixings_verdict` 第 66-70 行;`_verdict` 第 476 行)
 - Modify: `tests/test_verdicts.py`
 
-- [ ] **Step 1: 写会红的测试**
+- [ ] **T2 Step 1: 写会红的测试**
 
 在 `tests/test_verdicts.py` 的 `if __name__` **之前**插入(同时把文件顶部的 import 段补成下面这样):
 
@@ -276,7 +276,7 @@ class RefactorIsByteIdenticalTest(unittest.TestCase):
             "区间内 2 次不同定盘(2026-08-10 至 2026-08-11)")
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **T2 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -285,7 +285,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts -v
 
 Expected: `WeeklyRoutesThroughJoinVerdictTest` 的 2 个用例 ERROR,报 `AttributeError: <module 'scripts.weekly_digest'> does not have the attribute 'join_verdict'`;`RefactorIsByteIdenticalTest` 的 4 个用例已经是 PASS(安全网),`JoinVerdictTest` 6 个 PASS(Task 1 修复轮追加了逐字节锚点用例)。
 
-- [ ] **Step 3: 实现 —— 三处编辑**
+- [ ] **T2 Step 3: 实现 —— 三处编辑**
 
 3a. `scripts/weekly_digest.py` 第 25 行 `from scripts.fixings import distinct_fixings, num as _num` **之后**加一行:
 
@@ -332,7 +332,7 @@ from scripts.verdicts import join_verdict
 
 **不要动** `_verdict` 的其余三个 return(第 418、478、479 行):它们不是 `head(caveats)` 形态,硬套拼装口会改变输出。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **T2 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -341,7 +341,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts tests.test_wee
 
 Expected: `OK`。`tests.test_weekly_digest` 里既有的 `VerdictTest` / `VerdictInvariantTest` / `VerdictDomainTest` / `FixingsVerdictTest` 全部保持绿 —— 它们断言的是逐字原文,是这次重构最强的安全网。任一变红说明输出被改了,按 `systematic-debugging` 定位,**不要改断言**。
 
-- [ ] **Step 5: 勾选并提交**
+- [ ] **T2 Step 5: 勾选并提交**
 
 把 tasks.md 里 `- [ ] 2.5 新建 \`scripts/verdicts.py\`` 那一行改成 `- [x] 2.5 ...`,然后:
 
@@ -364,7 +364,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/check_report.py`(常量区第 22 行后;函数插在 `def check_daily(` 之前)
 - Modify: `tests/test_check_report.py`(追加到文件末尾)
 
-- [ ] **Step 1: 写会红的测试**
+- [ ] **T3 Step 1: 写会红的测试**
 
 在 `tests/test_check_report.py` **文件末尾**追加:
 
@@ -511,7 +511,7 @@ class VerdictFieldConstantsTest(unittest.TestCase):
         self.assertEqual((v, skipped), ([], 0))
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **T3 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -520,7 +520,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report.CheckVerdi
 
 Expected: 全部 ERROR,报 `AttributeError: module 'scripts.check_report' has no attribute 'check_verdicts'` 与 `... has no attribute 'VERDICT_FIELDS_EVENTS'`。
 
-- [ ] **Step 3: 实现**
+- [ ] **T3 Step 3: 实现**
 
 3a. `scripts/check_report.py` 常量区,在第 22 行 `DATE_HEADING_RE = ...` **之后**加:
 
@@ -593,7 +593,7 @@ def check_verdicts(report, container, fields, covered, required, label):
     return v, skipped
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **T3 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -602,7 +602,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 
 Expected: `OK`。既有的 `CheckDailyTest` / `CheckWeeklyTest` 等全部保持绿(本任务未接线,行为零变化)。
 
-- [ ] **Step 5: 勾选并提交**
+- [ ] **T3 Step 5: 勾选并提交**
 
 把 tasks.md 的 `1.1`、`1.3`、`1.5` 三行分别改成 `- [x]`,逐条验证后提交:
 
@@ -627,7 +627,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/check_report.py`(`check_weekly` 的 `if isinstance(digest, dict):` 块)
 - Modify: `tests/test_check_report.py`(第 317-340 行的 `DIGEST` / `WEEKLY_OK` fixture;第 422 行的 `test_valid_digest_still_passes`;末尾追加新类)
 
-- [ ] **Step 1: 改 fixture 并写会红的测试**
+- [ ] **T4 Step 1: 改 fixture 并写会红的测试**
 
 4a. 把 `tests/test_check_report.py` 第 317-340 行的 `DIGEST` 与 `WEEKLY_OK` 两个常量整体替换为:
 
@@ -788,7 +788,7 @@ import tempfile
 import unittest
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **T4 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -797,7 +797,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 
 Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caught` / `test_official_verdict_missing_is_caught` / `test_fixings_verdict_missing_is_caught` / `test_empty_verdict_string_is_a_violation` / `test_non_string_verdict_is_malformed` / `test_missing_field_on_existing_entry_is_absent` 共 6 个 FAIL(违规列表为空);`NoLegacyExemptionSwitchTest` PASS(现有开关集合已符合)。其余为 PASS。
 
-- [ ] **Step 3: 实现**
+- [ ] **T4 Step 3: 实现**
 
 `scripts/check_report.py` 的 `check_weekly`,把现有的
 
@@ -838,7 +838,7 @@ Expected: `WeeklyVerdictQuotingTest` 里 `test_articles_verdict_reworded_is_caug
     return v
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **T4 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -856,7 +856,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`,总数 > 554(预期 +25 左右;**实跑数字为准,不要预填**)。
 
-- [ ] **Step 5: 勾选并提交**
+- [ ] **T4 Step 5: 勾选并提交**
 
 把 tasks.md 的 `1.2`、`1.4`、`1.6` 三行改成 `- [x]`,逐条验证后:
 
@@ -886,7 +886,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `tests/test_derive.py`
 - Modify: `tests/test_snapshot.py:177`
 
-- [ ] **Step 1: 写会红的测试**
+- [ ] **T5 Step 1: 写会红的测试**
 
 在 `tests/test_derive.py` **文件末尾**追加:
 
@@ -1032,7 +1032,7 @@ class EventsVerdictTest(unittest.TestCase):
         self.assertFalse([k for k in derive.EMPTY_REAL_RATE if "verdict" in k])
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **T5 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1041,7 +1041,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_derive -v 2>&1 | tail -
 
 Expected: `EventsVerdictTest` 里除 `test_rates_and_real_rate_get_no_verdict` 外全部 FAIL(`KeyError: 'events_verdict'` / `assertIn` 失败 / `2 != 1`);另外 `test_schema_version_present` 仍是绿(它断言 1)。
 
-- [ ] **Step 3: 实现 —— `scripts/collect/derive.py` 四处编辑**
+- [ ] **T5 Step 3: 实现 —— `scripts/collect/derive.py` 四处编辑**
 
 3a. 第 7 行 `from ..fixings import distinct_fixings, num as _num` **之后**加一行:
 
@@ -1189,7 +1189,7 @@ def _events_verdict(count, count_capped, sample_capped, channel_changed_from,
 
 **不要动** `tests/test_snapshot.py:45`(快照顶层版本号,保持 1)。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **T5 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1205,7 +1205,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`(**实跑数字为准**)。
 
-- [ ] **Step 5: 勾选并提交**
+- [ ] **T5 Step 5: 勾选并提交**
 
 把 tasks.md 的 `2.1`、`2.2`、`2.6` 改成 `- [x]`,逐条验证后:
 
@@ -1228,7 +1228,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/check_report.py`(`check_daily` 签名与函数体;`main` 的 notes 打印)
 - Modify: `tests/test_check_report.py`(追加到文件末尾)
 
-- [ ] **Step 1: 写会红的测试**
+- [ ] **T6 Step 1: 写会红的测试**
 
 在 `tests/test_check_report.py` **文件末尾**追加:
 
@@ -1440,7 +1440,7 @@ from scripts import weekly_digest
 from scripts.collect import derive
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **T6 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1449,7 +1449,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 
 Expected:`DailyVerdictQuotingTest` 里带 `notes=` 的用例 ERROR(`TypeError: check_daily() got an unexpected keyword argument 'notes'`),其余期望捕获违规的用例 FAIL(违规列表为空);`DailySkipNoticeIsPrintedTest` 2 个 FAIL;`VerdictFieldSyncTest` 3 个 PASS。
 
-- [ ] **Step 3: 实现 —— `scripts/check_report.py` 两处编辑**
+- [ ] **T6 Step 3: 实现 —— `scripts/check_report.py` 两处编辑**
 
 3a. `check_daily` 签名与函数体。把
 
@@ -1529,7 +1529,7 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
         print("CHECK FAILED (%d):" % len(violations))
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **T6 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1545,7 +1545,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`(**实跑数字为准**)。
 
-- [ ] **Step 5: 勾选并提交**
+- [ ] **T6 Step 5: 勾选并提交**
 
 把 tasks.md 的 `2.3`、`2.4`、`2.7` 改成 `- [x]`,逐条验证后:
 
@@ -1569,7 +1569,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `skills/fx-daily-report/SKILL.md`(第 75-94 行的事件段;第 4 步禁令表)
 - Modify: `skills/fx-weekly-report/SKILL.md`(「计数与结论纪律」第 1 条)
 
-- [ ] **Step 1: 写会红的测试**
+- [ ] **T7 Step 1: 写会红的测试**
 
 创建 `tests/test_skill_docs.py`:
 
@@ -1634,7 +1634,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **T7 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1643,7 +1643,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_skill_docs -v
 
 Expected: 5 个用例中 `DailySkillTest` 3 个全 FAIL、`WeeklySkillTest.test_states_the_exact_substring_rule` FAIL;`WeeklySkillTest.test_three_verdict_fields_named` PASS。
 
-- [ ] **Step 3: 实现 —— 三处文档编辑**
+- [ ] **T7 Step 3: 实现 —— 三处文档编辑**
 
 3a. `skills/fx-daily-report/SKILL.md`,把「派生指标」那一条里从 `事件数 <count>(前值 <count_prev>,` 开始、到 `**禁止**使用上面任何一句关于变化量的话术)` 结束的整段(现第 75-94 行)替换为:
 
@@ -1691,7 +1691,7 @@ Expected: 5 个用例中 `DailySkillTest` 3 个全 FAIL、`WeeklySkillTest.test_
    `rates` 容器里没有 USD 是正常的(基准货币无定盘价),那一条不用写。
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **T7 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1700,7 +1700,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_skill_docs -v
 
 Expected: `OK`,`Ran 5 tests`。
 
-- [ ] **Step 5: 勾选并提交**
+- [ ] **T7 Step 5: 勾选并提交**
 
 把 tasks.md 的 `3.1`、`3.2` 改成 `- [x]`,逐条验证后:
 
@@ -1722,7 +1722,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Create: `docs/superpowers/evidence/2026-08-13-fx-verdict-mutations.py`
 
-- [ ] **Step 1: 写电池脚本**
+- [ ] **T8 Step 1: 写电池脚本**
 
 创建 `docs/superpowers/evidence/2026-08-13-fx-verdict-mutations.py`:
 
@@ -1860,7 +1860,7 @@ if killed != executed:
     raise SystemExit(1)
 ```
 
-- [ ] **Step 2: 跑电池**
+- [ ] **T8 Step 2: 跑电池**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1872,7 +1872,7 @@ Expected: 先打印 `BASELINE OK — Ran NNN tests in ...`,再 10 行 `KILLED`,�
 **任何一条 SURVIVED 都必须补测试,不得放过** —— 存活即该分支没被测住。补完测试重跑,直到三个数相等。
 **任何一条 STALE** 说明靶点原文与实现不一致:核对 Task 3/4/6 的实现是否逐字照抄了本计划的代码块,或按实际源码重写靶点原文;**不得**把 STALE 当成跳过。
 
-- [ ] **Step 3: 确认没有豁免开关**
+- [ ] **T8 Step 3: 确认没有豁免开关**
 
 ```bash
 grep -n "legacy\|exempt\|skip.*verdict\|--no-" scripts/check_report.py || echo "无豁免开关"
@@ -1882,7 +1882,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
 
 Expected: 第一条只命中 `VERDICT_SKIPPED_LEGACY`(那是**声明**不是开关);第二条 `OK`。CLI 开关集合被 `NoLegacyExemptionSwitchTest` 冻结在 `{--help, --brief, --mode, --strict-brief, --digest, --daily}`。
 
-- [ ] **Step 4: 全量回归**
+- [ ] **T8 Step 4: 全量回归**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -1891,7 +1891,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . 2>&1 | tail
 
 Expected: `OK`(**实跑数字为准,不要预填**)。
 
-- [ ] **Step 5: 勾选并提交**
+- [ ] **T8 Step 5: 勾选并提交**
 
 把 tasks.md 的 `4.2`、`5.1`、`5.2` 改成 `- [x]`,逐条验证后:
 
@@ -1916,7 +1916,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `state/weekly-digest-2026-W33.json`(重跑聚合器)
 - Modify: `reports/weekly/2026-W33.md`
 
-- [ ] **Step 1: 确认它现在确实红(改之前先看见问题)**
+- [ ] **T9 Step 1: 确认它现在确实红(改之前先看见问题)**
 
 ```bash
 python3 scripts/weekly_digest.py --week 2026-W33
@@ -1930,7 +1930,7 @@ echo "rc=$?"
 
 Expected: `CHECK FAILED (N)`,`rc=1`,违规里含多条 `VERDICT_NOT_QUOTED`(旧正文写的是 5 天窗口的结论句)与若干 `NUMBER_UNTRACEABLE`。**把实际输出记下来**,后面要逐条消掉。
 
-- [ ] **Step 2: 导出必须逐字出现的全部结论句**
+- [ ] **T9 Step 2: 导出必须逐字出现的全部结论句**
 
 ```bash
 python3 - <<'PY'
@@ -1954,7 +1954,7 @@ PY
 
 Expected: 打印出 14 句(events 5 币种 × 2 + rates 4 币种 × 1)。**这些句子必须原样粘贴进周报,一个字符都不能改** —— 包括全角括号与顿号。
 
-- [ ] **Step 3: 重写周报**
+- [ ] **T9 Step 3: 重写周报**
 
 按 `skills/fx-weekly-report/SKILL.md` 第 2 步的模板重写 `reports/weekly/2026-W33.md`。硬性要求:
 
@@ -1969,7 +1969,7 @@ Expected: 打印出 14 句(events 5 币种 × 2 + rates 4 币种 × 1)。**这�
    正文提日期一律写完整 `YYYY-MM-DD`。
 5. 除结论句里的数字外,**不要引入任何新数字**;需要展开细节时只能引 digest 里已有的值。
 
-- [ ] **Step 4: 先自查 14 句都在,再跑校验器**
+- [ ] **T9 Step 4: 先自查 14 句都在,再跑校验器**
 
 ```bash
 python3 - <<'PY'
@@ -2003,7 +2003,7 @@ echo "rc=$?"
 
 Expected: `CHECK PASSED`,`rc=0`。仍有 `NUMBER_UNTRACEABLE` 就是正文引了 digest 与日报之外的数,删掉那个数,**不要**去放宽白名单。
 
-- [ ] **Step 5: 日报侧端到端复核(存量快照走降级路径)**
+- [ ] **T9 Step 5: 日报侧端到端复核(存量快照走降级路径)**
 
 ```bash
 for d in 2026-08-07 2026-08-08 2026-08-09 2026-08-10 2026-08-11 2026-08-12; do
@@ -2039,7 +2039,7 @@ PY
 
 Expected: `schema_version: 2`,`PHP events_verdict: 当日采到 1 条`,`gaps: []`。
 
-- [ ] **Step 6: 全量回归 + 勾选提交**
+- [ ] **T9 Step 6: 全量回归 + 勾选提交**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -2068,7 +2068,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Verify(通常无需修改): `openspec/changes/fx-verdict-enforcement/specs/fx-daily-report/spec.md`、`.../fx-weekly-report/spec.md`
 
-- [ ] **Step 1: 结构校验**
+- [ ] **T10 Step 1: 结构校验**
 
 ```bash
 openspec validate fx-verdict-enforcement --strict; echo "rc=$?"
@@ -2076,7 +2076,7 @@ openspec validate fx-verdict-enforcement --strict; echo "rc=$?"
 
 Expected: `Change 'fx-verdict-enforcement' is valid`,`rc=0`。
 
-- [ ] **Step 2: 逐场景核对实现**
+- [ ] **T10 Step 2: 逐场景核对实现**
 
 对照下表逐条确认,每个 `#### Scenario:` 都能指到一个已通过的测试:
 
@@ -2101,7 +2101,7 @@ Expected: `Change 'fx-verdict-enforcement' is valid`,`rc=0`。
 
 任一行找不到落点 → 补测试,**不要**改 spec 迁就实现。
 
-- [ ] **Step 3: 最终全量回归 + 电池复跑**
+- [ ] **T10 Step 3: 最终全量回归 + 电池复跑**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -2112,7 +2112,7 @@ git status --short
 
 Expected: 测试 `OK`;电池 `KILLED 10 / 执行 10 / 登记 10` 且 `exit=0`;`git status --short` 干净(电池的 `finally` 已把源码逐字节还原 —— 有残留就是还原失败,立刻 `git checkout` 并查电池)。
 
-- [ ] **Step 4: 勾选并提交**
+- [ ] **T10 Step 4: 勾选并提交**
 
 把 tasks.md 的 `6.1`、`6.2` 改成 `- [x]`。此时 tasks.md 应无剩余未勾选项:
 
