@@ -454,3 +454,145 @@ class WeeklyGapOmittedTest(unittest.TestCase):
         report = self._weekly("- [gdelt] 限流\n")
         v = check_report.check_weekly(report, DIGEST, ())
         self.assertFalse([x for x in v if "GAP_OMITTED" in x], v)
+
+
+class CheckVerdictsCoreTest(unittest.TestCase):
+    """核心谓词的三态与两道让位。日报与周报共用这一份判定,两处各写一遍
+    必然漂移(见 scripts/fixings.py 的模块注释)。
+
+    delta spec 场景:结论句被改动一个字 / 结论句整句缺失 / 结论句为空串 /
+    报告未覆盖某币种 / 基准货币在定盘容器中无条目。"""
+
+    FIELDS = ("articles_verdict",)
+
+    def _run(self, report, container, required=True, covered=None):
+        return check_report.check_verdicts(
+            report, container, self.FIELDS,
+            set(check_report.CURRENCIES) if covered is None else covered,
+            required, "digest.events")
+
+    def test_quoted_sentence_passes(self):
+        s = "区间内至少 26 条(3/6 天未采到)"
+        got = self._run("前言。%s。后话。" % s, {"USD": {"articles_verdict": s}})
+        self.assertEqual(got, ([], 0))
+
+    def test_one_character_changed_is_not_quoted(self):
+        s = "区间内至少 26 条(3/6 天未采到)"
+        v, _ = self._run(s.replace("26", "15"), {"USD": {"articles_verdict": s}})
+        self.assertTrue(any(x.startswith("VERDICT_NOT_QUOTED") and "USD" in x
+                            for x in v), v)
+
+    def test_expected_sentence_is_echoed_in_the_violation(self):
+        """违规信息必须给出期望的整句原文,否则报告作者无从修。"""
+        s = "区间内至少 26 条(3/6 天未采到)"
+        v, _ = self._run("完全无关的正文", {"USD": {"articles_verdict": s}})
+        self.assertTrue(any(s in x for x in v), v)
+
+    def test_whole_sentence_absent_is_not_quoted(self):
+        """数字词袋放行的正是这一形态:26、3、6 都在别处出现过。"""
+        s = "区间内至少 26 条(3/6 天未采到)"
+        v, _ = self._run("正文写了 26 与 3 与 6,但没有整句",
+                         {"USD": {"articles_verdict": s}})
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x for x in v), v)
+
+    def test_empty_string_is_a_violation_not_a_pass(self):
+        """任意报告都"包含"空串 —— 最直接的假绿入口。"""
+        for bad in ("", "   ", "　", "\n\t "):
+            v, skipped = self._run("任意报告", {"USD": {"articles_verdict": bad}})
+            self.assertTrue(any("VERDICT_EMPTY" in x for x in v), (repr(bad), v))
+            self.assertEqual(skipped, 0)
+
+    def test_non_string_is_malformed_and_does_not_crash(self):
+        for bad in ({"a": 1}, 7, ["x"], True, 1.5):
+            v, _ = self._run("任意报告", {"USD": {"articles_verdict": bad}})
+            self.assertTrue(any("VERDICT_MALFORMED" in x for x in v), (bad, v))
+
+    def test_absent_field_when_required_is_a_violation(self):
+        v, skipped = self._run("任意报告", {"USD": {}}, required=True)
+        self.assertTrue(any("VERDICT_ABSENT" in x and "USD" in x for x in v), v)
+        self.assertEqual(skipped, 0)
+
+    def test_none_value_counts_as_absent(self):
+        v, _ = self._run("任意报告", {"USD": {"articles_verdict": None}},
+                         required=True)
+        self.assertTrue(any("VERDICT_ABSENT" in x for x in v), v)
+
+    def test_absent_field_when_not_required_is_counted_not_reported(self):
+        """存量快照:跳过,但必须被计数 —— 「跳过」与「通过」不可同形。"""
+        v, skipped = self._run("任意报告", {"USD": {}}, required=False)
+        self.assertEqual(v, [])
+        self.assertEqual(skipped, 1)
+
+    def test_currency_not_covered_by_report_is_skipped(self):
+        """让位 ①:已有 SECTION_MISSING / CURRENCY_MISSING,同一处缺失
+        不得产生两条违规。"""
+        got = self._run("报告只写了 EUR", {"USD": {}}, required=True,
+                        covered={"EUR"})
+        self.assertEqual(got, ([], 0))
+
+    def test_currency_absent_from_container_is_legal(self):
+        """让位 ②:digest["rates"] 没有 USD 是合法形态(基准货币无定盘价),
+        不是缺字段;只有币种条目存在时才要求其字段齐全。"""
+        got = self._run("任意报告", {"PHP": {"articles_verdict": "任意报告"}},
+                        required=True, covered={"USD", "PHP"})
+        self.assertEqual(got, ([], 0))
+
+    def test_non_dict_container_is_skipped(self):
+        for bad in (None, [], "x", 7, True):
+            self.assertEqual(self._run("任意报告", bad), ([], 0))
+
+    def test_non_dict_entry_is_skipped(self):
+        for bad in ("not a dict", 7, [], None):
+            self.assertEqual(self._run("任意报告", {"USD": bad}), ([], 0))
+
+    def test_every_currency_is_checked_not_just_the_first(self):
+        """只查 next(iter(container)) 的变异必须被杀 —— 错的是最后一个币种。"""
+        good = "区间内至少 3 条"
+        container = {c: {"articles_verdict": good}
+                     for c in check_report.CURRENCIES}
+        container["BRL"]["articles_verdict"] = "区间内至少 9 条"
+        v, _ = self._run(good, container)
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x and "BRL" in x for x in v), v)
+
+    def test_all_fields_in_the_tuple_are_checked(self):
+        """fields 元组少一项的变异必须被杀。"""
+        container = {"USD": {"articles_verdict": "甲句", "official_verdict": "乙句"}}
+        v, _ = check_report.check_verdicts(
+            "正文只有甲句", container, check_report.VERDICT_FIELDS_EVENTS,
+            {"USD"}, True, "digest.events")
+        self.assertTrue(any("official_verdict" in x for x in v), v)
+        self.assertFalse([x for x in v if "articles_verdict" in x], v)
+
+
+class VerdictFieldConstantsTest(unittest.TestCase):
+    """字段名 SHALL 显式枚举,MUST NOT 按名字模式搜集 —— digest 顶层的
+    `verdicts` 是计数 dict、`verdict_details` 是 list,模式匹配会把非字符串
+    结构送进字符串比对。"""
+
+    def test_constants_are_explicit_tuples(self):
+        self.assertEqual(check_report.VERDICT_FIELDS_EVENTS,
+                         ("articles_verdict", "official_verdict"))
+        self.assertEqual(check_report.VERDICT_FIELDS_RATES, ("fixings_verdict",))
+        self.assertEqual(check_report.VERDICT_FIELD_DAILY, ("events_verdict",))
+
+    def test_counting_structures_are_not_enumerated(self):
+        every = (check_report.VERDICT_FIELDS_EVENTS
+                 + check_report.VERDICT_FIELDS_RATES
+                 + check_report.VERDICT_FIELD_DAILY)
+        self.assertNotIn("verdicts", every)
+        self.assertNotIn("verdict_details", every)
+
+    def test_counting_dict_fed_to_the_predicate_is_inert(self):
+        """把 digest 顶层的计数 dict 直接喂进核心谓词也不能崩或误报。"""
+        v, skipped = check_report.check_verdicts(
+            "任意报告", {"命中": 0, "未命中": 0, "无法判定": 15},
+            check_report.VERDICT_FIELDS_EVENTS,
+            set(check_report.CURRENCIES), True, "digest.verdicts")
+        self.assertEqual((v, skipped), ([], 0))
+
+    def test_detail_list_fed_to_the_predicate_is_inert(self):
+        v, skipped = check_report.check_verdicts(
+            "任意报告", [{"date": "2026-08-10", "verdict": "命中"}],
+            check_report.VERDICT_FIELDS_EVENTS,
+            set(check_report.CURRENCIES), True, "digest.verdict_details")
+        self.assertEqual((v, skipped), ([], 0))
