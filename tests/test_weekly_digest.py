@@ -1406,6 +1406,58 @@ class LegacySnapshotCapParityTest(unittest.TestCase):
         self.assertIn("7 天顶到当日采集上限(8 条)", got["articles_verdict"])
         self.assertIn("7 天源返回的原始样本顶到其上限(99 条)", got["articles_verdict"])
 
+    def test_main_channel_failure_blocks_the_zero_claim(self):
+        """主通道**跑了但没跑成**(键在、值为 None)此前整条绕过不变量,于是
+        单调性被违反:主通道跑成了、抓到 20 条全被挡掉 → "无法判定";主通道
+        整条跑失败(信息严格更少)→ "确实 0 条、全区间采集完整"(第七轮 S2)。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {"articles": [], "articles_raw_count": 0,
+                                     "source_cap": 8, "source_capped": False,
+                                     "count_at_cap": False,
+                                     "articles_dropped_malformed": 0,
+                                     "channel": "gdelt", "gnews_filter": None}},
+                  "meta": {"caps": {"gdelt_records": 8}}} for d in range(1, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_main_failed_days"], 7)
+        self.assertNotIn("确实 0 条", got["articles_verdict"])
+        self.assertIn("7 天主通道未跑成", got["articles_verdict"])
+
+    def test_disabled_main_channel_is_not_a_failure(self):
+        """README 记载的整通道回滚:删掉白名单文件 → 键**根本不存在**。
+        那是有意停用,不是缺口,不得记 main_failed_days。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {"articles": [
+                      {"title": "t%d" % d, "url": "u%d" % d,
+                       "seendate": "202608%02dT120000Z" % d}],
+                      "articles_raw_count": 1, "source_cap": 8,
+                      "source_capped": False, "count_at_cap": False,
+                      "articles_dropped_malformed": 0, "channel": "gdelt"}},
+                  "meta": {"caps": {"gdelt_records": 8}}} for d in range(1, 8)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-07", 0)
+        self.assertEqual(got["articles_main_failed_days"], 0)
+        self.assertNotIn("主通道未跑成", got["articles_verdict"])
+
+    def test_landed_below_cap_is_not_a_count_truncation(self):
+        """第六轮 count_at_cap 修复的**消费者侧**零覆盖:源返回 8 条顶到上限、
+        7 条结构不可识别、落盘 1 条 → 条数没被钉住,但源确实截断过。
+        周报必须写"源返回的原始样本顶到其上限"而不是"顶到当日采集上限"。"""
+        snaps = [{"date": "2026-08-%02d" % d, "rates": {}, "gaps": [],
+                  "events": {"USD": {"articles": [
+                      {"title": "t%d" % d, "url": "u%d" % d,
+                       "seendate": "202608%02dT120000Z" % d}],
+                      "articles_raw_count": 8, "source_cap": 8,
+                      "source_capped": True, "count_at_cap": False,
+                      "articles_dropped_malformed": 7, "channel": "gdelt"}},
+                  "meta": {"caps": {"gdelt_records": 8}}} for d in (1, 2)]
+        got = wd._events_one(snaps, "USD", "2026-08-01", "2026-08-02", 0)
+        self.assertEqual(got["articles_capped_days"], 0)
+        self.assertEqual(got["articles_sample_capped_days"], 2)
+        self.assertEqual(got["articles_sample_daily_cap"], 8)
+        self.assertIn("2 天源返回的原始样本顶到其上限(8 条)", got["articles_verdict"])
+        self.assertNotIn("顶到当日采集上限", got["articles_verdict"])
+        # 不做过滤的通道不得出现"滤除"字样(delta spec 的 MUST NOT)
+        self.assertNotIn("滤除后的条数", got["articles_verdict"])
+
     def test_official_channel_cap_reaches_the_verdict(self):
         """条目缺席那一路(official 专用)的 capped_caps.add 零覆盖:删掉它
         542 用例全绿,而它正是真实 W33 官方结论句里「(3 条)」的唯一来源。"""

@@ -340,11 +340,14 @@ class RawCountTest(unittest.TestCase):
         entry = events._gnews_entry([{"title": "t"}] * 11, 100, counts)
         self.assertIs(entry["source_capped"], True)    # 滤除前的 100 顶到 99
         self.assertIs(entry["count_at_cap"], False)    # 落盘的 11 条离 99 差 88
-        # 边界:kept 恰好等于上限 → 落盘条数确实被钉住(判据是 >= 不是 >)
-        at = dict(counts, offlist=1, kept=events.GNEWS_SOFT_CAP)
-        self.assertIs(events._gnews_entry([{"title": "t"}], 100, at)["count_at_cap"], True)
-        below = dict(counts, kept=events.GNEWS_SOFT_CAP - 1)
-        self.assertIs(events._gnews_entry([{"title": "t"}], 100, below)["count_at_cap"], False)
+        # 边界:**落盘**条数恰好等于上限 → 被钉住(判据是 >= 不是 >)。
+        # 比的必须是落盘列表而不是 counts["kept"] —— 后者是去重前的留存数,
+        # 同题去重后落盘可能少于它(第七轮 S5/S10)
+        at = [{"title": "t%d" % i} for i in range(events.GNEWS_SOFT_CAP)]
+        self.assertIs(events._gnews_entry(at, 100, dict(counts, kept=events.GNEWS_SOFT_CAP))
+                      ["count_at_cap"], True)
+        self.assertIs(events._gnews_entry(at[:-1], 100, dict(counts, kept=events.GNEWS_SOFT_CAP))
+                      ["count_at_cap"], False)   # kept 到顶但落盘少一条
         # raw/kept 未知 → None(不知道 ≠ 知道没触顶)
         unknown = events._gnews_entry(None, None, None)
         self.assertIsNone(unknown["count_at_cap"])
@@ -363,6 +366,22 @@ class RawCountTest(unittest.TestCase):
         self.assertEqual(gaps, [])
         self.assertEqual(out["PHP"]["articles"], [])
         self.assertEqual(out["PHP"]["articles_dropped_malformed"], 0)
+
+    def test_count_at_cap_excludes_deduped_duplicates(self):
+        """源返回 8 条(顶到上限)其中 2 条同题 → 落盘 7 条。第六轮只堵住
+        "结构不可识别"那一层,去重这一层原样敞着:落盘 7 条仍报"顶到当日采集
+        上限(8 条)",同一句里 7 与 8 自相矛盾(第七轮 S5/S10)。"""
+        arts = [{"title": "t%d" % i, "url": "u%d" % i, "domain": "reuters.com",
+                 "seendate": "20260811T000000Z"} for i in range(events.MAX_RECORDS - 1)]
+        arts.append(dict(arts[0], url="dup"))          # 同题转载
+        cfg = make_test_cfg(endpoints={"gdelt_doc_url": DEAD_URL + "/doc"})
+        with mock.patch.object(events, "_query_with_retry",
+                               return_value=((arts, events.MAX_RECORDS, 0), None)):
+            out, _ = events.collect(cfg)
+        entry = out["PHP"]
+        self.assertEqual(len(entry["articles"]), events.MAX_RECORDS - 1)
+        self.assertIs(entry["source_capped"], True)    # 源确实取满了
+        self.assertIs(entry["count_at_cap"], False)    # 但落盘的没顶到
 
     def test_count_at_cap_counts_landed_not_returned(self):
         """源返回 8 条(顶到上限)但 7 条结构不可识别 → 落盘 1 条。

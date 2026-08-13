@@ -244,12 +244,12 @@ def _gnews_entry(articles, raw_count, counts):
     两个截断标记也都是 None(不知道),不是 False(知道没截断)。
     """
     known = isinstance(raw_count, int) and not isinstance(raw_count, bool)
-    kept = counts.get("kept") if isinstance(counts, dict) else None
-    kept_known = isinstance(kept, int) and not isinstance(kept, bool)
+    # 同上:counts["kept"] 是去重**前**的留存数,articles 是去重后的落盘列表
+    landed = len(articles) if isinstance(articles, list) else None
     return {"articles": articles, "articles_raw_count": raw_count,
             "source_cap": GNEWS_SOFT_CAP,
             "source_capped": (raw_count >= GNEWS_SOFT_CAP) if known else None,
-            "count_at_cap": (kept >= GNEWS_SOFT_CAP) if kept_known else None,
+            "count_at_cap": (landed >= GNEWS_SOFT_CAP) if landed is not None else None,
             # 主通道自己造条目 dict,不存在"元素结构不可识别"这一路
             "articles_dropped_malformed": 0 if articles is not None else None,
             "channel": "gnews", "gnews_filter": counts}
@@ -372,15 +372,20 @@ def collect(cfg):
                 "gdelt", currency,
                 "%d/%s 个元素结构不可识别,无一可用(源可能已改版)"
                 % (dropped, raw_count if known else "?")))
+        landed = _dedupe_titles(arts)
         entry = {
-            "articles": _dedupe_titles(arts), "articles_raw_count": raw_count,
+            "articles": landed, "articles_raw_count": raw_count,
             "source_cap": MAX_RECORDS,
             # source_capped 说的是**源返回了多少条**(含结构不可识别被跳过的),
             # count_at_cap 说的是**落盘了多少条**。本通道不过滤,两者通常相等,
             # 但源返回 8 条里 7 条不可识别时前者为真、后者为假 —— 拿 raw_count
             # 算 count_at_cap 会让"落盘 1 条"报成"已达当日采集上限"(第六轮)
             "source_capped": known and raw_count >= MAX_RECORDS,
-            "count_at_cap": len(arts) >= MAX_RECORDS,
+            # 比的必须是**落盘的那个列表**。第六轮改成 len(arts) 只堵住了"结构
+            # 不可识别被跳过"这一层,标题去重那一层原样敞着:源返回 8 条(顶到
+            # 上限)其中 2 条同题 → 落盘 7 条,仍报"顶到当日采集上限(8 条)",
+            # 同一句里 7 与 8 自相矛盾。源截断这件事由 source_capped 承载
+            "count_at_cap": len(landed) >= MAX_RECORDS,
             "articles_dropped_malformed": dropped,
             "channel": "gdelt",
         }

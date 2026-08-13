@@ -487,6 +487,43 @@ class SampleCappedTest(unittest.TestCase):
                                   "articles_dropped_malformed": True}), [])[0]
         self.assertIsNone(bad["events"]["PHP"]["dropped_malformed"])
 
+    def test_main_sample_capped_is_not_key_presence(self):
+        """补位日最常见的形态:主通道抓到 20 条(远未触顶)全被白名单挡掉。
+        条目**带** gnews_filter,但那天只发生了一次截断(补位通道的)。
+        按"键在与否"判会要求报告写出一次根本没发生的截断(第七轮 S1/S6)。"""
+        def snap(gf):
+            return {"date": "2026-08-12", "rates": {"PHP": rate_entry(56.0)},
+                    "events": {"PHP": {"articles": [{"title": "g%d" % i} for i in range(8)],
+                                       "articles_raw_count": 8, "source_cap": 8,
+                                       "source_capped": True, "count_at_cap": True,
+                                       "channel": "gdelt", "gnews_filter": gf}},
+                    "meta": {"caps": {"gdelt_records": 8, "gnews_records": 99}}}
+        untruncated = {"raw": 20, "undated": 0, "out_window": 0,
+                       "offlist": 20, "kept": 0, "capped": False}
+        got = derive.derive(snap(untruncated), [])[0]["events"]["PHP"]
+        self.assertIs(got["count_capped"], True)
+        self.assertIs(got["main_sample_capped"], False)   # 只有一次截断
+        truncated = dict(untruncated, raw=100, offlist=100, capped=True)
+        got2 = derive.derive(snap(truncated), [])[0]["events"]["PHP"]
+        self.assertIs(got2["main_sample_capped"], True)   # 确实是两次
+        # 主通道跑失败 → 不知道
+        got3 = derive.derive(snap(None), [])[0]["events"]["PHP"]
+        self.assertIsNone(got3["main_sample_capped"])
+
+    def test_count_capped_follows_count_at_cap_downstream(self):
+        """第六轮 count_at_cap 修复在消费者侧零覆盖:删掉 landed_count_capped
+        里读它的三行,548 用例全绿(第七轮 S4)。"""
+        snap = {"date": "2026-08-12", "rates": {"PHP": rate_entry(56.0)},
+                "events": {"PHP": {"articles": [{"title": "only"}],
+                                   "articles_raw_count": 8, "source_cap": 8,
+                                   "source_capped": True, "count_at_cap": False,
+                                   "articles_dropped_malformed": 7,
+                                   "channel": "gdelt"}},
+                "meta": {"caps": {"gdelt_records": 8}}}
+        got = derive.derive(snap, [])[0]["events"]["PHP"]
+        self.assertIs(got["count_capped"], False)   # 落盘 1 条,没被钉住
+        self.assertIs(got["sample_capped"], True)   # 但源确实截断过
+
     def test_sample_capped_reaches_derive_output(self):
         """第四轮 S8:四个用例全部直接调私有函数,把整行从 _events_derived 里
         删掉、或改成硬编码 None,532 用例照样全绿。对照 count_capped —— 它既有

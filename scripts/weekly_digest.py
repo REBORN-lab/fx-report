@@ -197,7 +197,7 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
     filtered_days = filtered_items = filtered_blank_days = 0
     malformed_days = malformed_items = malformed_unknown_days = 0
     days_collected = days_nonempty = capped = assumed = 0
-    sample_capped = sample_assumed = 0
+    sample_capped = sample_assumed = main_failed_days = 0
     seen, caps, capped_caps, sample_caps = set(), set(), set(), set()
     per_day, published_by_date = [], {}
     for snap, items, raw_count, entry in observations:
@@ -214,6 +214,13 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         # data/2026-08-12.json 的 BRL(raw=34、offlist=29、kept=5)由"无法判定"
         # 翻成"确实 0 条"。同一个错误第四次:不变量陈述在了太窄的定义域上。
         gf = entry.get("gnews_filter") if isinstance(entry, dict) else None
+        # 主通道**跑了但没跑成**:键在、值为 None。此前整条绕过不变量 ——
+        # 单调性因此被违反:主通道跑成了、抓到 20 条全被挡掉 → "有无事件无法
+        # 判定";主通道整条跑失败(信息严格更少)→ "确实 0 条、全区间采集完整"。
+        # 判据必须是"键在且值为 None"而不是"值不是 dict":README 写明的整通道
+        # 回滚(删掉白名单文件)下这个键根本不存在,那是有意停用、不是缺口
+        if isinstance(entry, dict) and "gnews_filter" in entry and gf is None:
+            main_failed_days += 1
         lost = 0
         if isinstance(gf, dict):
             n_raw, n_kept = gf.get("raw"), gf.get("kept")
@@ -371,6 +378,7 @@ def _channel(observations, cap_key, cap_fallback, date_of, key_of, lo, hi):
         "malformed_days": malformed_days,
         "malformed_items": malformed_items,
         "malformed_unknown_days": malformed_unknown_days,
+        "main_failed_days": main_failed_days,
         "daily_cap": _one_cap(caps),
         "cap_assumed_days": assumed,
         "days_collected": days_collected,
@@ -429,12 +437,15 @@ def _verdict(stats, window_days, skipped, unit):
     if stats.get("sample_capped_days"):
         # 与上一条分开:触顶的是**滤除前的原始样本**,上限是它自己的那个数。
         # 纯 gnews 日两者由同一个 raw>=99 算出,上面那条不会响,只出这一条
-        caveats.append("%d 天源返回的原始样本顶到其上限%s,滤除后的条数是下界"
+        caveats.append("%d 天源返回的原始样本顶到其上限%s,已采到的条数是下界"
                        % (stats["sample_capped_days"],
                           _cap_phrase(stats.get("sample_daily_cap"))))
     if stats.get("malformed_items"):
         caveats.append("%d 天共 %d 条次结构不可识别被跳过(源可能已改版)"
                        % (stats["malformed_days"], stats["malformed_items"]))
+    if stats.get("main_failed_days"):
+        caveats.append("%d 天主通道未跑成(补位通道的读数是下界)"
+                       % stats["main_failed_days"])
     if stats.get("malformed_unknown_days"):
         caveats.append("%d 天的不可识别条数不可知(存量快照无此账)"
                        % stats["malformed_unknown_days"])
@@ -532,6 +543,7 @@ def _events_one(snapshots, currency, lo, hi, skipped):
         # 结构不可识别被跳过的条次:采集层跳过的 + 落盘后仍不可识别的
         "articles_malformed_dropped": a["malformed_items"],
         "articles_malformed_unknown_days": a["malformed_unknown_days"],
+        "articles_main_failed_days": a["main_failed_days"],
         "articles_malformed_items": a["malformed"],
         # 源侧闸门逐层滤除的条次(raw - kept 逐日累加)。整日归零的天数单列:
         # 补位成功的日子不能写"无一可用"

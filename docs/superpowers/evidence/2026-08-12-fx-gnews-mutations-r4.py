@@ -38,7 +38,7 @@ M=[
   '                "sample_capped": _sample_capped(payload, currency),', ""),
 ]
 orig={p:open(p,encoding="utf-8").read() for p in (E,D,W)}
-env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"); k=0
+env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"); k=0; n=0; stale=[]
 
 def suite():
     subprocess.run("find . -name __pycache__ -type d -exec rm -rf {} +",shell=True,capture_output=True)
@@ -55,15 +55,23 @@ try:
     for name,path,old,new in M:
         c=orig[path].count(old)
         if c!=1:
-            print("%-9s %-34s (匹配 %d 处)"%("PATCH-FAIL",name,c)); continue
+            # 靶点原文已被后续轮次改写 → **硬失败**。只打印一行继续,会让
+            # "全部 KILLED"在干净副本上根本复现不出来,而退出码仍是 0
+            stale.append(name)
+            print("%-9s %-34s (匹配 %d 处)"%("STALE",name,c)); continue
         open(path,"w",encoding="utf-8").write(orig[path].replace(old,new,1))
         p=suite()
         open(path,"w",encoding="utf-8").write(orig[path])
         assert open(path,encoding="utf-8").read()==orig[path], "还原失败:"+path
         fails=sorted({l.split(" ")[1] for l in p.stderr.splitlines() if l.startswith(("FAIL: ","ERROR: "))})
-        v="KILLED" if p.returncode else "SURVIVED"; k+= v=="KILLED"
+        v="KILLED" if p.returncode else "SURVIVED"; k+= v=="KILLED"; n+=1
         print("%-9s %-34s %s"%(v,name,", ".join(fails[:2])[:58]))
 finally:
     for p_,s_ in orig.items(): open(p_,"w",encoding="utf-8").write(s_)
     subprocess.run("find . -name __pycache__ -type d -exec rm -rf {} +",shell=True,capture_output=True)
-print("\n本轮 KILLED %d / %d"%(k,len(M)))
+print("\n本轮 KILLED %d / 执行 %d / 登记 %d"%(k,n,len(M)))
+if stale:
+    print("靶点已失效(原文被后续轮次改写),须重写或删除:%s"%", ".join(stale))
+    raise SystemExit(1)
+if k!=n:
+    raise SystemExit(1)

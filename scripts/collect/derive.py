@@ -28,7 +28,8 @@ EMPTY_REAL_RATE = {"value": None, "policy_rate": None, "policy_period": None,
 EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None,
                         "count_capped": None, "count_prev_capped": None,
                         "channel_changed_from": None,
-                        "sample_capped": None, "dropped_malformed": None}
+                        "sample_capped": None, "dropped_malformed": None,
+                        "main_sample_capped": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
 
@@ -208,6 +209,24 @@ def _dropped_malformed(snap, currency):
     return n if isinstance(n, int) and not isinstance(n, bool) else None
 
 
+def _main_sample_capped(snap, currency):
+    """**主通道**那次原始样本触顶。与 sample_capped 分开:后者是"任一通道",
+    而报告要判的是"这次截断是不是条目级那句之外的另一次"。
+
+    判据与 weekly_digest._channel 一致(gnews_filter.capped is True)。让 LLM 拿
+    "条目带不带 gnews_filter"去替代它是错的:补位日最常见的形态是主通道抓到
+    20 条(远未触顶)全被白名单挡掉 → 键在、capped 为 False,那天只发生了一次
+    截断(补位通道的),按键在与否判会要求报告写出一次根本没发生的截断。"""
+    entry = _event_entry_of(snap, currency)
+    if entry is None:
+        return None
+    gf = entry.get("gnews_filter")
+    if not isinstance(gf, dict):
+        return None
+    flag = gf.get("capped")
+    return flag if isinstance(flag, bool) else None
+
+
 def _events_derived(payload, history, gaps):
     """count 为 null 表示"没采到"(该币种事件采集失败),0 表示"确实 0 篇"——
     两者绝不可合并:把采集失败写成 0 就是在报"没发生",属编造。"""
@@ -246,6 +265,9 @@ def _events_derived(payload, history, gaps):
                 # 源返回但结构不可识别被跳过的元素数。只落进周报是不够的:
                 # 源改版当日日报的 count 会是 0 而正文无任何依据可引(第五轮 S1)
                 "dropped_malformed": _dropped_malformed(payload, currency),
+                # 主通道那次截断是否**另外**成立。报告只引用这个布尔,不得自行
+                # 判断"条目带不带 gnews_filter"(判据与周报共用同一条)
+                "main_sample_capped": _main_sample_capped(payload, currency),
             }
         except Exception as e:
             out[currency] = dict(EMPTY_EVENTS_DERIVED)
