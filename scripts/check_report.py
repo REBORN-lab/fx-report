@@ -147,7 +147,7 @@ def check_verdicts(report, container, fields, covered, required, label):
     return v, skipped
 
 
-def check_daily(report, snapshot_text, brief_text, strict_brief=False):
+def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None):
     v = []
     secs = sections(report)
     snap, snap_problems = parse_snapshot(snapshot_text)
@@ -195,6 +195,24 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False):
                              % (g.get("source"), g.get("scope")))
         # gaps 非 list:结构问题已记 SNAPSHOT_MALFORMED,跳过内容比对
 
+    # 结论句逐字引用。闸门只读不写:schema 过旧不让校验失败,只降级并如实
+    # 声明降级了几条 —— 「跳过」与「通过」在输出上必须可区分。
+    # 判据取 schema 版本而非"这个键在不在":后者会让**新代码产出却漏写该
+    # 字段**的缺陷与存量快照完全同形,静默通过。
+    derived = snap.get("derived") if isinstance(snap, dict) else None
+    derived = derived if isinstance(derived, dict) else {}
+    ver = derived.get("schema_version")
+    ver_ok = (isinstance(ver, int) and not isinstance(ver, bool)
+              and ver >= DERIVED_VERDICT_SCHEMA)
+    covered = {c for c in CURRENCIES if find_section(secs, c)}
+    found, skipped = check_verdicts(report, derived.get("events"),
+                                    VERDICT_FIELD_DAILY, covered,
+                                    required=ver_ok, label="derived.events")
+    v.extend(found)
+    if skipped and notes is not None:
+        notes.append("VERDICT_SKIPPED_LEGACY: %d 个币种因快照 schema 过旧"
+                     "(derived.schema_version=%s)未校验结论句" % (skipped, ver))
+
     allowed = numbers_in(snapshot_text) | numbers_in(brief_text) | ALLOWED_SMALL
     for n in sorted(numbers_in(report) - allowed):
         v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于快照或要点表" % n)
@@ -233,6 +251,7 @@ def main(argv=None):
     if err:
         print(err, file=sys.stderr)
         return 2
+    notes = []
     if args.mode == "daily":
         if not args.snapshot:
             print("daily 模式需要快照路径", file=sys.stderr)
@@ -253,7 +272,7 @@ def main(argv=None):
                 print(err, file=sys.stderr)
                 return 2
         violations = check_daily(report, snapshot_text, brief_text,
-                                 strict_brief=args.strict_brief)
+                                 strict_brief=args.strict_brief, notes=notes)
     else:
         if args.daily and not args.digest:
             print("--daily 需与 --digest 同用(单独给日报不会启用数字溯源)",
@@ -286,6 +305,9 @@ def main(argv=None):
             daily_texts.append(text)
         violations = check_weekly(report, digest_text, daily_texts,
                                   digest if args.digest is not None else None)
+    # 降级声明先于结论打印:退出码 0 却跳过了几条,读者必须看得见
+    for note in notes:
+        print(note)
     if violations:
         print("CHECK FAILED (%d):" % len(violations))
         for x in violations:

@@ -7,6 +7,8 @@ import tempfile
 import unittest
 
 from scripts import check_report
+from scripts import weekly_digest
+from scripts.collect import derive
 
 SNAP = {"date": "2026-08-10",
         "rates": {"PHP": {"primary": 60.843, "prev_primary": 60.9},
@@ -764,3 +766,194 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         opts = set(re.findall(r"--[a-z][a-z-]*", buf.getvalue()))
         self.assertEqual(opts, {"--help", "--brief", "--mode", "--strict-brief",
                                 "--digest", "--daily"})
+
+
+DAILY_VERDICT = "当日采到 11 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
+
+
+def snap_with_derived(schema_version=2, verdict=DAILY_VERDICT,
+                      currencies=("USD",)):
+    """在既有 SNAP 上挂一个 derived 节。SNAP 本身不变(浅拷贝后加键)。"""
+    snap = dict(SNAP)
+    snap["derived"] = {
+        "schema_version": schema_version,
+        "rates": {}, "real_rate": {},
+        "events": {c: ({} if verdict is None else {"events_verdict": verdict})
+                   for c in currencies},
+    }
+    return json.dumps(snap, ensure_ascii=False)
+
+
+def report_quoting(sentence, heading="美元(USD)", **kw):
+    """把结论句原样塞进某币种节 —— 前后可以有自己的叙述,句子本身不动。"""
+    r = make_report(**kw)
+    return r.replace("## %s\n" % heading,
+                     "## %s\n事件方面,%s。\n" % (heading, sentence))
+
+
+class DailyVerdictQuotingTest(unittest.TestCase):
+    """日报侧结论句(delta spec:结论句被改动一个字 / 结论句整句缺失 /
+    结论句为空串 / 存量快照无结论句字段 / 新 schema 快照漏写结论句 /
+    报告未覆盖某币种)。"""
+
+    def test_quoted_sentence_passes(self):
+        v = check_report.check_daily(report_quoting(DAILY_VERDICT),
+                                     snap_with_derived(), BRIEF)
+        self.assertEqual(v, [])
+
+    def test_one_character_changed_is_caught(self):
+        bad = report_quoting(DAILY_VERDICT.replace("11", "12"))
+        v = check_report.check_daily(bad, snap_with_derived(), BRIEF)
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x and "USD" in x for x in v), v)
+
+    def test_whole_sentence_missing_is_caught(self):
+        """数字词袋放行的正是这一形态:11 与 gdelt 都在快照里出现过。"""
+        v = check_report.check_daily(make_report(), snap_with_derived(), BRIEF)
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x for x in v), v)
+
+    def test_empty_verdict_is_a_violation(self):
+        v = check_report.check_daily(make_report(),
+                                     snap_with_derived(verdict="  "), BRIEF)
+        self.assertTrue(any("VERDICT_EMPTY" in x for x in v), v)
+
+    def test_new_schema_missing_field_is_absent(self):
+        """新 schema 却漏写字段 = 脚本缺陷,必须响亮。"""
+        v = check_report.check_daily(make_report(),
+                                     snap_with_derived(verdict=None), BRIEF)
+        self.assertTrue(any("VERDICT_ABSENT" in x and "events_verdict" in x
+                            for x in v), v)
+
+    def test_legacy_schema_is_skipped_not_passed(self):
+        """存量快照 derived.schema_version=1:跳过,不判违规,但必须计数。"""
+        notes = []
+        v = check_report.check_daily(
+            make_report(), snap_with_derived(schema_version=1, verdict=None),
+            BRIEF, notes=notes)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("VERDICT_SKIPPED_LEGACY", notes[0])
+        self.assertIn("1 个币种", notes[0])
+
+    def test_legacy_count_covers_every_currency(self):
+        notes = []
+        check_report.check_daily(
+            make_report(),
+            snap_with_derived(schema_version=1, verdict=None,
+                              currencies=check_report.CURRENCIES),
+            BRIEF, notes=notes)
+        self.assertIn("5 个币种", notes[0])
+
+    def test_missing_schema_version_is_treated_as_legacy(self):
+        snap = dict(SNAP)
+        snap["derived"] = {"rates": {}, "real_rate": {}, "events": {"USD": {}}}
+        notes = []
+        v = check_report.check_daily(make_report(),
+                                     json.dumps(snap, ensure_ascii=False),
+                                     BRIEF, notes=notes)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+        self.assertEqual(len(notes), 1)
+
+    def test_bool_schema_version_is_not_a_number(self):
+        """True >= 2 在 Python 里是 False,但 True 也不该被当成版本号。"""
+        snap = dict(SNAP)
+        snap["derived"] = {"schema_version": True, "events": {"USD": {}}}
+        notes = []
+        v = check_report.check_daily(make_report(),
+                                     json.dumps(snap, ensure_ascii=False),
+                                     BRIEF, notes=notes)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+        self.assertEqual(len(notes), 1)
+
+    def test_legacy_snapshot_with_a_sentence_is_still_checked(self):
+        """闸门只放行「缺字段」,不放行「字段在但引错了」。"""
+        v = check_report.check_daily(make_report(),
+                                     snap_with_derived(schema_version=1), BRIEF)
+        self.assertTrue(any("VERDICT_NOT_QUOTED" in x for x in v), v)
+
+    def test_missing_section_does_not_double_report(self):
+        """让位 ①:缺币种节只报 SECTION_MISSING 一条。"""
+        v = check_report.check_daily(
+            make_report(missing="THB"),
+            snap_with_derived(currencies=("THB",)), BRIEF)
+        self.assertTrue(any("SECTION_MISSING" in x and "THB" in x for x in v), v)
+        self.assertFalse([x for x in v if "VERDICT" in x], v)
+
+    def test_snapshot_without_derived_is_inert(self):
+        """既有快照(无 derived 节)行为完全不变。"""
+        notes = []
+        v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes)
+        self.assertEqual(v, [])
+        self.assertEqual(notes, [])
+
+    def test_derived_not_a_dict_does_not_crash(self):
+        for bad in ("oops", [1], 7, None):
+            snap = dict(SNAP)
+            snap["derived"] = bad
+            v = check_report.check_daily(make_report(),
+                                         json.dumps(snap, ensure_ascii=False),
+                                         BRIEF)
+            self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
+
+
+class DailySkipNoticeIsPrintedTest(unittest.TestCase):
+    """「跳过」与「通过」在输出上必须可区分 —— 这正是本 change 要解决的
+    同型问题,所以跳过声明本身必须有测试。"""
+
+    def _write(self, tmp, report_text, snap_text):
+        rp = os.path.join(tmp, "r.md")
+        sp = os.path.join(tmp, "s.json")
+        for path, text in ((rp, report_text), (sp, snap_text)):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        return rp, sp
+
+    def test_legacy_notice_printed_alongside_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, sp = self._write(tmp, make_report(),
+                                 snap_with_derived(schema_version=1,
+                                                   verdict=None))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("VERDICT_SKIPPED_LEGACY", out)
+        self.assertIn("CHECK PASSED", out)
+
+    def test_no_notice_when_schema_is_current(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, sp = self._write(tmp, report_quoting(DAILY_VERDICT),
+                                 snap_with_derived())
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertNotIn("VERDICT_SKIPPED_LEGACY", out)
+
+
+class VerdictFieldSyncTest(unittest.TestCase):
+    """常量元组与产出端字段名同步 —— 常量里拼错一个字母,检查会静默地
+    什么都不查,而所有既有测试照样全绿(本仓库的典型失败形态)。"""
+
+    def test_daily_field_exists_in_derive_output(self):
+        for f in check_report.VERDICT_FIELD_DAILY:
+            self.assertIn(f, derive.EMPTY_EVENTS_DERIVED)
+
+    def test_weekly_fields_exist_in_digest_output(self):
+        snaps = [{"date": "2026-08-10", "gaps": [],
+                  "rates": {"PHP": {"primary": 60.867, "ref_date": "2026-08-10"}},
+                  "events": {"PHP": {"articles": [], "official": []}}},
+                 {"date": "2026-08-11", "gaps": [],
+                  "rates": {"PHP": {"primary": 60.75, "ref_date": "2026-08-11"}},
+                  "events": {"PHP": {"articles": [], "official": []}}}]
+        d = weekly_digest.build(snaps, [], "2026-W33")[0]
+        for f in check_report.VERDICT_FIELDS_EVENTS:
+            self.assertIn(f, d["events"]["PHP"])
+        for f in check_report.VERDICT_FIELDS_RATES:
+            self.assertIn(f, d["rates"]["PHP"])
+
+    def test_schema_gate_matches_derive_version(self):
+        """闸门常量落后于 derive.SCHEMA_VERSION 时,新快照会被当成存量跳过。"""
+        self.assertLessEqual(check_report.DERIVED_VERDICT_SCHEMA,
+                             derive.SCHEMA_VERSION)
