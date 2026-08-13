@@ -2154,8 +2154,11 @@ M = [
     ("M2 in 方向写反", C,
      "            if s not in report:",
      "            if report not in s:"),
+    # M3 锚点已在 T6b 随 check_daily 重写而变更(旧锚点 derived.get("events")
+    # 内联传参,现改为局部变量 events)。协调者于 T8 前置复验时实测 0 处匹配
+    # 并按当前源码校正;勿凭记忆改回。
     ("M3 日报侧根本不查", C,
-     '    found, skipped = check_verdicts(report, derived.get("events"),',
+     "    found, skipped = check_verdicts(report, events,",
      "    found, skipped = check_verdicts(report, None,"),
     ("M4 三类只查一类", C,
      '                (digest.get("events"), VERDICT_FIELDS_EVENTS, "digest.events"),\n'
