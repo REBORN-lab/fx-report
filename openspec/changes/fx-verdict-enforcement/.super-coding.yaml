@@ -1,16 +1,16 @@
 workflow: full
 phase: build
 context_compression: off
-build_mode: null
+build_mode: subagent-driven-development
 build_pause: null
-subagent_dispatch: null
-tdd_mode: null
-isolation: null
+subagent_dispatch: confirmed
+tdd_mode: tdd
+isolation: branch
 verify_mode: null
 auto_transition: true
 base_ref: 92e773bb907fe3d2964566fed218ba3ebd1973bd
 design_doc: docs/superpowers/specs/2026-08-13-fx-verdict-enforcement-design.md
-plan: null
+plan: docs/superpowers/plans/2026-08-13-fx-verdict-enforcement.md
 verify_result: pending
 verification_report: null
 branch_status: pending
@@ -19,3 +19,4 @@ verified_at: null
 archived: false
 handoff_context: openspec/changes/fx-verdict-enforcement/.super-coding/handoff/design-context.json
 handoff_hash: afeae2f96f8438e56484ff156580796d215f278f348c75b500b32fd10a5103cc
+bound_branch: feature/20260813/fx-verdict-enforcement
