@@ -175,7 +175,7 @@ rates 中 suspect 为 true 的币种,汇率行须注明"(双源偏差超阈,数�
    **例外(快照未落结论句)**:要点表该行写的是"结论句不可得(快照未落结论句)"
    时,根本没有句子可引,本条不适用——此时正文照常陈述该币种事件面的事实即可,
    并**禁止自行补造一句结论句**。**例外的适用范围以第 5 步的判别为准**:
-   `VERDICT_SKIPPED_LEGACY` 一律**免除**;`VERDICT_SKIPPED_NO_DERIVED` **只在窗口
+   `VERDICT_SKIPPED_LEGACY` 一律**免除逐字引用**;`VERDICT_SKIPPED_NO_DERIVED` **只在窗口
    已移过 DATE 那一支免除**——窗口仍覆盖 DATE 时是当日 derive 崩了,该按第 5 步
    重跑采集把结论句补出来。
 

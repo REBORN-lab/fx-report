@@ -184,13 +184,32 @@ class DailySkillTest(SkillDocTestCase):
         missing = sorted(set(self.BANNED_FLOOR) - set(fields))
         self.assertFalse(
             missing, "禁令句里少了这些布尔 —— 靠削禁令句放绿?%s" % missing)
+        # 句式对账:`BAN_RE` 认的是 `**禁止**据 … 自行拼装` 这一个句式,换个句式
+        # 写第三条禁令、点名一个新布尔,字段抽不出来、地板也不缺 —— 静默失守
+        # (实测:抽出仍是原来那些,缺失为 [],全绿)。这里用**下面循环本来就在
+        # 用的那个判据**("禁止"且"拼装")独立数一遍禁令句,两种识别方式对不上
+        # 就响亮地红,不引入任何需要人工维护的第七份名单。
+        #
+        # **这不是根治**:既不含"禁止"也不含"拼装"的禁令仍然漏得掉。真正的根治
+        # 是让 derive 导出字段清单供测试读(verify 待办第 10 条),那要动
+        # scripts/,不在本 change 范围 —— 别因为有了这四行就把那条待办划掉。
+        ban_sentences = [s for s in sentences(t) if "禁止" in s and "拼装" in s]
+        self.assertEqual(
+            len([s for s in ban_sentences if BAN_RE.search(s)]),
+            len(ban_sentences),
+            "有禁令句没用 `**禁止**据 … 自行拼装` 句式,里面的字段抽不出来")
         for field in sorted(set(fields)):
             for s in mentions(t, field):
                 self.assertTrue(
                     "禁止" in s and "拼装" in s,
                     "%s 的这一处提及不是禁止拼装、而是在教着按布尔拼话术:%s"
                     % (field, s))
-        self.assertIn("与前值持平", t, "堵 delta=0 → 持平 的规则不能被一删了之")
+        # 段级:该串全文 count=1 且就落在第 2 步「派生指标」项里,所以钉在那一段
+        # 上零成本 —— 全文级会让"把这条规则挪到别处"照样绿。
+        self.assertIn(
+            "与前值持平",
+            self.seg_or_fail(DAILY, STEP2_DERIVED_RE, "第 2 步「派生指标」项"),
+            "堵 delta=0 → 持平 的规则不能被一删了之,也不能挪出该段")
 
     def test_the_no_verdict_label_is_neutral(self):
         """第 2 步那个标签串是禁令 9 豁免口的**触发条件**,四站必须逐字一致,
