@@ -799,21 +799,57 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
       取反组合各跑一遍。
     - **V9**:两份输入产出的违规**全是 `VERDICT_NOT_QUOTED`**,按码族滤掉
       `ABSENT/EMPTY/MALFORMED`(最该响亮失败的"脚本缺陷"族)时 rc 仍是 1、
-      `VERDICT_` 仍在 stdout,旧断言绿。现在输入按码枚举(8 个码都要触发到,
-      并由 `seen` 集合闭合),判据升级为**基线上出现过的那一组码一个都不许少**。
+      `VERDICT_` 仍在 stdout,**这条 argv 守卫**绿。现在输入按码枚举
+      (8 个码都要触发到,并由 `seen` 集合闭合),判据升级为
+      **基线上出现过的那一组码一个都不许少**。
+      **数字更正(T8d,第三次同型)**:T8c 报告那一格写「修前:旧测试
+      **rc=0 OK**」,那是**只跑守卫类**的结果,不是全量。T8d 在父提交
+      `3142839` 上逐字复跑(`git archive 3142839` 展开的干净副本,
+      本机无 `FRED_API_KEY`):变异体落点是该树 `scripts/check_report.py`
+      第 413-414 行 `# 降级声明先于结论打印` / `for note in notes:` **之前**
+      插入三行
+      `violations = [x for x in violations if not x.startswith((
+       "VERDICT_ABSENT", "VERDICT_EMPTY", "VERDICT_MALFORMED"))]` ——
+      * 全量:`Ran 680 tests / FAILED (failures=2) / rc=1`,红的两条是
+        `CheckerPrintsItsOwnDispositionTest.test_every_verdict_violation_line_carries_a_disposition`
+        与 `…test_script_defect_codes_carry_the_other_disposition`,
+        **不是**那条 argv 守卫;
+      * 单跑 `NoLegacyExemptionSwitchTest`:`Ran 2 tests / OK / rc=0`。
+      同树基线为 `Ran 680 tests / OK / rc=0`。
+      也就是说 V9 这条缺口**是真的**(守卫本身确实收不到),但「全量全绿」
+      的说法当时就跑不出来 —— 别的测试碰巧红了。
     - **V14**:守卫是进程内 `check_report.main(argv)`,`sys.argv` 对它天然
       不可见 —— 把扳机从 `_rest` 改成 `sys.argv` 就逃掉了。现在
       `test_production_shapes_stay_red_in_a_real_subprocess` 对生产形状跑
       **真子进程**,让 `sys.argv` 与进程环境真正参与。
 
+    ## T8d 两条:基线自证 + 「已注册但当前 mode 不读」的选项
+
+    - **自证基线**:`base_codes` 此前**由被测(可能已变异)的校验器自己
+      算出来**。某条 base 整族少一个码时,它还剩 4 个码 → `assertTrue`
+      绿、rc 仍 1、逐变体 `missing = base_codes - codes(out)` **恒空**;
+      末尾闭合 `seen == want` 也绿,因为**别的 base 还在出**那个码。
+      现在 `_bases()` 的第 4 位是**写死的期望码集合字面量**,进变体循环
+      前先 `assertEqual`。实测见 `DAILY_BASE_CODES` 上方。
+    - **不读的既有选项**:`_variants` 此前只会**追加**裸 token / `--<token>` /
+      `--<token> 1` / `--mode <token>` / 魔法位置参数五种形状,**从不打开
+      一个已注册的既有选项**;而 daily 分支从不读 `--digest`/`--daily`、
+      weekly 分支从不读 `--brief`,三个各自一行的变异全部存活。
+      第六族补上,实测见 `UNREAD_OPTION_VALUE` 上方。
+
     仍然**不是**"没有任何 argv":守的是 `EXEMPTION_TOKENS` × 句法位置 ×
-    既有开关取反,加上生产形状的子进程复核。词表之外的 token 不在覆盖内。
+    既有开关取反 × 当前 mode 不读的既有选项,加上生产形状的子进程复核。
+    词表之外的 token、以及**测试进程观察不到的通道**(`sys.modules` 探测、
+    未提交的 `tests/` 改动等)不在覆盖内 —— 后者已由协调者与 A 类同列为
+    无界边界,不再为它加哨兵。
     """
 
     def test_cli_option_set_is_frozen(self):
         """**辅助**断言,不是主守卫 —— 冻的是选项名集合,不是豁免语义。
         位置参数(option_strings 为空)与 parse_known_args(零注册)都能绕过它,
-        见类注释的四条实测。"""
+        见类注释的四条实测。**第五条(T8d)**:根本不必新增选项 —— 拿
+        「当前 mode 不读的那几个既有选项」当扳机,这里逐字不变、全绿,
+        而真 CLI rc 1→0(见 `UNREAD_OPTION_VALUE`)。"""
         opts = {s for a in check_report.build_parser()._actions
                 for s in a.option_strings}
         self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
@@ -869,7 +905,7 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         """
         rc, out = (run or self._run_cli)(argv)
         if rc == 2:
-            return
+            return rc, out
         if base_rc:
             self.assertNotEqual(
                 rc, 0,
@@ -880,10 +916,26 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
             missing,
             "argv=%r 让这些码整类消失了:%s\n%s"
             % (argv, sorted(missing), out))
+        return rc, out
 
-    def _variants(self, base, free_positional=None):
+    # 「当前 mode **不读**的已注册选项」→ 拿哪个既有文件当它的值。
+    # daily 分支从不读 `args.digest` / `args.daily`,weekly 分支从不读
+    # `args.brief`(check_report.py 的 main:400-452)。这三个选项因此是
+    # **免费的隐藏豁免扳机**:注册表逐字不动、`option_strings` 不变,
+    # `test_cli_option_set_is_frozen` 全绿,而各自一行的
+    # `if args.mode == "daily" and args.digest:` /
+    # `if args.strict_brief and args.daily:` /
+    # `if args.mode == "weekly" and args.brief:` 就能滤掉整类 VERDICT_*。
+    # 实测(T8d,acdd7de 工作树):三条全量都是 `Ran 686 / OK / rc=0`,
+    # 而生产命令行加 `--digest off` / `--daily off` / `--brief off` 分别
+    # rc 1→0(`CHECK FAILED (5)`→`CHECK PASSED`、weekly 侧 `(4)`→PASSED)。
+    UNREAD_OPTION_VALUE = {"--digest": "w_multi", "--daily": "d_report",
+                           "--brief": "brief"}
+
+    def _variants(self, base, free_positional=None, unread_options=()):
         """base 之上派生 argv。free_positional 给的是"可塞魔法值的既有位置参数"
-        在 base 里的下标(weekly 模式下 snapshot 位不读,正是变体 2 的落点)。
+        在 base 里的下标(weekly 模式下 snapshot 位不读,正是变体 2 的落点);
+        unread_options 给的是"当前 mode 不读的既有选项"名字。
 
         **裸 token 必须试三种位置**,这是实测出来的:只把它追加在**末尾**时,
         argparse 已经在前面那段位置参数区里把 `nargs="?"` 的新位置参数配成
@@ -891,10 +943,18 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         (`ap.add_argument("tolerant", nargs="?")`)**照样存活**(实测:新断言
         rc=0 PASS,而同一份输入的真 CLI 是 `CHECK PASSED`)。塞进位置参数区、
         或用 `--` 强制当位置参数,才能真正喂到那个 action。
+
+        **第六族(T8d 新增)必须打开一个已注册的既有选项**。前五族只会
+        *追加* 新 token,从不动既有选项 —— 于是"当前 mode 不读的那几个选项"
+        整类没人试过,而它们是零注册成本的豁免扳机(见 UNREAD_OPTION_VALUE)。
+        每个不读的选项试两次:带**真路径值**一次(扳机只要 truthy 就够),
+        带**豁免味魔法值**一次。
         """
         head = next((i for i, t in enumerate(base) if t.startswith("-")),
                     len(base))
         out = [list(base)]
+        for opt in unread_options:                            # 第六族:真路径值
+            out.append(list(base) + [opt, self.paths[self.UNREAD_OPTION_VALUE[opt]]])
         for tok in self.EXEMPTION_TOKENS:
             out.append(list(base) + [tok])                    # 裸 token 在尾部
             out.append(base[:head] + [tok] + base[head:])     # 裸 token 在位置参数区
@@ -910,6 +970,8 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                 magic = list(base)
                 magic[free_positional] = tok
                 out.append(magic)
+            for opt in unread_options:                        # 第六族:魔法值
+                out.append(list(base) + [opt, tok])
         return out
 
     @classmethod
@@ -979,8 +1041,31 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         return [p["w_report"], "--mode", "weekly", "--digest", p["w_multi"],
                 "--daily", p["d_report"], "--daily", p["d_report"]]
 
+    # ---- 每条 base 的**期望码集合字面量**(T8d)----
+    # 此前 `base_codes` 是**用被测(可能已变异)的校验器自己算出来的**,
+    # 于是"某条 base 整族少一个码"这一形态对整个循环完全不可见:该 base
+    # 还剩 4 个码 → `assertTrue(base_codes)` 绿、rc 仍 1、逐变体
+    # `missing = base_codes - codes(out)` **恒空**;末尾的闭合断言
+    # `seen == want` 也绿,因为**别的 base 还在出**那个码。
+    # 实测(T8d,acdd7de 工作树):在 main() 的 `for note in notes:` 前插一行
+    # `if args.strict_brief: violations = [x for x in violations
+    #  if not x.startswith("VERDICT_NOT_QUOTED")]`(注册表零改动)——
+    # 全量 `Ran 686 tests / OK / rc=0`,而 skills/fx-daily-report/SKILL.md:222
+    # 与 README.md:129 那条**一字未改**的生产日报命令行由 `CHECK FAILED (5)`
+    # rc=1 变 `CHECK PASSED` rc=0。`VERDICT_NOT_QUOTED` 是整个 change 的主码。
+    # **这与电池「登记 m = len(M)」是同一个病:期望值由被检对象自己提供。**
+    # 解药是字面量:8 条 daily base 的码集合完全相同(5 个)、6 条 weekly
+    # 完全相同(4 个),实测可写死;码集合变了就必须显式改这里,会进 diff。
+    DAILY_BASE_CODES = frozenset({
+        "VERDICT_NOT_QUOTED", "VERDICT_ABSENT", "VERDICT_MALFORMED",
+        "VERDICT_EMPTY", "VERDICT_ENTRY_MISSING"})
+    WEEKLY_BASE_CODES = frozenset({
+        "VERDICT_NOT_QUOTED", "VERDICT_ABSENT", "VERDICT_MALFORMED",
+        "VERDICT_EMPTY"})
+
     def _bases(self):
-        """(标签, base argv, 可塞魔法值的位置参数下标)。
+        """(标签, base argv, 可塞魔法值的位置参数下标, **期望码集合**,
+        当前 mode 不读的既有选项)。
 
         前两组是**生产命令行 × 每个既有开关的取反**:日报三个开关
         (`--mode` 显式/缺省、`--brief` 有/无、`--strict-brief` 有/无)共 8 条;
@@ -988,8 +1073,13 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         `--digest` 不参与取反:不给它就是"不做结论句校验",那是设计内的
         行为(由 test_without_digest_object_no_verdict_check 单独钉),
         不是豁免。后四条把上面两组触发不到的码补齐。
+
+        第 4 位是**自证基线的解药**(见 DAILY_BASE_CODES 上方的实测);
+        第 5 位喂给 `_variants` 的第六族(见 UNREAD_OPTION_VALUE)。
         """
         p = self.paths
+        d_unread = ("--digest", "--daily")
+        w_unread = ("--brief",)
         out = []
         for use_mode in (True, False):
             for use_brief in (True, False):
@@ -1002,7 +1092,8 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                     if use_strict:
                         argv += ["--strict-brief"]
                     out.append(("daily mode=%d brief=%d strict=%d"
-                                % (use_mode, use_brief, use_strict), argv, None))
+                                % (use_mode, use_brief, use_strict), argv, None,
+                                self.DAILY_BASE_CODES, d_unread))
         for n_daily in (2, 1, 0):
             for snap_slot in (False, True):
                 argv = [p["w_report"]]
@@ -1013,39 +1104,50 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                 argv += ["--mode", "weekly", "--digest", p["w_multi"]]
                 argv += ["--daily", p["d_report"]] * n_daily
                 out.append(("weekly daily=%d snapslot=%d"
-                            % (n_daily, snap_slot), argv, fp))
+                            % (n_daily, snap_slot), argv, fp,
+                            self.WEEKLY_BASE_CODES, w_unread))
         out.append(("daily 容器坏",
                     [p["d_report"], p["d_container"], "--brief", p["brief"],
-                     "--mode", "daily", "--strict-brief"], None))
+                     "--mode", "daily", "--strict-brief"], None,
+                    frozenset({"VERDICT_CONTAINER_MALFORMED"}), d_unread))
         out.append(("weekly 容器坏",
                     [p["w_report"], "--mode", "weekly", "--digest",
-                     p["w_container"], "--daily", p["d_report"]], None))
+                     p["w_container"], "--daily", p["d_report"]], None,
+                    frozenset({"VERDICT_CONTAINER_MALFORMED"}), w_unread))
         out.append(("daily 无 derived(只出降级声明)",
                     [p["d_report"], p["d_noderived"], "--brief", p["brief"],
-                     "--mode", "daily", "--strict-brief"], None))
+                     "--mode", "daily", "--strict-brief"], None,
+                    frozenset({"VERDICT_SKIPPED_NO_DERIVED"}), d_unread))
         out.append(("daily schema 过旧(只出降级声明)",
                     [p["d_report"], p["d_legacy"], "--brief", p["brief"],
-                     "--mode", "daily", "--strict-brief"], None))
+                     "--mode", "daily", "--strict-brief"], None,
+                    frozenset({"VERDICT_SKIPPED_LEGACY"}), d_unread))
         return out
 
     def test_listed_exemption_tokens_cannot_make_verdict_codes_disappear(self):
         """**主守卫**,名字按实测口径:守的是 `EXEMPTION_TOKENS` × 句法位置 ×
         既有开关取反这一**有界**集合,不是"没有任何 argv"。
 
-        每条 base 先自跑一遍取基线码集合(空集即空转,直接红),然后要求
-        每个变体都不丢码;基线 rc 非 0 的还要求 rc 不得变 0。
+        每条 base 先自跑一遍取基线码集合,并与**写死的期望字面量**逐字比对
+        (T8d:基线不能由被测二进制自己提供,否则整族少一个码时逐变体判据
+        `missing = base_codes - codes(out)` 恒空 —— 见 DAILY_BASE_CODES);
+        然后要求每个变体都不丢码;基线 rc 非 0 的还要求 rc 不得变 0。
         最后闭合:所有 base 的码集合并起来必须**恰好**是校验器的 8 个码 ——
         少一个就说明有一族码从来没被这轮枚举看过(V9 的根因)。
         """
         seen = set()
-        for label, base, fp in self._bases():
+        for label, base, fp, expected, unread in self._bases():
             base_rc, base_out = self._run_cli(base)
             base_codes = self._codes(base_out)
-            self.assertTrue(base_codes,
-                            "base「%s」一个 VERDICT_* 都没触发,整轮空转\n%s"
-                            % (label, base_out))
+            self.assertEqual(
+                base_codes, set(expected),
+                "base「%s」的基线码集合与写死的期望不符 —— 基线不许由被测"
+                "校验器自己提供:少了 %s,多了 %s\n%s"
+                % (label, sorted(set(expected) - base_codes),
+                   sorted(base_codes - set(expected)), base_out))
             seen |= base_codes
-            for argv in self._variants(base, free_positional=fp):
+            for argv in self._variants(base, free_positional=fp,
+                                       unread_options=unread):
                 # subTest 标签带**整条 argv**(含位置参数):只打 argv[2:] 时,
                 # "把魔法值塞进既有位置参数"那一类变体的失败消息里看不出改了什么
                 with self.subTest(base=label, argv=" ".join(
@@ -1061,13 +1163,27 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
 
         子进程数有意压在 ~42 次(每次约 50ms):句法位置的完整覆盖由上面
         那条进程内的枚举承担,这一条只负责把 `sys.argv` 与进程环境接进来。
+
+        **T8d 两处补强**:
+        - 基线码集合与**写死的字面量**比,不再由被测二进制自证;
+        - 每一条输出都过 `assert_own_disposition` —— 处置表此前在生产
+          argv 形状与真子进程下**完全无人看守**(见该函数的实测)。
         """
-        for label, base in (("daily 生产命令行", self._production_daily()),
-                            ("weekly 生产命令行", self._production_weekly())):
+        for label, base, expected in (
+                ("daily 生产命令行", self._production_daily(),
+                 self.DAILY_BASE_CODES),
+                ("weekly 生产命令行", self._production_weekly(),
+                 self.WEEKLY_BASE_CODES)):
             base_rc, base_out = self._run_subprocess(base)
             base_codes = self._codes(base_out)
             self.assertEqual(base_rc, 1, (label, base_out))
-            self.assertTrue(base_codes, (label, base_out))
+            self.assertEqual(base_codes, set(expected),
+                             "%s 的基线码集合与写死的期望不符\n%s"
+                             % (label, base_out))
+            # 生产形状下每个触发到的违规码都必须带**它自己那一条**处置
+            self.assertEqual(assert_own_disposition(self, base_out, label),
+                             set(expected) - set(VERDICT_NOTE_CODES),
+                             "%s 有码没被处置断言看过\n%s" % (label, base_out))
             argvs = [base]
             for tok in self.EXEMPTION_TOKENS:
                 argvs.append(list(base) + [tok])
@@ -1075,8 +1191,9 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
             for argv in argvs:
                 with self.subTest(base=label, argv=" ".join(
                         os.path.basename(a) for a in argv)):
-                    self._assert_no_code_lost(argv, base_rc, base_codes,
-                                              run=self._run_subprocess)
+                    rc, out = self._assert_no_code_lost(
+                        argv, base_rc, base_codes, run=self._run_subprocess)
+                    assert_own_disposition(self, out, "%s %s" % (label, argv[-1]))
 
 
 DAILY_VERDICT = "当日采到 11 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
@@ -1504,6 +1621,52 @@ VERDICT_VIOLATION_DISPOSITION = {
 VERDICT_NOTE_CODES = ("VERDICT_SKIPPED_LEGACY", "VERDICT_SKIPPED_NO_DERIVED")
 
 
+def assert_own_disposition(tc, out, label):
+    """对 stdout 里**每一条** `VERDICT_*` 违规行断言:行尾恰是它自己那一条
+    处置、且不含另一条。返回被断言到的码集合。
+
+    ---- T8d:处置断言此前**一条都没跑在生产 argv 形状或真子进程上** ----
+    `WANT_*_VERBATIM` / `WANT_*_DISPOSITION` 的命中全部落在
+    `CheckerPrintsItsOwnDispositionTest`,而那个类只用 `redirect_stdout` +
+    **进程内** `main()`,日报侧更是 `main([rp, sp])` —— 不带 `--brief`、
+    不带 `--mode`、**不带 `--strict-brief`**;而带生产形状的两条
+    (`test_listed_exemption_tokens_…` / `test_production_shapes_…`)
+    只断言 rc 与码集合,**从不看处置文本**。等于处置表在生产命令行下
+    完全无人看守。
+    实测(T8d,acdd7de 工作树,本机无 FRED_API_KEY):在 main() 的
+    `for note in notes:` 前插
+      `if args.strict_brief:`
+      `    violations = [x.replace(DISPOSITION_QUOTE, DISPOSITION_SCRIPT_BUG)`
+      `                  for x in violations]`
+    → 全量 `Ran 686 tests / OK / rc=0`(校验器于是对生产日报的
+    `VERDICT_NOT_QUOTED` 亲口说"这是脚本缺陷,改报告没用");
+    而**形态完全对称**的 `if not args.strict_brief:` 同一段替换
+    → `Ran 686 tests / FAILED (failures=4) / rc=1`。
+    这一不对称本身就是"处置表只在非生产形状下被看守"的直接证据。
+    同一段替换挂在 `if "unittest" not in sys.modules:` 下(N2 形态)也是
+    全量 `Ran 686 / OK / rc=0` —— 真子进程里 `unittest` 不在 `sys.modules`,
+    所以把这个断言接进子进程能同时覆盖它。
+    """
+    both = (WANT_QUOTE_VERBATIM, WANT_SCRIPT_BUG_VERBATIM)
+    seen = set()
+    for raw in out.splitlines():
+        line = raw.lstrip(" -").rstrip()
+        m = re.match(r"(VERDICT_[A-Z_]+):", line)
+        if not m or m.group(1) not in VERDICT_VIOLATION_DISPOSITION:
+            continue      # 降级声明(notes)不带处置,处置有意留在 SKILL
+        code = m.group(1)
+        want = VERDICT_VIOLATION_DISPOSITION[code]
+        other = [d for d in both if d != want][0]
+        tc.assertTrue(line.endswith(want),
+                      "%s:%s 的处置不是它自己那一条(或不在行尾):%s"
+                      % (label, code, line))
+        tc.assertNotIn(other, line,
+                       "%s:%s 的违规行里同时出现了另一条处置:%s"
+                       % (label, code, line))
+        seen.add(code)
+    return seen
+
+
 def _emitted_verdict_codes(module_path):
     """扫源码里**被打印出去的**违规/声明码。
 
@@ -1534,15 +1697,26 @@ class CheckerPrintsItsOwnDispositionTest(unittest.TestCase):
     """
 
     def _daily_stdout(self, report, snap_text):
+        """**生产形状 argv**(T8d):skills/fx-daily-report/SKILL.md:222 与
+        README.md:129 那条命令行逐字同形,含 `--brief` / `--mode daily` /
+        `--strict-brief`。
+
+        此前这里是 `main([rp, sp])` —— 三个开关一个都不带。于是所有处置
+        断言都跑在**非生产形状**上,`if args.strict_brief: <对调处置表>`
+        这一行全量全绿(实测见 `assert_own_disposition`),而生产日报命令行
+        每次都带 `--strict-brief`。
+        """
         with tempfile.TemporaryDirectory() as tmp:
             rp = os.path.join(tmp, "r.md")
             sp = os.path.join(tmp, "s.json")
-            for path, text in ((rp, report), (sp, snap_text)):
+            bp = os.path.join(tmp, "b.md")
+            for path, text in ((rp, report), (sp, snap_text), (bp, BRIEF)):
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(text)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp])
+                rc = check_report.main([rp, sp, "--brief", bp,
+                                        "--mode", "daily", "--strict-brief"])
             return rc, buf.getvalue()
 
     def _weekly_stdout(self, report, digest_text):
@@ -1747,14 +1921,18 @@ class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
         cls.brief = os.path.join(cls.t, "brief.md")
         with open(cls.brief, "w", encoding="utf-8") as f:
             f.write(BRIEF)
-        # (标签, 报告正文, 附件正文, 附件扩展名, argv 拼法)
+        # (标签, 报告正文, 附件正文, 附件扩展名, argv 拼法, **期望码集合**)
+        # 最后一位是 T8d 补的:基线码集合不许由被测校验器自己算出来,
+        # 否则整族少一个码时 `missing = base_codes - codes(out)` 恒空。
         cls.MODES = (
             ("daily", make_report(), json.dumps(snap, ensure_ascii=False),
              ".json", lambda rp, ap, bp: [rp, ap, "--brief", bp,
-                                          "--mode", "daily", "--strict-brief"]),
+                                          "--mode", "daily", "--strict-brief"],
+             NoLegacyExemptionSwitchTest.DAILY_BASE_CODES),
             ("weekly", WEEKLY_OK, json.dumps(wobj, ensure_ascii=False),
              ".json", lambda rp, ap, bp: [rp, "--mode", "weekly",
-                                          "--digest", ap]),
+                                          "--digest", ap],
+             NoLegacyExemptionSwitchTest.WEEKLY_BASE_CODES),
         )
 
     @classmethod
@@ -1776,14 +1954,17 @@ class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
         return r.returncode, r.stdout, r.stderr
 
     def _baseline(self, mode):
-        label, rtext, atext, ext, build = mode
+        label, rtext, atext, ext, build, expected = mode
         rp = self._write("base-%s.md" % label, rtext)
         ap = self._write("base-%s%s" % (label, ext), atext)
         argv = build(rp, ap, self.brief)
         rc, out, err = self._run(argv)
         codes = NoLegacyExemptionSwitchTest._codes(out)
         self.assertEqual(rc, 1, (label, out, err))
-        self.assertTrue(codes, (label, out))
+        # T8d:与写死的字面量比,不许由被测二进制自证基线
+        self.assertEqual(codes, set(expected),
+                         "%s 的基线码集合与写死的期望不符\n%s" % (label, out))
+        assert_own_disposition(self, out, "%s 基线" % label)
         return argv, codes
 
     def _assert_same_verdict(self, label, argv, base_codes, env=None):
@@ -1793,11 +1974,13 @@ class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
         missing = base_codes - NoLegacyExemptionSwitchTest._codes(out)
         self.assertFalse(missing, "%s:这些码消失了 %s\n%s"
                          % (label, sorted(missing), out))
+        # 处置也必须在每一种扰动下不变(真子进程 + 生产形状)
+        assert_own_disposition(self, out, label)
 
     def test_filenames_do_not_change_the_verdict(self):
         """扰动 ①:文件名。含 V12 那条 `.draft.md`,以及无扩展名/随机名。"""
         for mode in self.MODES:
-            label, rtext, atext, ext, build = mode
+            label, rtext, atext, ext, build, _ = mode
             _, base_codes = self._baseline(mode)
             ap = self._write("fn-%s%s" % (label, ext), atext)
             for rn in ("r.draft.md", "2026-08-13-DRAFT.md",
@@ -1819,7 +2002,7 @@ class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
         """扰动 ②:被查对象里追加任意未知字段/注释。含 V8 的
         `<!-- verdict-exempt -->` 与 V7 的 `verdict_check:"off"`。"""
         for mode in self.MODES:
-            label, rtext, atext, ext, build = mode
+            label, rtext, atext, ext, build, _ = mode
             _, base_codes = self._baseline(mode)
             ap = self._write("xf-%s%s" % (label, ext), atext)
             reports = {

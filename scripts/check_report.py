@@ -60,9 +60,15 @@ DERIVED_VERDICT_SCHEMA = 2
 #   ① 码 → 处置的**逐码**对应(CheckerPrintsItsOwnDispositionTest):
 #      两串各自 assertEqual 逐字钉死、必须出现在违规行**结尾**、且每个码
 #      带的必须是它自己那一条、不得同时出现另一条。
-#      (只断言"带了某条处置"时,把 5 个 DISPOSITION_SCRIPT_BUG 使用点全换成
+#      (只断言"带了某条处置"时,把**其余 5 处** DISPOSITION_SCRIPT_BUG 换成
 #      DISPOSITION_QUOTE 照样全量 OK —— 校验器于是亲口叫运维去人工粉饰一个
-#      产出端缺陷。)
+#      产出端缺陷。口径与测试侧那句一致:两个常量在本文件里**共 7 个使用点**
+#      (DISPOSITION_SCRIPT_BUG 6 处 + DISPOSITION_QUOTE 1 处),T8b 之前逐字
+#      钉死的只有 NOT_QUOTED 与 ABSENT 两处,可对调的是**其余 5 处**。
+#      T8d 更正:这里此前写「5 个 DISPOSITION_SCRIPT_BUG 使用点」,实为 6 个。
+#      复跑:`grep -n "DISPOSITION_SCRIPT_BUG\|DISPOSITION_QUOTE"
+#      scripts/check_report.py` —— 去掉本段注释与两行定义,余下 7 行即
+#      7 个使用点。)
 #   ② 码清单冻结:新增码不入表就红,不再自称"自动被守"。
 # 改这里的文案就必须同时改测试里的期望值 —— 显式动作、进 diff。
 #

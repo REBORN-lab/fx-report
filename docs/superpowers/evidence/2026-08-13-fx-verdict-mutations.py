@@ -29,13 +29,17 @@
    汇总行里的「登记」就是 `len(M)`,它不是独立事实源:实测删掉一部分靶点
    (`M = M[:2]`)三个数一起缩水、仍退出 0;把 M 清空则打印
    「KILLED 0 / 执行 0 / 登记 0」退出 0。地板让「靶点被删」在下一次跑时炸。
-5. **源码指纹** —— 每次跑都打印被变异文件的 sha256,**以及电池自身的 sha256**。
+5. **源码指纹** —— 每次跑都打印被变异文件的 sha256、**电池自身的 sha256**、
+   **`git rev-parse HEAD`**,以及 **`tests/` 目录的指纹**(T8d 补后两项)。
    靶点是照着某一版源码写的字面串,源码改了而靶点没跟上时 STALE 才会响;
    指纹让「这次跑的到底是不是那一版字节」在归档报告里可核对。本 change 内
    M3 就腐坏过一次(T6b 改 check_daily 后锚点 0 处匹配),是人工前置复验才
    发现的。电池自身此前**不打指纹** —— 针对电池的篡改连人读的线索都没有。
    (指纹现在取自**文件字节**;此前取的是解码后文本再编码,对无 BOM 的
    UTF-8 文件同值,所以历史指纹仍可比。)
+   **T8d:`tests/` 此前一个指纹都没有,而真正执行杀伤的就是它。**
+   5 个被变异文件的指纹只回答「被打的是哪一版字节」,不回答「开枪的是
+   哪一版字节」—— 归档报告里的「KILLED n/n」全部来自 `tests/`。
 6. **靶点指纹** —— 每条靶点打印 `sha256("\\0".join(name, path, old, new))[:8]`。
    第 4 道地板守的是 `len(M)`,**不是靶点身份**,对「等量替换」完全失明。
    实测:把 M14 从带 `SUPPRESS` 的隐藏开关弱化成不带 SUPPRESS 的可见开关
@@ -55,8 +59,19 @@
    一次性断裂,不是腐坏。
    **注意:只打印、不比对** —— 把上一次的指纹记进仓库并自动比对是另一个
    设计决定,不在本轮范围。
-7. **事实源在电池之外(T8c 新增)** —— 开跑前与 `finally` 末尾各取一次
-   `git status --porcelain`,不相等就炸。
+7. **事实源在电池之外(T8c 新增)+ 跑前必须干净(T8d 补)** ——
+   开跑前 `git status --porcelain` **必须为空**,否则拒跑并列出脏文件;
+   开跑前与 `finally` 末尾各取一次,不相等就炸。
+   **只比「前后相等」是不够的**(T8d 实证,不是对抗构造):把靶点换成一条
+   **纯注释改写**(行为零影响),干净树上跑是 `SURVIVED / KILLED 0 / 执行 1`、
+   **rc=1**;而在 `tests/test_check_report.py` 的既有方法里加两行 sha256
+   钉死(**不新增测试、不改测试数**)再跑同一份电池 → **rc=0**、
+   `KILLED 1 / 执行 1 / 登记 1`、`BASELINE OK — Ran … tests`(与提交态同数)、
+   5 个文件指纹**与干净态逐字节相同**、第 7 道**完全静默**
+   —— 因为 ` M tests/test_check_report.py` 在 before 与 after 里都在,两者相等。
+   **「先改测试、跑电池、再提交」是本仓库的正常工序**,顺序一颠倒,归档报告
+   里的「KILLED n/n」就归属到一棵没人能复跑的树上。所以判据升级为
+   **「跑前干净」+「跑前跑后相等」**,并把 HEAD 与 `tests/` 指纹一并入档。
    前面那些逐字节校验比的都是**电池自己内存里的 `orig`**,所以「把 `orig`
    本身读脏」这一类改动它们一道也不响。实测(2026-08-13,T8c 工作树,
    靶点缩到 1 条):把**旧**电池的备份读取改成 `orig[p] = f.read()[1:]`
@@ -104,10 +119,19 @@ M11(BOUND)由 T7 代码质量复审移交,计划里没有:「在文件尾部追�
 T8b 版本的本文件写着「每份比备份少 1 字节(25304→25303 / 19377→19376 /
 2130→2129 / 17281→17280 / 9057→9056)」。后四个数在当时的树上对得上,
 **第一个对不上任何一个提交**:`git show <rev>:scripts/check_report.py | wc -c`
-在本分支 13 个版本上给出 26213/22774/22265/21065/18634/17318/17126/15734/
-14912/11627/10141/8199/6856,**无一为 25304**。25304 是 T8b 那次跑时
-**工作树**里 check_report.py 的大小(证据:同次跑留下的仓库外备份文件
-就是 25304 字节),不是任何一棵可复跑的树。
+**截至父提交 `3142839` 的 13 个版本**上给出 26213/22774/22265/21065/18634/
+17318/17126/15734/14912/11627/10141/8199/6856,**无一为 25304**。
+(T8d 更正:「本分支 13 个版本」这句话在**它自己所在的提交**上就已经不成立
+—— `git rev-list acdd7de -- scripts/check_report.py` 是 **14** 个,多出来的
+首项就是 acdd7de 自己的 **29208** 字节。所以这句改成带基准的说法。
+复跑:`git rev-list 3142839 -- scripts/check_report.py | wc -l` → 13;
+`git rev-list HEAD -- scripts/check_report.py | wc -l` → 14。)
+25304 是 T8b 那次跑时**工作树**里 check_report.py 的大小,不是任何一棵
+可复跑的树。**它的唯一实物证据(同次跑留下的仓库外备份文件)在会话临时
+目录里,已随会话清理消失** —— T8d 复查 `/tmp/fx-verdict-mutations-orig-*`
+现存 19 个目录,`scripts_check_report.py` 的大小只有 29208/29207/29744
+三种,**无一为 25304**。故 25304 就此标为**已失效的历史观测**:
+不引用临时路径、不当作可复现事实,只保留「它不属于任何提交」这一结论。
 上面第 2 / 第 7 条里的数字已按 **T8c 工作树**重跑重记,并在每处注明所属树。
 教训写在这里而不是删掉:**跑不出来的数字要么逐字更正,要么标注所属树**,
 不能留在档案里当作可复现事实。
@@ -294,8 +318,38 @@ def git_status():
     return r.stdout
 
 
+def git_head():
+    r = subprocess.run(["git", "rev-parse", "HEAD"],
+                       capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError("git rev-parse HEAD 跑不起来:" + r.stderr.strip())
+    return r.stdout.strip()
+
+
 def sha_bytes(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def tree_fp(root):
+    """目录指纹:把该目录下每个文件的 (相对路径, 字节) 依次喂进一个 sha256,
+    返回 (指纹, 文件数)。跳过 `__pycache__`(电池自己会清,不是源事实)。
+
+    **T8d 补的就是这一项**:5 个被变异文件的指纹回答「被打的是哪一版字节」,
+    而**开枪的是 `tests/`**,它此前一个指纹都没有。归档报告里的
+    「KILLED n/n」若不带 `tests/` 指纹,就无法回答「这 n 条是被哪一版
+    断言杀死的」。
+    """
+    h = hashlib.sha256()
+    paths = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+        paths.extend(os.path.join(dirpath, fn) for fn in filenames)
+    for p in sorted(paths):
+        h.update(p.encode("utf-8"))
+        h.update(b"\0")
+        h.update(read(p))
+        h.update(b"\0")
+    return h.hexdigest(), len(paths)
 
 
 def sha_text(text):
@@ -315,6 +369,21 @@ def target_fp(name, path, old, new):
     return sha_text("\0".join((name, path, old, new)))[:8]
 
 
+# **开跑前工作树必须干净**(T8d)。判据是 git,不是电池自己的内存快照。
+# 只要求「跑前跑后相等」是不够的:未提交的 `tests/` 改动在 before 与 after
+# 里都在、两者相等,于是第 7 道全程静默,而**杀伤恰恰是 `tests/` 执行的**——
+# 一条纯注释靶点在干净树上 `SURVIVED / rc=1`,在带两行未提交 sha256 钉死的
+# 树上就是 `KILLED 1 / 执行 1 / 登记 1 / rc=0`,指纹与提交态逐字节相同。
+status_before = git_status()
+if status_before.strip():
+    print("工作树不干净,拒绝跑电池。")
+    print("电池的杀伤全部由 `tests/` 执行;未提交的改动会让「KILLED n/n」")
+    print("归属到一棵没人能复跑的树上(归档报告里的数字就此不可核对)。")
+    print("先提交或 stash,再跑。脏文件:")
+    for line in status_before.splitlines():
+        print("  " + line)
+    raise SystemExit(1)
+
 orig = {p: read(p) for p in FILES}
 
 # 仓库外原文副本。`finally` 在 SIGKILL / 外部超时下**不执行**,工作树会停在
@@ -332,12 +401,18 @@ print()
 env = {k: v for k, v in os.environ.items() if k in ENV_WHITELIST}
 env["PYTHONDONTWRITEBYTECODE"] = "1"
 
+print("HEAD: %s(工作树干净,已在开跑前用 git status --porcelain 确认)"
+      % git_head())
+print()
 print("被变异文件指纹(sha256,取自文件字节):")
 for p in FILES:
     print("  %-40s %s  %d bytes" % (p, sha_bytes(orig[p]), len(orig[p])))
 # 电池自身也打指纹 —— 否则针对电池的篡改连人读的线索都没有
 print("  %-40s %s" % ("(电池自身)" + os.path.basename(__file__),
                       sha_bytes(read(os.path.abspath(__file__)))))
+# **执行杀伤的是 tests/**,上面 5 个指纹只说明「被打的是哪一版字节」
+_tests_fp, _tests_n = tree_fp("tests")
+print("  %-40s %s  %d files" % ("(开枪的)tests/", _tests_fp, _tests_n))
 print()
 print("靶点指纹(sha256(\\0.join(name,path,old,new))[:8],只打印不比对):")
 for name, path, old, new in M:
@@ -354,7 +429,6 @@ def suite():
                           capture_output=True, text=True, env=env)
 
 
-status_before = git_status()
 base = suite()
 if base.returncode:
     print("BASELINE 不干净,拒绝跑电池(不绿时的 KILLED 全是假杀):")
