@@ -104,6 +104,14 @@ class DailySkillTest(unittest.TestCase):
     BANNED_FLOOR = ("count_capped", "sample_capped", "main_sample_capped",
                     "channel_changed_from", "dropped_malformed")
 
+    # `source_capped` 同样被禁,却**抽不出来**:禁它的那句(第 2 步"昨日事件
+    # top"那段)同时含权威字段 `events_verdict`,正则分不开被禁字段与该引用的
+    # 字段;放宽锚点去抽那一句,会把 `events_verdict` 也抽成"被禁布尔",于是
+    # 循环要求全文每一处 `events_verdict` 都落在禁令内 —— 整个循环失去意义。
+    # F9 已验证过这个坑,所以这里显式并入,而不是去动锚点。
+    # 它不进 BANNED_FLOOR:地板管的是"禁令句里不许少字段",而它不在那句里。
+    EXTRA_BANNED = ("source_capped",)
+
     def test_every_mention_of_a_banned_boolean_sits_inside_a_ban(self):
         """一边禁止据这些布尔拼话术、一边教着按它们拼话术,两句字面冲突,
         而"哪一句算数"无处可判。
@@ -127,7 +135,7 @@ class DailySkillTest(unittest.TestCase):
         missing = sorted(set(self.BANNED_FLOOR) - set(fields))
         self.assertFalse(
             missing, "禁令句里少了这些布尔 —— 靠削禁令句放绿?%s" % missing)
-        for field in fields:
+        for field in sorted(set(fields) | set(self.EXTRA_BANNED)):
             for s in mentions(t, field):
                 self.assertTrue(
                     "禁止" in s and "拼装" in s,
@@ -140,6 +148,26 @@ class DailySkillTest(unittest.TestCase):
         self.assertIn("精确子串包含", t)
         self.assertIn("改动一个字符", t)
 
+    def test_the_no_verdict_label_is_neutral(self):
+        """第 2 步那个标签串是禁令 9 豁免口的**触发条件**,两处必须逐字一致,
+        而且它不能叫"(存量快照)"。
+
+        叫"(存量快照)"时形成这条链:**当日 derive 崩了**的快照也走第 2 步这一行
+        → 被贴上事实错误的"存量"标签 → 禁令 9 的豁免正按这个字面串生效、该币种
+        免除逐字引用 → 校验器此档只出 VERDICT_SKIPPED_NO_DERIVED 声明(rc 0),
+        没有第二道拦。第 5 步 F6 那轮已经把"不是快照旧不旧"写进判别标准了,
+        第 2 步和禁令 9 却还按"NO_DERIVED = 存量快照"写 —— 同一形态三处口径打架。
+        """
+        t = flat(DAILY)
+        self.assertNotIn(
+            "结论句不可得(存量快照)", t,
+            "标签把「快照里没有这一句」当成了「快照旧」——当日 derive 崩了的"
+            "快照会被错误豁免")
+        self.assertIn("结论句不可得(快照未落结论句)", t, "中性标签不见了")
+        self.assertGreaterEqual(
+            t.count("结论句不可得(快照未落结论句)"), 2,
+            "标签只出现一次 —— 第 2 步的定义与禁令 9 豁免口的引用必须同串")
+
     def test_ban_nine_carves_out_the_legacy_snapshot_case(self):
         """禁令 9 无条件要求逐字照抄结论句,而第 2 步规定该键不存在或为 null 时
         该行写"结论句不可得(存量快照)" —— 此时根本没有句子可引。LLM 面对
@@ -150,11 +178,26 @@ class DailySkillTest(unittest.TestCase):
         2026-08-07..10 这 4 份连 derived 节都没有(走 VERDICT_SKIPPED_NO_DERIVED),
         2026-08-11/12 这 2 份 schema_version=1 低于闸门 2(走
         VERDICT_SKIPPED_LEGACY)。**两个码都要在豁免口里点名**:只写一个,
-        另一个码的持有者会以为豁免不适用于自己。"""
+        另一个码的持有者会以为豁免不适用于自己。
+
+        主规则也要守:原先只查了豁免口,把"必须在**该币种节**内**逐字**出现"
+        削成"在美元节内出现即可"(五币种缩到一个币种)照样绿 —— 修复的覆盖
+        只盖住了自己新加的那半句。
+
+        豁免口对 `VERDICT_SKIPPED_NO_DERIVED` 必须**限定在窗口已移过那一支**:
+        当日 derive 崩了的快照也发这个码,若无条件豁免,第 2 步给它贴上标签 →
+        禁令 9 按字面免除该币种的逐字引用 → 校验器此档只出声明(rc 0),
+        没有第二道拦。"""
         seg = block(raw(DAILY), r"(?m)^9\. \*\*事件结论句.*?(?=\n\n)")
         self.assertIsNotNone(seg, "没摘到禁令 9 段落,正则或文档结构变了")
-        self.assertIn("存量快照", seg, "禁令 9 缺存量快照豁免口")
+        # 主规则(I1):这半句被削掉时,原来的断言一条都不会红
+        self.assertIn("该币种节", seg, "主规则的作用域被削(五币种→单币种?)")
+        self.assertIn("逐字", seg, "主规则丢了「逐字」要求")
+        # 豁免口
+        self.assertIn("本条不适用", seg, "禁令 9 缺豁免口")
         self.assertIn("禁止自行补造", seg, "禁令 9 没堵住「自己编一句」")
+        self.assertIn("窗口已移过", seg,
+                      "豁免口没把 NO_DERIVED 限定在窗口已移过那一支")
         for code in ("VERDICT_SKIPPED_NO_DERIVED", "VERDICT_SKIPPED_LEGACY"):
             self.assertIn(code, seg, "豁免口漏点名 %s" % code)
 
@@ -172,14 +215,24 @@ class LegacyCodeDispositionTest(unittest.TestCase):
         这条缝是本轮自己开的:禁令 9 的豁免口已点名该码是合法跳过档、无句可引,
         处置表却仍叫人去重跑采集。同一份文档一处说"不必补救"、一处说"重跑",
         「哪一句算数」无处可判 —— 正是本 change 要消灭的形态。
-        两支都必须在,且判别标准要可执行(采集窗口是否还覆盖该日)。"""
+        两支都必须在,且判别标准要可执行(采集窗口是否还覆盖该日)。
+
+        锚点必须取两支**各自独有**的整串。原先断言的是"重跑"与"存量快照",
+        两个词在段内都由**另一支**供给("此时重跑采集拿回的不是当日那批条目"、
+        分支二的"(存量快照)"标签),于是整支删掉照样绿 —— 审查实测把分支一
+        整段删除,全量 rc=0、变异存活,F6 被完整回退而无人知晓。
+        断言当时能红 ≠ 断言守得住回退。"""
         seg = block(raw(DAILY),
                     r"(?m)^- `VERDICT_SKIPPED_NO_DERIVED`.*?(?=\n\n|\n- `|\Z)")
         self.assertIsNotNone(seg, "没摘到 VERDICT_SKIPPED_NO_DERIVED 的处置段")
-        self.assertIn("重跑", seg, "窗口仍覆盖 DATE 的那一支要保留重跑采集")
         self.assertIn("采集窗口", seg, "缺可执行的判别标准,读者判不出自己属哪支")
-        self.assertIn("存量快照", seg, "缺窗口已移过 DATE 的那一支")
-        self.assertIn("禁止自行补造", seg, "存量那一支没堵住「自己编一句」")
+        self.assertIn("窗口仍覆盖", seg, "分支一(重跑采集)整支没了")
+        # seg 已压平,断言串不能带空格
+        self.assertIn("重跑第1步采集", seg, "分支一丢了可执行动作")
+        self.assertIn("重做第2步与第4步", seg,
+                      "分支一只说重跑采集,没说要回头重做要点表与报告")
+        self.assertIn("窗口已移过", seg, "分支二(无补救)整支没了")
+        self.assertIn("禁止自行补造", seg, "分支二没堵住「自己编一句」")
 
     def test_legacy_disposition_names_no_nonexistent_derive_entry(self):
         seg = block(raw(DAILY),
@@ -195,16 +248,35 @@ class LegacyCodeDispositionTest(unittest.TestCase):
 
 
 class WeeklySkillTest(unittest.TestCase):
-    def test_three_verdict_fields_named(self):
-        t = flat(WEEKLY)
+    """周报侧必须与日报侧同级:段落级,不是全文级。
+
+    三个字段名在模板节与纪律第 4 条另有出现,「整句逐字」「精确子串包含」也
+    在别处出现,所以全文级 assertIn 证明不了它们落在同一条规则里。审查实测:
+    把纪律第 1 条整条改成「`articles_verdict` 只准照抄……`fixings_verdict` 与
+    `official_verdict` 可自行改写」—— 与 delta spec 的「三类结论句全覆盖」直接
+    相反 —— 全量 671 仍然全绿;单独摘掉 `official_verdict`、单独摘掉
+    `fixings_verdict` 也各自存活。
+    """
+
+    def ban_one(self):
+        return block(raw(WEEKLY), r"(?m)^1\. \*\*三条结论句.*?(?=\n\n|\n\d+\. )")
+
+    def test_all_three_verdicts_are_quote_only_in_one_rule(self):
+        seg = self.ban_one()
+        self.assertIsNotNone(seg, "没摘到「计数与结论纪律」第 1 条")
+        self.assertIn("不准改写", seg, "第 1 条的「只准照抄,不准改写」被换掉了")
         for field in ("fixings_verdict", "articles_verdict", "official_verdict"):
-            self.assertIn(field, t, field)
+            self.assertIn(field, seg, "%s 不在第 1 条的照抄范围内" % field)
+        # 正面锁住规则本身,负面这条挡的是更隐蔽的变体:保留标题、另加一句
+        # 「某某可自行改写」把个别字段摘出去。delta spec 要求三类全覆盖,
+        # 「可自行改写」在这一条里没有任何合法用法。
+        self.assertNotIn("可自行改写", seg, "有字段被摘出照抄范围")
 
     def test_states_the_exact_substring_rule(self):
-        t = flat(WEEKLY)
-        self.assertIn("整句逐字", t)
-        self.assertIn("精确子串包含", t)
-        self.assertIn("改动一个字符", t)
+        seg = self.ban_one()
+        self.assertIsNotNone(seg, "没摘到「计数与结论纪律」第 1 条")
+        for rule in ("整句逐字", "精确子串包含", "改动一个字符"):
+            self.assertIn(rule, seg, "%s 不在第 1 条内" % rule)
 
 
 CODE_RE = re.compile(r'"(VERDICT_[A-Z_]+):')
