@@ -760,6 +760,97 @@ class WeeklyVerdictQuotingTest(unittest.TestCase):
                             and "digest.rates" in x for x in v), v)
 
 
+def _args_attrs(nodes):
+    """一批 AST 节点里出现过的所有 `args.<x>` 的属性名。"""
+    found = set()
+    for n in nodes:
+        for x in ast.walk(n):
+            if isinstance(x, ast.Attribute) and isinstance(x.value, ast.Name) \
+                    and x.value.id == "args":
+                found.add(x.attr)
+    return found
+
+
+def _attrs_outside(node, skip):
+    """`node` 子树里的 `args.<x>`,但**剪掉** `skip` 这个 if 的两个分支体
+    (只保留它的 test)—— 也就是「两个 mode 都会走到的那些读取」。"""
+    if node is skip:
+        return _args_attrs([skip.test])
+    acc = set()
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
+            and node.value.id == "args":
+        acc.add(node.attr)
+    for child in ast.iter_child_nodes(node):
+        acc |= _attrs_outside(child, skip)
+    return acc
+
+
+def _mode_read_dests():
+    """**从源码推出**每个 mode 实际读到的 `args.*` dest 集合。
+
+    这是 T8e 的修法。T8d 用的是**手写清单**,而它在落地的同一棵树上就已经
+    漏了 `--strict-brief`(weekly 分支既不读 `args.brief` 也不读
+    `args.strict_brief`)—— 手写表本身就是本 change 要消灭的「第二份拷贝」:
+    它与源码之间没有任何机械联系,漏一个不会有人知道。
+
+    做法:AST 解析 `check_report.py`,定位 `main()` 里按 `args.mode` 分派的
+    那个 `if`,`body` / `orelse` 各自 walk 出 `args.<x>`,再并上**分支之外**
+    的读取(两个 mode 都会走到)。任何一步认不出预期形状就 `AssertionError`
+    炸掉 —— **绝不能静默返回空集**:那会让第六族整族无声消失,正是这里要
+    消灭的病。
+    """
+    with open(check_report.__file__, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    fns = [n for n in ast.walk(tree)
+           if isinstance(n, ast.FunctionDef) and n.name == "main"]
+    if len(fns) != 1:
+        raise AssertionError("check_report 里 main() 不是恰好 1 个:%d" % len(fns))
+    main_fn = fns[0]
+    ifs = [n for n in ast.walk(main_fn)
+           if isinstance(n, ast.If) and "mode" in _args_attrs([n.test])]
+    if len(ifs) != 1:
+        raise AssertionError(
+            "main() 里读 args.mode 的 if 不是恰好 1 个(%d)—— 分派形状变了,"
+            "推导不敢猜,先更新本函数" % len(ifs))
+    node = ifs[0]
+    cmps = [c for c in ast.walk(node.test) if isinstance(c, ast.Compare)]
+    if len(cmps) != 1 or len(cmps[0].ops) != 1 \
+            or not isinstance(cmps[0].ops[0], ast.Eq) \
+            or not isinstance(cmps[0].comparators[0], ast.Constant):
+        raise AssertionError(
+            "mode 分派不是 `args.mode == '<字面量>'` 这一形状:%s"
+            % ast.dump(node.test))
+    positive = cmps[0].comparators[0].value
+    choices = set(next(a.choices for a in check_report.build_parser()._actions
+                       if a.dest == "mode"))
+    rest = choices - {positive}
+    if positive not in choices or len(rest) != 1:
+        raise AssertionError(
+            "分派字面量 %r 与 --mode 的 choices %s 对不上(推导只支持两分支)"
+            % (positive, sorted(choices)))
+    outside = _attrs_outside(main_fn, node)
+    return {positive: outside | _args_attrs(node.body),
+            rest.pop(): outside | _args_attrs(node.orelse)}
+
+
+def unread_option_specs(mode):
+    """该 mode **不读**的已注册选项:`((选项名, 是否带值), ...)`。
+
+    = `build_parser()` 注册的选项 dest 集合 − 该 mode 分支实际读到的 dest
+    集合。这两端都是从源码取的,没有第三份需要人去同步的清单。
+    位置参数(`option_strings` 为空)不在此列 —— 它们由 `_variants` 的
+    「既有位置参数魔法值」那一族覆盖。
+    """
+    read = _mode_read_dests()[mode]
+    specs = []
+    for a in check_report.build_parser()._actions:
+        if not a.option_strings or a.dest == "help" or a.dest in read:
+            continue
+        longs = [s for s in a.option_strings if s.startswith("--")]
+        specs.append((max(longs or a.option_strings, key=len), a.nargs != 0))
+    return tuple(specs)
+
+
 class NoLegacyExemptionSwitchTest(unittest.TestCase):
     """豁免机制本身会成为下一个绕过点(Design Doc §6)。
 
@@ -837,6 +928,20 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
       weekly 分支从不读 `--brief`,三个各自一行的变异全部存活。
       第六族补上,实测见 `UNREAD_OPTION_VALUE` 上方。
 
+    ## T8e 一条:第六族的成员表**当时是手写的,而它当场就是错的**
+
+    T8d 给第六族喂的是手写清单 `w_unread = ("--brief",)` —— 可 weekly 分支
+    **既不读 `args.brief` 也不读 `args.strict_brief`**,清单在落地的同一棵树上
+    就漏了一个,于是 `--strict-brief` 从来没有任何变体试过。两名独立复验者
+    各自撞上同一条(实测记在 `test_unread_option_derivation_matches_literal`)。
+    **手写表本身就是本 change 要消灭的那种「第二份拷贝」**:它与源码之间
+    没有任何机械联系,漏一个不会有人知道。所以修的不是「把 `--strict-brief`
+    补进清单」,而是**换成机械推导**:`build_parser()` 注册的选项 dest,
+    减去 `main()` 里该 mode 分支实际读到的 `args.*`(AST 走 `main()`,
+    按 mode 分支收 `Attribute(value=Name('args'))`),差集就是这一族的输入。
+    推导单独用会犯 T8d 刚治过的「自证」病(源码被变异,推导跟着漂),
+    故 `_bases()` 喂的是**推导 ∪ 字面量**,并由那条哨兵要求两者相等。
+
     仍然**不是**"没有任何 argv":守的是 `EXEMPTION_TOKENS` × 句法位置 ×
     既有开关取反 × 当前 mode 不读的既有选项,加上生产形状的子进程复核。
     词表之外的 token、以及**测试进程观察不到的通道**(`sys.modules` 探测、
@@ -854,6 +959,68 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                 for s in a.option_strings}
         self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
                                 "--strict-brief", "--digest", "--daily"})
+
+    # 「当前 mode 不读的既有选项」的**期望字面量**。它**不驱动任何变体** ——
+    # 驱动第六族的是 `unread_option_specs()` 的推导结果(见该函数)。
+    # 这里只是**防退化哨兵**:AST 走空、`main()` 被重构成推导认不出的形状时,
+    # 推导会静默塌成空集,第六族随之整族消失 —— 那正是 T8e 要消灭的那个病
+    # (静默的覆盖缺口),所以它必须响亮失败而不是悄悄不跑。
+    UNREAD_OPTIONS_EXPECTED = {
+        "daily": (("--digest", True), ("--daily", True)),
+        "weekly": (("--brief", True), ("--strict-brief", False)),
+    }
+
+    def test_unread_option_derivation_matches_literal(self):
+        """推导出的「当前 mode 不读的既有选项」必须与写死的期望逐字相等。
+
+        **T8e 的靶心**:T8d 那版是**手写清单**(`w_unread = ("--brief",)`),
+        而 weekly 分支既不读 `args.brief` **也不读 `args.strict_brief`` ——
+        手写表在落地的同一棵树上就漏了一个,`--strict-brief` 因此从未被任何
+        变体试过。实测(HEAD a61ee1e,修前):在 `main()` 的
+        `for note in notes:` 前插一行
+        `if args.mode == "weekly" and args.strict_brief: violations =
+        [x for x in violations if not x.startswith("VERDICT_")]` ——
+        全量 `Ran 686 / OK / rc=0`、本类单跑 rc=0(**存活**),而周报生产
+        命令行(skills/fx-weekly-report/SKILL.md:126 / README.md:131 同形)
+        加一个 `--strict-brief` 由 `CHECK FAILED (16)`(其中 11 行
+        `VERDICT_*`)变成 `CHECK FAILED (5)`(`VERDICT_*` **0 行**)——
+        整个结论句校验层无声蒸发。
+
+        手写表就是本 change 要消灭的那种「第二份拷贝」,所以修法是
+        **推导替代手写**,而不是把 `--strict-brief` 补进清单。
+
+        **但推导单独用会犯 T8d 刚治过的那个病:期望值由被检对象自己提供。**
+        推导读的是**可能已被变异的** `check_report.py` —— 攻击者只要把扳机
+        写进 weekly 分支体内(`if args.strict_brief: violations = [...]`,
+        插在 `violations = check_weekly(...)` 之后),该分支就「读」了
+        `args.strict_brief`,于是这个选项**自己走出第六族**,主守卫从此看
+        不见它。实测(HEAD a61ee1e + 本轮推导,`_bases` 只用推导时):
+        全量 rc=1、本类 rc=1,但红的**只有本条哨兵**
+        (`FAILED (failures=1)`),主守卫
+        `test_listed_exemption_tokens_cannot_make_verdict_codes_disappear`
+        **是绿的**,而生产周报命令行 `VERDICT_*` 仍从 11 行掉到 0 行。
+        所以 `_bases()` 喂给第六族的是**推导 ∪ 字面量**:推导补上人漏掉的
+        (T8d 那个洞),字面量钉住攻击者搬不走的(这个洞),本条哨兵要求
+        两者相等 —— 一旦分歧,三个位置一起响。
+        """
+        for mode in sorted(self.UNREAD_OPTIONS_EXPECTED):
+            self.assertEqual(
+                set(unread_option_specs(mode)),
+                set(self.UNREAD_OPTIONS_EXPECTED[mode]),
+                "mode=%s 的「不读选项」推导结果与写死的期望不符 —— 要么 main() "
+                "真的改了读法(那就改这里的字面量并说明),要么推导塌了" % mode)
+
+    def _unread_specs(self, mode):
+        """喂给 `_variants` 第六族的规格 = **推导 ∪ 字面量**。
+
+        单用推导会被「把扳机写进分支体内」搬走(见上一条哨兵的实测);
+        单用字面量就是 T8d 那张漏了 `--strict-brief` 的手写表。两者取并集
+        时,任一侧多出来的选项都仍会被试到;干净树上两者相等,并集不带来
+        任何额外变体。推导塌掉(`AssertionError`)时**不吞异常**:那是
+        fail-closed,红着停比静默少跑一族好。
+        """
+        return tuple(set(unread_option_specs(mode))
+                     | set(self.UNREAD_OPTIONS_EXPECTED[mode]))
 
     # 豁免味的 token。**不是穷举所有单词**,而是穷举"要加豁免开关的人会起的
     # 名字"× 它能出现的每一种句法位置(裸位置参数 / 长选项 / 长选项带值 /
@@ -918,10 +1085,12 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
             % (argv, sorted(missing), out))
         return rc, out
 
-    # 「当前 mode **不读**的已注册选项」→ 拿哪个既有文件当它的值。
-    # daily 分支从不读 `args.digest` / `args.daily`,weekly 分支从不读
-    # `args.brief`(check_report.py 的 main:400-452)。这三个选项因此是
-    # **免费的隐藏豁免扳机**:注册表逐字不动、`option_strings` 不变,
+    # 「当前 mode **不读**的已注册选项」是**推导出来的**(见
+    # `unread_option_specs`),不再有手写清单。这张表只回答另一个问题:
+    # 带值的那几个选项,拿哪个既有文件当值 —— 它是 fixture 映射,不是成员表,
+    # 缺项会在 `_variants` 里响亮 fail(不会让某个选项被静默跳过)。
+    #
+    # 这些选项是**免费的隐藏豁免扳机**:注册表逐字不动、`option_strings` 不变,
     # `test_cli_option_set_is_frozen` 全绿,而各自一行的
     # `if args.mode == "daily" and args.digest:` /
     # `if args.strict_brief and args.daily:` /
@@ -935,7 +1104,8 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     def _variants(self, base, free_positional=None, unread_options=()):
         """base 之上派生 argv。free_positional 给的是"可塞魔法值的既有位置参数"
         在 base 里的下标(weekly 模式下 snapshot 位不读,正是变体 2 的落点);
-        unread_options 给的是"当前 mode 不读的既有选项"名字。
+        unread_options 给的是"当前 mode 不读的既有选项"规格
+        `((选项名, 是否带值), ...)`,**由 `unread_option_specs()` 从源码推出**。
 
         **裸 token 必须试三种位置**,这是实测出来的:只把它追加在**末尾**时,
         argparse 已经在前面那段位置参数区里把 `nargs="?"` 的新位置参数配成
@@ -944,17 +1114,24 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         rc=0 PASS,而同一份输入的真 CLI 是 `CHECK PASSED`)。塞进位置参数区、
         或用 `--` 强制当位置参数,才能真正喂到那个 action。
 
-        **第六族(T8d 新增)必须打开一个已注册的既有选项**。前五族只会
-        *追加* 新 token,从不动既有选项 —— 于是"当前 mode 不读的那几个选项"
-        整类没人试过,而它们是零注册成本的豁免扳机(见 UNREAD_OPTION_VALUE)。
-        每个不读的选项试两次:带**真路径值**一次(扳机只要 truthy 就够),
-        带**豁免味魔法值**一次。
+        **第六族(T8d 新增,T8e 改为推导驱动)必须打开一个已注册的既有选项**。
+        前五族只会 *追加* 新 token,从不动既有选项 —— 于是"当前 mode 不读的那
+        几个选项"整类没人试过,而它们是零注册成本的豁免扳机。
+        带值的选项试两次:带**真路径值**一次(扳机只要 truthy 就够),带
+        **豁免味魔法值**一次;`store_true` 那种不带值的,裸开一次即可。
         """
         head = next((i for i, t in enumerate(base) if t.startswith("-")),
                     len(base))
+        need = [o for o, takes_value in unread_options
+                if takes_value and o not in self.UNREAD_OPTION_VALUE]
+        if need:
+            self.fail("推导出的带值「不读选项」没有 fixture 值可喂:%s —— "
+                      "在 UNREAD_OPTION_VALUE 里补一个既有文件,别让它被跳过"
+                      % ", ".join(need))
         out = [list(base)]
-        for opt in unread_options:                            # 第六族:真路径值
-            out.append(list(base) + [opt, self.paths[self.UNREAD_OPTION_VALUE[opt]]])
+        for opt, takes_value in unread_options:               # 第六族:真值/裸开
+            out.append(list(base) + ([opt, self.paths[self.UNREAD_OPTION_VALUE[opt]]]
+                                     if takes_value else [opt]))
         for tok in self.EXEMPTION_TOKENS:
             out.append(list(base) + [tok])                    # 裸 token 在尾部
             out.append(base[:head] + [tok] + base[head:])     # 裸 token 在位置参数区
@@ -970,8 +1147,9 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                 magic = list(base)
                 magic[free_positional] = tok
                 out.append(magic)
-            for opt in unread_options:                        # 第六族:魔法值
-                out.append(list(base) + [opt, tok])
+            for opt, takes_value in unread_options:           # 第六族:魔法值
+                if takes_value:
+                    out.append(list(base) + [opt, tok])
         return out
 
     @classmethod
@@ -1075,11 +1253,16 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         不是豁免。后四条把上面两组触发不到的码补齐。
 
         第 4 位是**自证基线的解药**(见 DAILY_BASE_CODES 上方的实测);
-        第 5 位喂给 `_variants` 的第六族(见 UNREAD_OPTION_VALUE)。
+        第 5 位喂给 `_variants` 的第六族,**由 `_unread_specs()` 给出:
+        源码推导 ∪ 写死的字面量**(T8e)。T8d 那版是纯手写的
+        `w_unread = ("--brief",)`,在落地的同一棵树上就漏了 `--strict-brief`
+        —— 手写清单与源码之间没有机械联系,漏一个没人会知道;而纯推导又能
+        被「把扳机写进分支体内」搬走(两条实测都记在
+        `test_unread_option_derivation_matches_literal` 里)。
         """
         p = self.paths
-        d_unread = ("--digest", "--daily")
-        w_unread = ("--brief",)
+        d_unread = self._unread_specs("daily")
+        w_unread = self._unread_specs("weekly")
         out = []
         for use_mode in (True, False):
             for use_brief in (True, False):
