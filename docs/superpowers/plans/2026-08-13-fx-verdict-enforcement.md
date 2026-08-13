@@ -205,7 +205,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/weekly_digest.py`(import 段;`_fixings_verdict` 第 66-70 行;`_verdict` 第 476 行)
 - Modify: `tests/test_verdicts.py`
 
-- [ ] **T2 Step 1: 写会红的测试**
+- [x] **T2 Step 1: 写会红的测试**
 
 在 `tests/test_verdicts.py` 的 `if __name__` **之前**插入(同时把文件顶部的 import 段补成下面这样):
 
@@ -276,7 +276,7 @@ class RefactorIsByteIdenticalTest(unittest.TestCase):
             "区间内 2 次不同定盘(2026-08-10 至 2026-08-11)")
 ```
 
-- [ ] **T2 Step 2: 跑测试确认失败**
+- [x] **T2 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -285,7 +285,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts -v
 
 Expected: `WeeklyRoutesThroughJoinVerdictTest` 的 2 个用例 ERROR,报 `AttributeError: <module 'scripts.weekly_digest'> does not have the attribute 'join_verdict'`;`RefactorIsByteIdenticalTest` 的 4 个用例已经是 PASS(安全网),`JoinVerdictTest` 6 个 PASS(Task 1 修复轮追加了逐字节锚点用例)。
 
-- [ ] **T2 Step 3: 实现 —— 三处编辑**
+- [x] **T2 Step 3: 实现 —— 三处编辑**
 
 3a. `scripts/weekly_digest.py` 第 25 行 `from scripts.fixings import distinct_fixings, num as _num` **之后**加一行:
 
@@ -332,7 +332,7 @@ from scripts.verdicts import join_verdict
 
 **不要动** `_verdict` 的其余三个 return(第 418、478、479 行):它们不是 `head(caveats)` 形态,硬套拼装口会改变输出。
 
-- [ ] **T2 Step 4: 跑测试确认通过**
+- [x] **T2 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -341,7 +341,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts tests.test_wee
 
 Expected: `OK`。`tests.test_weekly_digest` 里既有的 `VerdictTest` / `VerdictInvariantTest` / `VerdictDomainTest` / `FixingsVerdictTest` 全部保持绿 —— 它们断言的是逐字原文,是这次重构最强的安全网。任一变红说明输出被改了,按 `systematic-debugging` 定位,**不要改断言**。
 
-- [ ] **T2 Step 5: 勾选并提交**
+- [x] **T2 Step 5: 勾选并提交**
 
 把 tasks.md 里 `- [ ] 2.5 新建 \`scripts/verdicts.py\`` 那一行改成 `- [x] 2.5 ...`,然后:
 

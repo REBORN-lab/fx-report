@@ -22,24 +22,29 @@
 
 ## 当前状态
 
-- 当前 task: **T2**
+- 当前 task: **T3**
 - 阶段: `implementing`
 - 审查-修复轮次: 0 / 3
 - 实现提交: (待)
 - RED 证据: (待)
 - GREEN 证据: (待)
-- 未解决反馈: T1 遗留 3 条 Minor,已并入 T2 一并处理(见下)
+- 未解决反馈: 见下方「已决定的处置」(M2 挂 T5)
 
-### T1 遗留 Minor(在 T2 顺手修,那个文件本来就要动)
+### 已决定的处置
 
-1. `tests/test_verdicts.py:32` 仍写「整句包含检查是逐字节的」,缺
-   `scripts/verdicts.py:27` 已加的「Task 3 起」限定,两处措辞不一致
-2. 无用例冻结 `"%r" % (caveats,)` 的元组包装 —— 只有 2 元素以上的 tuple
-   能暴露(少了包装会抛 `TypeError: not all arguments converted` 而非
-   ValueError);顺带补 `[True]`(bool 是仓库纪律点却无用例)
-3. `head=""` 被放行,与 caveat 的非空要求不对称:`join_verdict("", ["甲"])`
-   → `(甲)`,一个没有主句的结论句。计划中 head 全是字面量,不可达,
-   审查者判为「取舍不大,可不改」
+- **M2 分隔符收口挂到 T5**:`_verdict:480` 仍自写 `"、".join(caveats)`,顿号
+  存在于两处。整条路由进拼装口会改输出(句中嵌入形态,非括注形态);只收口
+  分隔符可逐字节相同(已验),但要改 `scripts/verdicts.py`,而 Design Doc
+  明写该模块「只含 join_verdict」。T5 让 `derive._events_verdict` 成为第三个
+  消费者时才是自然时机
+- **不做**:M4(STATS 重复)、M5(断言冗余,逐字节契约下的刻意冗余)、
+  M6(`RefactorIsByteIdenticalTest` 改名会让计划正文对不上)
+- **明确不做**:把 `_verdict` 兜底句或 `_fixings_verdict` 无 caveat 分支也套进
+  拼装口。审查者验过逐字节相同,但那会把「全区间采集完整」这类肯定性条件与
+  日期区间当成 caveat 塞进形状门,`caveats` 就从「观测缺口清单」降格成
+  「任何要加括号的东西」,形状门失去语义
+- T1 遗留 3 条 Minor:前两条已在 `c9601c4` 修掉;第三条(`head=""` 不对称)
+  按审查者判断不改
 
 ## 已完成
 
@@ -54,4 +59,18 @@
   空序列仍合法;确认与「采集层异常转 gap」纪律**无冲突** ——
   `derive._events_derived` 每币种一个 try/except,`events_verdict` 的调用点在其内)
 - plan T1 五步已勾选并经 `task-checkoff` 逐条验证
-- OpenSpec 2.5 **暂不勾选**(它同时覆盖 T1 与 T2,T2 完成后一并勾)
+
+### T2 —— weekly_digest 两个 verdict 改经拼装口 ✅
+
+- 提交: `c9601c4`(三处编辑)→ `3950145`(mock 断言 autospec + 边界注释)
+- RED: `Ran 21 tests` / `FAILED (errors=2)`,
+  `AttributeError: ... does not have the attribute 'join_verdict'`
+- GREEN: `Ran 21 tests` / `OK`;全量 `Ran 575 tests` / `OK`
+- spec 合规审查 ✅ —— **穷举对拍 4896 组不一致 0**(`_verdict` 4608 +
+  `_fixings_verdict` 288),且核过对拍有效性:旧模块源码 `join_verdict` 出现
+  0 次、两模块 `__code__` 不同一、被改分支分别走了 1512 / 264 次;
+  端到端 `build` 全量 JSON 新旧**逐字节相同**(12289 字符);
+  mock 用例经变异证明非假绿
+- 代码质量审查 ✅(复审再次变异验证会红);无 Critical
+- plan T2 五步 + OpenSpec **2.5** 已勾选并经 `task-checkoff` 验证
+- 记一笔:implementer 自述 diff `+9/-8`,实测 `--numstat` 为 `+8/-8`(数字硬规则)
