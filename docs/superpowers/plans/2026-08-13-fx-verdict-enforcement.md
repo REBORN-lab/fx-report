@@ -117,6 +117,19 @@ class JoinVerdictTest(unittest.TestCase):
         self.assertEqual([hex(ord(c)) for c in got if c in "()（）、"],
                          ["0x28", "0x3001", "0x29"])
 
+    def test_byte_identical_with_the_existing_weekly_wording(self):
+        """地面事实锚点:同样的 head 与 caveat,拼装口的输出必须与
+        weekly_digest._verdict 重构前的输出逐字节相同。这条用例存在的意义
+        是——括号宽度这类差异肉眼看不出来,只有逐字节比对能抓住。
+        此刻 weekly_digest 还不含 join_verdict,故这是跨模块的地面事实
+        比对,不存在自我循环。"""
+        from scripts import weekly_digest as wd
+        stats = {"days_collected": 2, "undated": 0, "capped_days": 0,
+                 "daily_cap": None, "outside_window": 0, "in_window": 3,
+                 "malformed": 0}
+        self.assertEqual(join_verdict("区间内至少 3 条", ["3/5 天未采到"]),
+                         wd._verdict(stats, 5, 0, "事件"))
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -169,7 +182,7 @@ find . -name __pycache__ -type d -exec rm -rf {} +
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts -v
 ```
 
-Expected: `OK`,`Ran 5 tests`。
+Expected: `OK`,`Ran 6 tests`。
 
 - [ ] **Step 5: 勾选并提交**
 
@@ -270,7 +283,7 @@ find . -name __pycache__ -type d -exec rm -rf {} +
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_verdicts -v
 ```
 
-Expected: `WeeklyRoutesThroughJoinVerdictTest` 的 2 个用例 ERROR,报 `AttributeError: <module 'scripts.weekly_digest'> does not have the attribute 'join_verdict'`;`RefactorIsByteIdenticalTest` 的 4 个用例已经是 PASS(安全网),`JoinVerdictTest` 5 个 PASS。
+Expected: `WeeklyRoutesThroughJoinVerdictTest` 的 2 个用例 ERROR,报 `AttributeError: <module 'scripts.weekly_digest'> does not have the attribute 'join_verdict'`;`RefactorIsByteIdenticalTest` 的 4 个用例已经是 PASS(安全网),`JoinVerdictTest` 6 个 PASS(Task 1 修复轮追加了逐字节锚点用例)。
 
 - [ ] **Step 3: 实现 —— 三处编辑**
 
