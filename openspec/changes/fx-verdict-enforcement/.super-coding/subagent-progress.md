@@ -22,15 +22,27 @@
 
 ## 当前状态
 
-- 当前 task: **T3**
+- 当前 task: **T4**
 - 阶段: `implementing`
 - 审查-修复轮次: 0 / 3
 - 实现提交: (待)
 - RED 证据: (待)
 - GREEN 证据: (待)
-- 未解决反馈: 见下方「已决定的处置」(M2 挂 T5)
+- **T4 必须额外完成**(T3 质量审查 I1 的调用点配套,已写进计划文本):
+  `digest.get("events")` / `("rates")` 非 dict 时出
+  `DIGEST_CONTAINER_MALFORMED`,并补 label 正向断言
+- **OpenSpec 1.1 由 T4 勾选**,不在 T3 勾 —— 它写的是「digest 的
+  `articles_verdict` 改一个字后**校验**必须失败」,那是 `check_weekly` 层面的
+  行为,T3 明确不接线,只有谓词层覆盖。在 T3 勾就是假勾选
 
-### 必须带进后续任务的三条(实测得来)
+### 必须带进后续任务的四条(实测得来)
+
+0. **变异还原禁用 `git checkout HEAD -- <file>`,除非改动已提交**。
+   T3 修复轮实际事故:修复尚未提交时用它还原,`HEAD` 是修复前的提交,
+   整个未提交的修复被清空(测试文件因单独跟踪幸免)。
+   正确做法:**先备份文件、每次变异后从备份恢复**;或先 commit 再变异。
+   **T8 电池的 `finally` 还原用的正是内存里的原文快照,符合这条**;
+   派发任何「自己跑变异」的任务时必须写明
 
 1. **T8 电池的 kill 判定必须用进程返回码,不能 grep `"FAILED"`** ——
    `tests/test_check_report.py` 自身会向 stdout 打印 `CHECK FAILED (1):`,
@@ -94,3 +106,17 @@
 - 代码质量审查 ✅(复审再次变异验证会红);无 Critical
 - plan T2 五步 + OpenSpec **2.5** 已勾选并经 `task-checkoff` 验证
 - 记一笔:implementer 自述 diff `+9/-8`,实测 `--numstat` 为 `+8/-8`(数字硬规则)
+
+### T3 —— 核心谓词 check_verdicts + 四个常量 ✅
+
+- 提交: `eda00d0`(谓词 + 19 测试)→ `b878f30`(契约表述 + 覆盖补强)
+- RED: `Ran 19 tests` / `FAILED (errors=19)`
+- GREEN: `Ran 69 tests` / `OK`;全量 `Ran 597 tests` / `OK`
+- spec 合规审查 ✅ —— **全角括号 0**;行为对拍 `WEEKLY IDENTICAL` +
+  `DAILY IDENTICAL`;未接线(全仓仅一处定义、零调用);变异 14 施加 / 12 杀
+- 代码质量审查 ✅ —— 2 Important 已修:①docstring 用假事实为 fail-open 背书
+  ②写出不变量 `required=True ⟹ skipped==0`,让 T4 的 `found, _ =` 可证明无损。
+  复审:九项无遗漏、不变量破坏组合数 **0**、变异 **4/4**
+- **「RED 不红」判定成立**:复审把生产代码换回修复前、测试不变重跑,6 条新
+  测试全绿 —— 它们锁的是**已正确但未覆盖**的行为,牙齿由变异杀灭证明
+- plan T3 五步 + OpenSpec **1.3 / 1.5** 已勾选;**1.1 留给 T4**(见上)

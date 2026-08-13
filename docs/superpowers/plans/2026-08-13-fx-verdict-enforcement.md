@@ -364,7 +364,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `scripts/check_report.py`(常量区第 22 行后;函数插在 `def check_daily(` 之前)
 - Modify: `tests/test_check_report.py`(追加到文件末尾)
 
-- [ ] **T3 Step 1: 写会红的测试**
+- [x] **T3 Step 1: 写会红的测试**
 
 在 `tests/test_check_report.py` **文件末尾**追加:
 
@@ -511,7 +511,7 @@ class VerdictFieldConstantsTest(unittest.TestCase):
         self.assertEqual((v, skipped), ([], 0))
 ```
 
-- [ ] **T3 Step 2: 跑测试确认失败**
+- [x] **T3 Step 2: 跑测试确认失败**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -520,7 +520,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report.CheckVerdi
 
 Expected: 全部 ERROR,报 `AttributeError: module 'scripts.check_report' has no attribute 'check_verdicts'` 与 `... has no attribute 'VERDICT_FIELDS_EVENTS'`。
 
-- [ ] **T3 Step 3: 实现**
+- [x] **T3 Step 3: 实现**
 
 3a. `scripts/check_report.py` 常量区,在第 22 行 `DATE_HEADING_RE = ...` **之后**加:
 
@@ -593,7 +593,7 @@ def check_verdicts(report, container, fields, covered, required, label):
     return v, skipped
 ```
 
-- [ ] **T3 Step 4: 跑测试确认通过**
+- [x] **T3 Step 4: 跑测试确认通过**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -602,7 +602,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_check_report -v 2>&1 | 
 
 Expected: `OK`。既有的 `CheckDailyTest` / `CheckWeeklyTest` 等全部保持绿(本任务未接线,行为零变化)。
 
-- [ ] **T3 Step 5: 勾选并提交**
+- [x] **T3 Step 5: 勾选并提交**
 
 把 tasks.md 的 `1.1`、`1.3`、`1.5` 三行分别改成 `- [x]`,逐条验证后提交:
 
