@@ -93,9 +93,16 @@ def sentences(flat_text):
 
 class DailySkillTest(unittest.TestCase):
     def test_points_at_the_verdict_field(self):
-        t = flat(DAILY)
-        self.assertIn("events_verdict", t)
-        self.assertIn("逐字整句照抄", t)
+        """锚点取"照抄哪个字段"的**整条指令**,而不是 `events_verdict` 五个字。
+
+        普查:`events_verdict` 在全文出现 4 次(还有 F2/F3 两处"判定以它为准"
+        的指路),裸断言字段名会被那几处喂饱 —— 把第 2 步的照抄指令整条换掉、
+        只剩别处的指路,断言照样绿。整条指令在段内 count=1。
+        """
+        seg = block(raw(DAILY), LABEL_SITES[0][1])
+        self.assertIsNotNone(seg, "没摘到第 2 步「派生指标」项")
+        self.assertIn("**逐字整句照抄**`derived.events.<币种>.events_verdict`", seg,
+                      "第 2 步不再要求逐字整句照抄那个字段")
 
     def test_boolean_assembly_wording_is_gone(self):
         """让 LLM 按布尔拼话术的原句必须删干净 —— 留着就是第二处判定。"""
@@ -179,6 +186,10 @@ class DailySkillTest(unittest.TestCase):
             "结论句不可得(存量快照)", t,
             "标签把「快照里没有这一句」当成了「快照旧」——当日 derive 崩了的"
             "快照会被错误豁免")
+        # 普查 count=4(四站各一)。**保留且无害**:它只是"标签整个消失"时给一条
+        # 干脆的失败消息,真正的守卫是下面按站点那四条(各 count=1)。任一站被
+        # 改写时,这一条确实会被另外三站喂饱 —— 但那一站自己的断言会红,守的
+        # 东西没有落空。
         self.assertIn(NO_VERDICT_LABEL, t, "中性标签不见了")
         # **按站点断言,不数次数**:计数式("≥2 次"或"==4 次")会被别处的
         # 引用满足 —— 漏改其中一站,另外三站的字样照样把断言喂饱,那一站就
@@ -191,6 +202,13 @@ class DailySkillTest(unittest.TestCase):
             self.assertIn(NO_VERDICT_LABEL, seg,
                           "「%s」这一站没用同一个标签串 —— 该站会按旧口径行事"
                           % name)
+        # 定义处还得留着那句指路,否则读者拿到标签却不知道属哪一支。删掉它
+        # 不会重新打开 I2 的链条(标签仍中性、禁令 9 仍限定那一支、第 5 步分支一
+        # 仍要求重跑并重做第 2/4 步,三条各有自己的变异守着),丢的是冗余提示,
+        # 所以这条按 Minor 补,不与上面四站的断言合并。
+        seg = block(raw(DAILY), LABEL_SITES[0][1])
+        self.assertIn("由第5步的判别标准决定", seg,
+                      "定义处丢了「属哪一支由第 5 步判别」那句指路")
 
     def test_ban_nine_carves_out_the_legacy_snapshot_case(self):
         """禁令 9 无条件要求逐字照抄结论句,而第 2 步规定该键不存在或为 null 时
@@ -216,7 +234,13 @@ class DailySkillTest(unittest.TestCase):
         self.assertIsNotNone(seg, "没摘到禁令 9 段落,正则或文档结构变了")
         # 主规则(I1):这半句被削掉时,原来的断言一条都不会红
         self.assertIn("该币种节", seg, "主规则的作用域被削(五币种→单币种?)")
-        self.assertIn("逐字", seg, "主规则丢了「逐字」要求")
+        # 锚点必须是主规则**独有**的整串。原先只断言"逐字"二字 —— 段内它有两处
+        # (主规则的"**逐字**出现"、豁免口的"免除**逐字引用**的理由"),后者把
+        # 断言喂饱:把主规则改成"可在该币种节内按大意复述"照样绿(实测存活),
+        # 而那与 delta spec 的「日报 SHALL 逐字整句引用」直接相反,且让同段自相
+        # 矛盾(下一句还写着"改动一个字符即判违规")。
+        self.assertIn("必须在该币种节内**逐字**出现", seg,
+                      "主规则被改写(不再要求逐字出现在该币种节内)")
         # 豁免口
         self.assertIn("本条不适用", seg, "禁令 9 缺豁免口")
         self.assertIn("禁止自行补造", seg, "禁令 9 没堵住「自己编一句」")
@@ -320,6 +344,14 @@ class VerdictCodesAreDocumentedTest(unittest.TestCase):
     """
 
     def test_every_code_appears_in_some_skill(self):
+        """普查:这里每个码的 count 都是 2~4,**全部保留**。
+
+        这一条的契约就是"**至少有一份** skill 写了它",多处出现正是想要的语义
+        (两份 skill 各写一次、日报侧禁令 9 又点名了两个跳过码),不是被喂饱。
+        它守的是"新增一个码却没写进任何文档",而不是"某一处的处置被删"——
+        后者由各自的处置段测试守:NO_DERIVED 与 LEGACY 两段都有 block() 摘取
+        加 assertIsNotNone,整段删掉会红。
+        """
         codes = set(CODE_RE.findall(check_report_src()))
         self.assertTrue(codes, "没扫到任何码,正则或路径错了")
         docs = flat(DAILY) + flat(WEEKLY)
