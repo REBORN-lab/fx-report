@@ -3393,6 +3393,80 @@ class JudgementRingHonestyLabelTest(unittest.TestCase):
         self.assertGreaterEqual(self.doc.count("存在性检查"), 2, self.doc)
 
 
+class RealSnapshotsInTheEnforcementChannelCarryBodyPlanTest(unittest.TestCase):
+    """**已进入强制通道的真实快照必须带 `derived.body_plan`,否则判断环空转。**
+
+    修的缺陷:判断环三码落地后,`data/` 下五份快照**每一份**都打印
+    `JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN` —— 三条检查在所有真实产物上一次
+    都没执行过。根因不是码有问题,是这几份快照采于 `derive._body_plan`
+    之前。`derive` 对既有快照是**确定性纯函数**,重新派生即可,不是重新采集。
+
+    判据取「`derived.schema_version >= DERIVED_VERDICT_SCHEMA`」,即校验器
+    已认定为「现代通道、其日报必须逐字引用 events_verdict」的那些快照:
+    既然它们已经在强制通道里,判断环就不该对它们静默不判。低于该门槛的
+    (2026-08-10 无 derived 节、08-11/08-12 是 schema 1)是**冻结的存量**,
+    显式排除 —— 与 `VERDICT_SKIPPED_LEGACY` 同一条口径。这是范围决策:
+    把它们升上来会连带要求其日报引用结论句,而那三份报告写于闸门之前。
+
+    诚实标注:本类查的是**这个键在不在**,即存在性检查。它保证不了 body_plan
+    里的体裁判得对,那由 tests/test_derive.py 管。
+    """
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _modern_snapshots(self):
+        out = []
+        data_dir = os.path.join(self.ROOT, "data")
+        for name in sorted(os.listdir(data_dir)):
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", name):
+                continue
+            with open(os.path.join(data_dir, name), encoding="utf-8") as f:
+                snap = json.load(f)
+            derived = snap.get("derived")
+            if not isinstance(derived, dict):
+                continue
+            if (derived.get("schema_version") or 0) >= check_report.DERIVED_VERDICT_SCHEMA:
+                out.append((name, snap, derived))
+        return out
+
+    def test_the_channel_is_not_empty(self):
+        """空集合会让下面两条真空通过 —— 先钉住确实有快照在强制通道里。"""
+        self.assertTrue(self._modern_snapshots(), "data/ 下没有现代通道的快照")
+
+    def test_every_modern_snapshot_has_a_body_plan(self):
+        for name, _snap, derived in self._modern_snapshots():
+            with self.subTest(snapshot=name):
+                self.assertIsInstance(
+                    derived.get("body_plan"), dict,
+                    "%s 缺 derived.body_plan,判断环对它整份空转" % name)
+
+    def test_judgement_ring_does_not_skip_on_any_modern_snapshot(self):
+        """直接钉住可观察后果:真实产物上不得再出现 NO_BODY_PLAN 声明。
+
+        走 `check_daily` 这个**生产入口**,不自己拼 `check_judgement_ring` 的
+        入参:`covered` 在生产里是「`find_section` 找得到的币种」,自己拼会拼出
+        生产到不了的组合(实测第一版传了 `secs=[]` 却给了非空 covered,
+        `find_section` 返回 None 当场 TypeError —— 那是测试的错,不是码的错)。
+        """
+        for name, _snap, _derived in self._modern_snapshots():
+            with self.subTest(snapshot=name):
+                date_str = name[:-len(".json")]
+                notes = []
+                check_report.check_daily(
+                    self._read("reports", "daily", date_str + ".md"),
+                    self._read("data", name),
+                    self._read("briefs", date_str + "-brief.md"),
+                    notes=notes)
+                self.assertEqual(
+                    [n for n in notes
+                     if n.startswith("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN")],
+                    [], "%s 上判断环整份跳过" % name)
+
+    def _read(self, *parts):
+        with open(os.path.join(self.ROOT, *parts), encoding="utf-8") as f:
+            return f.read()
+
+
 # ==================== 数字的**归属**:两条映射级检查 ====================
 #
 # 既有的 `NUMBER_UNTRACEABLE` 判据是 `allowed = numbers_in(snapshot) |

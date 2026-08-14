@@ -53,10 +53,25 @@ LIST_ITEM_RE = re.compile(r"\s*(?:[-*]|\d+[.、])\s+\S")
 _REF_DATE_SLOT = "0000-00-00"                        # re.escape 后再换成日期式样
 UNCHANGED_REF_NOTE_PAT = re.escape(unchanged_ref_note(_REF_DATE_SLOT)).replace(
     re.escape(_REF_DATE_SLOT), r"\d{4}-\d{2}-\d{2}")
+# ---- 冻结的历史字面量:`cdec7e4` **之前**那一版 review.py 的产出措辞 ----
+# 上一段说的「措辞一个字都不重写」管的是**当前**措辞,这一条不归它管:产出方
+# 今后一个字都不会再吐出这个串,它按定义永远不变,因此不是会漂移的第二份拷贝。
+# 留它只为一件事:`briefs/2026-08-14-brief.md` 那四条材料行是改措辞前产出的,
+# 存量产物是既成事实。改措辞当天它们就整体落到豁免式样之外,被 --strict-brief
+# 当成 LLM 手写行照查,行内 08-13 的日涨跌被判 BRIEF_NUMBER_UNTRACEABLE —— 与
+# PRIOR_PERIOD_SKIPPED_NO_SECTION 认旧格式日报是同一条原则:
+# **存量产物是既成事实,识别器必须认得历史格式。**
+# 两种措辞**各自精确匹配**,绝不合并成一个宽式样(比如把括号里改成 `.*`):
+# 那等于把「伪造一整条格式完整的复盘行」的成本降到「在那一段写任意话」。
+# tests/test_review.py::LegacyUnchangedRefNoteTest 三面钉住:旧行认得、新行仍
+# 认得、这个冻结值不得是当前措辞(否则就是借「历史遗留」之名手抄当前式样)。
+LEGACY_UNCHANGED_REF_NOTE = "参考价未更新(非工作日)"
 REVIEW_MATERIAL_RE = re.compile(
     r"- [A-Z]{3} \| 观点日 \d{4}-\d{2}-\d{2} \| 情景: .* \| 触发条件: .*"
     r" \| 关注方向: [^|]* \| (?:汇率 (?:None|[-+0-9.eE]+)→(?:None|[-+0-9.eE]+)"
-    r"|" + UNCHANGED_REF_NOTE_PAT + r") \| 方向核对: (?:命中|未命中|无法判定)")
+    r"|" + UNCHANGED_REF_NOTE_PAT +
+    r"|" + re.escape(LEGACY_UNCHANGED_REF_NOTE) +
+    r") \| 方向核对: (?:命中|未命中|无法判定)")
 REVIEW_LINE_RES = (
     re.compile(r"\s*"),                                  # 块内空行
     re.compile(r"- 首次运行,无历史观点可复盘"),

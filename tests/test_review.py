@@ -1,6 +1,7 @@
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -561,7 +562,14 @@ class UnchangedRefNoteStatesFactNotCauseTest(unittest.TestCase):
     def test_checker_takes_the_wording_from_this_module(self):
         """措辞的**单一事实源**在 review.py(产出方),与 REVIEW_BLOCK_HEADING
         同规矩:校验器只许导入,不许自己再写一遍。两处各写一遍必然漂移,而
-        漂移的后果(豁免整块失效)不会有人发现。"""
+        漂移的后果(豁免整块失效)不会有人发现。
+
+        **唯一的例外是冻结的历史字面量**(见 LegacyUnchangedRefNoteTest):
+        它按定义永远不会再变,产出方今后一个字都不会再吐出它,所以它不是
+        「第二份拷贝」、构不成漂移风险。断言写成「含这几个字的字面量**恰好
+        只有那一个冻结值**」,强度与原来的 `== []` 相同 —— 任何别的拷贝
+        (包括把当前措辞塞进来冒充历史值)照样当场红。
+        """
         self.assertIs(check_report.unchanged_ref_note, review.unchanged_ref_note)
         # 查**字符串字面量**(AST,注释不算):第二份拷贝要能被代码用上才有害,
         # 而注释里解释这件事是应该的。手抄一份式样进正则 = 出现一个含这几个字
@@ -571,8 +579,88 @@ class UnchangedRefNoteStatesFactNotCauseTest(unittest.TestCase):
         copies = [n.value for n in ast.walk(tree)
                   if isinstance(n, ast.Constant) and isinstance(n.value, str)
                   and "参考价未更新" in n.value]
-        self.assertEqual(copies, [],
+        self.assertEqual(copies, [check_report.LEGACY_UNCHANGED_REF_NOTE],
                          "校验器里出现了措辞的第二份拷贝:%r" % copies)
+
+
+def _material_line(rate_segment, currency="BRL"):
+    """一条格式完整的复盘材料行,只有汇率那一段可变 —— 豁免与否全看它。"""
+    return ("- %s | 观点日 2026-08-13 | 情景: 雷亚尔当日走弱 1.493%% | "
+            "触发条件: 雷亚尔参考价升破 5.1811 | 关注方向: up | %s | "
+            "方向核对: 无法判定" % (currency, rate_segment))
+
+
+class LegacyUnchangedRefNoteTest(unittest.TestCase):
+    """**存量要点表用的是旧措辞,识别器必须认得它。**
+
+    修的缺陷(本轮自己引入的回归):`cdec7e4` 把「参考价未更新」那一段的措辞
+    从 `参考价未更新(非工作日)` 改成 `参考价未更新(仍为 YYYY-MM-DD 定盘)`,
+    识别正则由产出方 `review.unchanged_ref_note` 经 `re.escape` 推出 —— 于是
+    只认新措辞。而 `briefs/2026-08-14-brief.md` 的四条材料行是改措辞**之前**
+    产出的,一夜之间落到豁免式样之外,被 `--strict-brief` 当成 LLM 手写行照查,
+    行内 08-13 的日涨跌 `1.493`(不在 08-14 快照里)判成 BRIEF_NUMBER_UNTRACEABLE。
+
+    与 `PRIOR_PERIOD_SKIPPED_NO_SECTION` 对旧格式日报的处理同一条原则:
+    **存量产物是既成事实,识别器必须认得历史格式。**
+
+    修法的两条纪律:
+    ① 新措辞仍由 `review.unchanged_ref_note` 推出,单一事实源规矩不变;
+    ② 旧措辞是**冻结的历史字面量**,单列、只为存量要点表而留。两种措辞
+       **各自精确匹配** —— 不得为了让旧行过关而把那一段放宽成 `.*`,
+       那等于让任意文本混进豁免段(有用例钉住,见本类最后一条)。
+    """
+
+    def test_legacy_wording_line_is_recognised(self):
+        """RED 靶点:改措辞前产出的材料行,识别器认不出来。"""
+        line = _material_line(check_report.LEGACY_UNCHANGED_REF_NOTE)
+        self.assertTrue(check_report.is_generated_review_line(line),
+                        "识别器不认历史格式:%r" % line)
+
+    def test_current_wording_line_is_still_recognised(self):
+        """向后兼容不得以丢掉新措辞为代价。"""
+        line = _material_line(review.unchanged_ref_note("2026-08-13"))
+        self.assertTrue(check_report.is_generated_review_line(line),
+                        "识别器不认当前格式:%r" % line)
+
+    def test_legacy_wording_is_not_producible_by_the_current_producer(self):
+        """冻结值必须**真的是历史**:当前产出方对任何定盘日都吐不出它。
+
+        没有这条,「旧措辞单列一份字面量」这个口子就能被用来把**当前**措辞
+        手抄进校验器(注释写成「历史遗留」即可),漂移风险原样回来。
+        判据用识别正则本身,等价于对所有日期取全称。
+        """
+        self.assertIsNone(
+            re.search(check_report.UNCHANGED_REF_NOTE_PAT,
+                      check_report.LEGACY_UNCHANGED_REF_NOTE),
+            "所谓的历史措辞正是当前措辞:%r"
+            % check_report.LEGACY_UNCHANGED_REF_NOTE)
+
+    def test_real_2026_08_14_brief_review_block_is_fully_exempted(self):
+        """在**真实产物**上钉一次:这才是缺陷现场。
+
+        fixture 过了而真文件不过,是本仓库栽过的形态 —— 材料行的情景/触发条件
+        是 LLM 文本,fixture 写不出真实的花样。
+        """
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "briefs", "2026-08-14-brief.md"),
+                  encoding="utf-8") as f:
+            traced, exempt, heads = check_report.split_brief_review_block(f.read())
+        self.assertEqual(heads, 1)
+        self.assertEqual([ln for ln in traced if ln.startswith("- BRL | 观点日")],
+                         [], "旧措辞的材料行没被豁免,会被当成 LLM 手写行照查")
+        self.assertEqual(len([ln for ln in exempt if ln.startswith("- ")]), 5,
+                         "五条材料行没有全部落进豁免段:%r" % exempt)
+
+    def test_arbitrary_text_in_the_rate_segment_is_still_not_exempted(self):
+        """**不得为了认旧措辞而放宽整段。** 两种措辞各自精确匹配,别的都不认 ——
+        否则伪造成本从「伪造一整条格式完整的复盘行」跌到「在那一段写任意话」。
+        """
+        for junk in ("参考价未更新(随便什么原因)", "参考价未更新",
+                     "美元指数 1.493 创新高", "参考价未更新(仍为 昨天 定盘)"):
+            with self.subTest(junk=junk):
+                self.assertFalse(
+                    check_report.is_generated_review_line(_material_line(junk)),
+                    "豁免段被放宽,任意文本混了进来:%r" % junk)
 
 
 class UnchangedRefDateOfTest(unittest.TestCase):

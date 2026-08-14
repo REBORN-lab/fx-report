@@ -488,7 +488,7 @@
     }
   },
   "derived": {
-    "schema_version": 2,
+    "schema_version": 3,
     "rates": {
       "PHP": {
         "chg_pct_1d": 0.24,
@@ -579,6 +579,28 @@
         "dropped_malformed": 0,
         "main_sample_capped": true,
         "events_verdict": "当日采到 5 条(源返回的原始样本顶到其上限,滤后条数是下界)"
+      }
+    },
+    "body_plan": {
+      "PHP": {
+        "mode": "full",
+        "line": null
+      },
+      "THB": {
+        "mode": "full",
+        "line": null
+      },
+      "BRL": {
+        "mode": "full",
+        "line": null
+      },
+      "EUR": {
+        "mode": "full",
+        "line": null
+      },
+      "USD": {
+        "mode": "full",
+        "line": null
       }
     },
     "real_rate": {
