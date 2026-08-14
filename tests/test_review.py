@@ -5,6 +5,8 @@ import sys
 import tempfile
 import unittest
 
+from scripts import check_report
+
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "scripts", "review.py")
 
@@ -220,6 +222,13 @@ def snap_ref(php_primary, ref_date):
     return {"rates": {"PHP": {"primary": php_primary, "ref_date": ref_date}}}
 
 
+def _reviewed_opinion():
+    """已复盘过的观点 → pending 为空 → review.py 走「无未复盘观点」那一行。"""
+    e = opinion()
+    e["review"]["direction_outcome"] = "命中"
+    return e
+
+
 class RefDateBranchTest(ReviewTest):
     """参考价定盘日期三分支(delta spec: 参考价未更新 / 参考日期缺失退回旧行为)。"""
 
@@ -254,3 +263,57 @@ class RefDateBranchTest(ReviewTest):
             {"2026-08-09": snap(60.75), "2026-08-10": snap_ref(60.75, "2026-08-10")})
         self.assertNotIn("参考价未更新", text)
         self.assertIn("方向核对: 无法判定", text)   # 数值相等 → 旧逻辑给无法判定
+
+
+class ReviewOutputIsRecognizedByCheckerTest(unittest.TestCase):
+    """review.py 追加进要点表的**每一行**,校验器都必须认得出来。
+
+    `--strict-brief` 会豁免这些行的数字溯源(它们属于观点日,不属于当日快照)。
+    豁免的判据是「块头 + 行式样」,而块头与行式样是 review.py 产出的 ——
+    两处一旦漂移,豁免要么失效(整块变红,就是本次修的那个缺陷复发),要么
+    反过来把手写行也豁免掉。这个类是两处之间**唯一的机械联系**:凭印象写的
+    正则在这里会立刻红。"""
+
+    def _appended(self, entries, snapshots, date="2026-08-10"):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        brief = setup_root(tmp.name, entries, snapshots, brief_date=date)
+        with open(brief, encoding="utf-8") as f:
+            before = f.read()
+        r = run_review(tmp.name, date)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(brief, encoding="utf-8") as f:
+            after = f.read()
+        self.assertTrue(after.startswith(before), "review.py 改写了既有内容")
+        return after[len(before):].splitlines()
+
+    CASES = {
+        "命中": ([opinion()], {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}),
+        "未命中": ([opinion(watch_direction="down")],
+                   {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}),
+        "汇率 None": ([opinion(watch_direction=None)],
+                      {"2026-08-09": snap(None), "2026-08-10": snap(None)}),
+        "参考价未更新": ([opinion()],
+                         {"2026-08-09": snap_ref(60.75, "2026-08-07"),
+                          "2026-08-10": snap_ref(60.75, "2026-08-07")}),
+        "无未复盘观点": ([_reviewed_opinion()],
+                         {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}),
+        "首次运行": (None, {"2026-08-10": snap(60.5)}),
+    }
+
+    def test_heading_emitted_matches_the_checker_constant(self):
+        for label, (entries, snapshots) in self.CASES.items():
+            with self.subTest(case=label):
+                lines = self._appended(entries, snapshots)
+                self.assertIn(check_report.REVIEW_BLOCK_HEADING, lines,
+                              "review.py 的块头与校验器常量不一致:%r" % lines)
+
+    def test_every_appended_line_is_exempted_by_the_checker(self):
+        for label, (entries, snapshots) in self.CASES.items():
+            with self.subTest(case=label):
+                lines = self._appended(entries, snapshots)
+                self.assertTrue(lines)
+                for line in lines:
+                    self.assertTrue(
+                        check_report.is_generated_review_line(line),
+                        "校验器认不出 review.py 生成的行:%r" % line)

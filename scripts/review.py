@@ -9,6 +9,11 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMPTY_REVIEW = {"direction_outcome": None, "trigger_judgement": None, "verdict": None}
+# 复盘材料块的块头。**唯一事实源在这里**(本脚本是产出方),
+# `scripts/check_report.py` 只许导入 —— 它据此把要点表切成「LLM 手写」与
+# 「本脚本生成」两段,后者豁免 `--strict-brief` 的当日快照数字溯源。
+# 两处各写一遍必然漂移,而漂移的后果是豁免整段失效或整段过宽,都不会有人发现。
+REVIEW_BLOCK_HEADING = "## 复盘材料(scripts/review.py 生成,勿手改)"
 
 
 def load_log(path):
@@ -124,7 +129,7 @@ def main(argv=None):
         return 1
 
     entries = load_log(log_path)
-    lines = ["", "## 复盘材料(scripts/review.py 生成,勿手改)", ""]
+    lines = ["", REVIEW_BLOCK_HEADING, ""]
     prior_dates = sorted({e.get("date") for e in entries
                           if isinstance(e.get("date"), str) and e.get("date") < args.date})
     if not prior_dates:

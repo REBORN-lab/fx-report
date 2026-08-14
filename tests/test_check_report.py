@@ -406,6 +406,156 @@ class StrictBriefTest(unittest.TestCase):
         self.assertFalse([x for x in v if "BRIEF_NUMBER_UNTRACEABLE" in x], v)
 
 
+class BriefReviewBlockExemptionTest(unittest.TestCase):
+    """`--strict-brief` 的白名单是「**当日**快照 ∪ 小整数」,而 `scripts/review.py`
+    往要点表尾部追加的复盘材料写的是**观点日**的定盘价与观点原文里的数字 ——
+    两者结构性互斥。实测 2026-08-10 与 2026-08-13 各出 4 条
+    `BRIEF_NUMBER_UNTRACEABLE`,报告正文零违规,炸的全是脚本自己写进去的行。
+
+    且这不是偶发:SKILL 要求 trigger 绑市场可观测变量,合规的 trigger 必然带
+    数字。以前不发作只因为历史 trigger 全是「采集恢复」这类**违规的**自指形态。
+
+    修法**不是**整块豁免:块头之前一个字不改,块头之后**只豁免匹配
+    review.py 行式样的行**。伪造成本因此是「伪造一整条格式完整的复盘行」,
+    而不是「写一行假块头」。
+    """
+
+    SNAP = json.dumps({"date": "2026-08-13",
+                       "rates": {"PHP": {"primary": 61.325}},
+                       "macro": [], "events": {}, "gaps": []})
+    # 观点日那一侧的数字:1.613 / 6.761006 / 4.75 / 61.178 都不在当日快照里
+    MATERIAL = ("- PHP | 观点日 2026-08-12 | 情景: 实际利率 -1.613 为五经济体最低"
+                " | 触发条件: 菲律宾 CPI 低于上期值 6.761006 且政策利率维持 4.75"
+                " | 关注方向: down | 汇率 61.178→61.325 | 方向核对: 未命中")
+    BLOCK_NUMS = ("1.613", "6.761006", "4.75", "61.178")
+    HEAD = "# 要点表 2026-08-13\n- 当日定盘 61.325\n"
+
+    def _heading(self):
+        return check_report.REVIEW_BLOCK_HEADING
+
+    def _brief(self, head_extra="", block_lines=None, headings=1, head=None):
+        lines = [(self.HEAD if head is None else head).rstrip("\n")]
+        if head_extra:
+            lines.append(head_extra)
+        body = block_lines if block_lines is not None else [self.MATERIAL]
+        for _ in range(headings):
+            lines += ["", self._heading(), ""] + list(body)
+        return "\n".join(lines) + "\n"
+
+    def _codes(self, brief, notes=None):
+        return check_report.check_daily("# r\n", self.SNAP, brief,
+                                        strict_brief=True, notes=notes)
+
+    @staticmethod
+    def _untraceable(v):
+        return {x.split("要点表数字 ")[1].split(" ")[0]
+                for x in v if x.startswith("BRIEF_NUMBER_UNTRACEABLE")}
+
+    def test_numbers_before_the_heading_are_still_traced(self):
+        """变异靶点:豁免对整份要点表生效(不切段)。块头**之前**是 LLM 手写
+        部分,判定一个字不改。"""
+        v = self._codes(self._brief(head_extra="- 自己编的 99.123"))
+        self.assertIn("99.123", self._untraceable(v), v)
+
+    def test_generated_material_line_numbers_are_exempted(self):
+        v = self._codes(self._brief())
+        self.assertEqual(self._untraceable(v) & set(self.BLOCK_NUMS), set(), v)
+
+    def test_handwritten_line_after_the_heading_is_still_traced(self):
+        """变异靶点:豁免对块头之后**所有**行生效(不校验行式样)。
+        块头之后混进的手写行必须照查 —— 否则「写一行假块头」就是通行证。"""
+        v = self._codes(self._brief(
+            block_lines=[self.MATERIAL, "- 我自己补一句,汇率大约 77.777"]))
+        self.assertIn("77.777", self._untraceable(v), v)
+
+    def test_forged_line_that_only_looks_like_a_bullet_is_traced(self):
+        """只带块头式样的前缀、不成完整行式样的伪造行也要照查。"""
+        v = self._codes(self._brief(
+            block_lines=["- PHP | 观点日 2026-08-12 | 顺便一提 55.5"]))
+        self.assertIn("55.5", self._untraceable(v), v)
+
+    def test_skip_declaration_is_emitted(self):
+        """变异靶点:声明行被删掉。「跳过」与「通过」在输出上必须可区分。"""
+        notes = []
+        self._codes(self._brief(), notes=notes)
+        self.assertIn("BRIEF_REVIEW_BLOCK_SKIPPED: 复盘材料块 3 行未纳入要点表数字溯源",
+                      notes)
+
+    def test_skip_declaration_counts_only_exempted_lines(self):
+        notes = []
+        self._codes(self._brief(
+            block_lines=[self.MATERIAL, "- 我自己补一句,汇率大约 77.777"]),
+            notes=notes)
+        self.assertIn("BRIEF_REVIEW_BLOCK_SKIPPED: 复盘材料块 3 行未纳入要点表数字溯源",
+                      notes)
+
+    def test_declaration_is_not_a_violation(self):
+        """声明不改返回码 —— 它不是违规码。"""
+        v = self._codes(self._brief())
+        self.assertEqual([x for x in v if x.startswith("BRIEF_")], [], v)
+
+    def test_two_headings_are_malformed_and_exempt_nothing(self):
+        """变异靶点:块头出现两次时静默取第一个。≥2 次必须出违规,且
+        **一行都不豁免**(失败关闭),否则伪造第二个块头即可整段脱管。"""
+        notes = []
+        v = self._codes(self._brief(headings=2), notes=notes)
+        self.assertTrue([x for x in v if x.startswith("BRIEF_REVIEW_BLOCK_MALFORMED")], v)
+        self.assertTrue(set(self.BLOCK_NUMS) <= self._untraceable(v), v)
+        self.assertEqual([n for n in notes if "BRIEF_REVIEW_BLOCK_SKIPPED" in n], [],
+                         notes)
+
+    def test_no_heading_behaves_exactly_as_before(self):
+        notes = []
+        brief = self.HEAD + "- 自己编的 99.123\n"
+        v = self._codes(brief, notes=notes)
+        self.assertIn("99.123", self._untraceable(v), v)
+        self.assertEqual([n for n in notes if "BRIEF_REVIEW_BLOCK" in n], [], notes)
+
+    def test_without_strict_brief_nothing_changes(self):
+        notes = []
+        v = check_report.check_daily("# r\n", self.SNAP,
+                                     self._brief(head_extra="- 自己编的 99.123"),
+                                     notes=notes)
+        self.assertEqual([x for x in v if x.startswith("BRIEF_")], [], v)
+        self.assertEqual([n for n in notes if "BRIEF_" in n], [], notes)
+
+    def test_declaration_reaches_stdout_with_rc_zero(self):
+        """声明必须真的印出去 —— 只放进 notes 而 main 不打印等于没有。
+
+        走 main() 就得用与 make_report() 配套的 SNAP_TEXT 当快照,故要点表
+        手写部分只放该快照里的数;复盘材料行里那 4 个数仍不在快照中 ——
+        豁免一旦失效,rc 立刻由 0 变 1,这条断言不是走过场。"""
+        head = "# 要点表 2026-08-10\n- 当日定盘 60.843\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = {}
+            for name, text in (("r.md", make_report()), ("s.json", SNAP_TEXT),
+                               ("b.md", self._brief(head=head))):
+                paths[name] = os.path.join(tmp, name)
+                with open(paths[name], "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([paths["r.md"], paths["s.json"],
+                                        "--brief", paths["b.md"],
+                                        "--mode", "daily", "--strict-brief"])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("BRIEF_REVIEW_BLOCK_SKIPPED", out)
+        self.assertIn("CHECK PASSED", out)
+
+    def test_heading_is_not_copied_into_the_checker_source(self):
+        """变异靶点:块头常量在两处各写一遍而漂移。唯一事实源在
+        `scripts/review.py`(它是产出方),校验器只许导入。"""
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        copies = [n.lineno for n in ast.walk(tree)
+                  if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                  and check_report.REVIEW_BLOCK_HEADING in n.value]
+        self.assertEqual(copies, [],
+                         "块头在校验器里又写了一遍(第 %s 行),会与 review.py 漂移"
+                         % copies)
+
+
 class DigestFailClosedTest(unittest.TestCase):
     """digest 不可用时必须响亮失败 —— 打印 PASS 却什么都没查是最坏的失败模式。"""
 

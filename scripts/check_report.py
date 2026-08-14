@@ -7,6 +7,19 @@ import json
 import re
 import sys
 
+# 复盘材料块的块头:**唯一事实源是产出方 `scripts/review.py`**,这里只导入。
+# 两处各写一遍必然漂移(本仓库已栽过多次),而漂移后豁免要么整段失效、要么
+# 整段过宽,两种都静默。`scripts.review` 导入期无副作用(只算了一个 ROOT
+# 路径常量,不读文件、不写文件、不解析 argv),故直接导入是安全的。
+# 两条分支对应两种运行形态:包内导入(测试、`python3 -m`)与
+# `python3 scripts/check_report.py` 直跑(此时 sys.path[0] 就是 scripts/)。
+# **这里不引入 `os`** —— 校验器不读环境变量是不变量,由
+# VerdictGateIsOrthogonalToTheCheckedObjectTest 的 AST 断言钉住。
+try:
+    from scripts.review import REVIEW_BLOCK_HEADING
+except ImportError:                                  # pragma: no cover - 直跑分支
+    from review import REVIEW_BLOCK_HEADING
+
 CURRENCIES = ["USD", "EUR", "PHP", "THB", "BRL"]
 MAX_SUMMARY_ITEMS = 6
 MAX_SECTION_CJK = 330        # spec"约 300 中文字"+10% 容差
@@ -16,6 +29,31 @@ NUM_RE = re.compile(r"\d+(?:\.\d+)?")
 CJK_RE = re.compile(r"[一-鿿]")
 ALLOWED_SMALL = {str(i) for i in range(0, 13)}   # 序数/条数/月份类小整数
 LIST_ITEM_RE = re.compile(r"\s*(?:[-*]|\d+[.、])\s+\S")
+# ---- 复盘材料块的行式样:照 `scripts/review.py` 的**实际输出**枚举 ----
+# 实跑抄下来的四种(briefs/2026-08-{10,11,13}-brief.md + review.py main()):
+#   ``                                                    块前后各一个空行
+#   `## 复盘材料(scripts/review.py 生成,勿手改)`        块头(导入的常量)
+#   `- 首次运行,无历史观点可复盘`
+#   `- 上一运行日(2026-08-10)无未复盘观点`
+#   `- PHP | 观点日 2026-08-12 | 情景: … | 触发条件: … | 关注方向: down`
+#   ` | 汇率 61.178→61.325 | 方向核对: 未命中`
+#   第六段另有一种形态:`| 参考价未更新(非工作日) |`(两侧定盘日期相同)
+# 情景/触发条件是 LLM 文本,可能含 `|`(review.flat 只扁平化换行、不转义竖线),
+# 故这两段用 `.*` 靠尾部固定串回溯定位;其余每一段都钉死。
+# **不匹配 = 照查**(失败关闭):式样收紧只会多查,不会漏查。
+# review.py 的这两处括号是 **ASCII** `()`(不是全角),正则里必须转义 ——
+# 不转义就成了捕获组,式样反而要求「没有括号」,于是真行一条都认不出、
+# 豁免整块失效。实测就踩了这一脚,由 test_review 的端到端用例当场抓到。
+REVIEW_MATERIAL_RE = re.compile(
+    r"- [A-Z]{3} \| 观点日 \d{4}-\d{2}-\d{2} \| 情景: .* \| 触发条件: .*"
+    r" \| 关注方向: [^|]* \| (?:汇率 (?:None|[-+0-9.eE]+)→(?:None|[-+0-9.eE]+)"
+    r"|参考价未更新\(非工作日\)) \| 方向核对: (?:命中|未命中|无法判定)")
+REVIEW_LINE_RES = (
+    re.compile(r"\s*"),                                  # 块内空行
+    re.compile(r"- 首次运行,无历史观点可复盘"),
+    re.compile(r"- 上一运行日\(\d{4}-\d{2}-\d{2}\)无未复盘观点"),
+    REVIEW_MATERIAL_RE,
+)
 MAX_THEME_ITEMS = 3
 WEEKLY_SECTIONS = ["本周主线", "各币种", "复盘汇总", "下周关注", "缺漏汇总"]
 COVERAGE_RE = re.compile(r"覆盖日报[::]\s*(\d+)\s*份")
@@ -119,6 +157,37 @@ def numbers_in(text):
 
 def list_items(body):
     return [line for line in body.splitlines() if LIST_ITEM_RE.match(line)]
+
+
+def is_generated_review_line(line):
+    """该行是否为 `scripts/review.py` 生成的复盘材料行(块头与块内空行也算)。"""
+    if line == REVIEW_BLOCK_HEADING:
+        return True
+    return any(r.fullmatch(line) for r in REVIEW_LINE_RES)
+
+
+def split_brief_review_block(brief_text):
+    """把要点表切成「纳入数字溯源的行」与「豁免的复盘材料行」。
+
+    返回 (traced_lines, exempt_lines, heading_count)。切法与三态:
+
+    - 块头 0 次:整份要点表照查,豁免不存在 —— 与本开关的既有行为一字不差。
+    - 块头 1 次:块头**之前**是 LLM 手写部分,一个字不改照查;块头**之后**
+      只豁免匹配 review.py 行式样的行,**不匹配的行照查**。伪造成本因此是
+      「伪造一整条格式完整的复盘行」,而不是「写一行假块头」。
+    - 块头 ≥2 次:挑一个是静默决策,而被查方正好能靠多写一个块头把选择权
+      拿过去 —— 判为违规,且**一行都不豁免**(失败关闭)。
+    """
+    lines = brief_text.splitlines()
+    heads = [i for i, ln in enumerate(lines) if ln == REVIEW_BLOCK_HEADING]
+    if len(heads) != 1:
+        return lines, [], len(heads)
+    start = heads[0]
+    traced = list(lines[:start])
+    exempt = []
+    for ln in lines[start:]:
+        (exempt if is_generated_review_line(ln) else traced).append(ln)
+    return traced, exempt, 1
 
 
 def parse_snapshot(snapshot_text):
@@ -337,8 +406,26 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     if strict_brief:
         # 报告 ⊆ 快照∪要点表 一直有校验,但要点表本身 ⊆ 快照 从来没人查——
         # 要点表环节写错的数字会被下游当作合法来源。此开关堵住这条缝。
+        #
+        # 但白名单是「**当日**快照 ∪ 小整数」,而 scripts/review.py 往要点表
+        # 尾部追加的复盘材料写的是**观点日**的定盘价与观点原文里的数字——
+        # 两条规则结构性互斥,且必然复发:SKILL 要求 trigger 绑市场可观测
+        # 变量,合规的 trigger 必然带数字。以前不发作,只因为历史 trigger 全是
+        # 「采集恢复」这类**违规的**自指形态。实测 2026-08-10 与 08-13 各
+        # 4 条 BRIEF_NUMBER_UNTRACEABLE,报告正文零违规,炸的全是脚本自己
+        # 写进要点表的行。故按块头切段,只豁免生成行。
+        traced, exempt, heads = split_brief_review_block(brief_text)
+        if heads > 1:
+            v.append("BRIEF_REVIEW_BLOCK_MALFORMED: 要点表出现 %d 个复盘材料块头"
+                     "(应为 0 或 1),本次不豁免任何行" % heads)
+        elif heads == 1 and notes is not None:
+            # 豁免必须出声——「跳过」与「通过」在输出上必须可区分,与
+            # VERDICT_SKIPPED_LEGACY / VERDICT_SKIPPED_NO_DERIVED 同一原则。
+            # 它不是违规,不改退出码。
+            notes.append("BRIEF_REVIEW_BLOCK_SKIPPED: 复盘材料块 %d 行未纳入"
+                         "要点表数字溯源" % len(exempt))
         brief_allowed = numbers_in(snapshot_text) | ALLOWED_SMALL
-        for n in sorted(numbers_in(brief_text) - brief_allowed):
+        for n in sorted(numbers_in("\n".join(traced)) - brief_allowed):
             v.append("BRIEF_NUMBER_UNTRACEABLE: 要点表数字 %s 不见于快照" % n)
     return v
 
