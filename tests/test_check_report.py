@@ -370,12 +370,12 @@ class WeeklyDigestTraceabilityTest(unittest.TestCase):
 
     def test_fabricated_number_caught(self):
         bad = WEEKLY_OK.replace("60.867", "61.999")
-        v = check_report.check_weekly(bad, DIGEST)
+        v = check_report.check_weekly(bad, DIGEST, RING_DAILY)
         self.assertTrue(any("NUMBER_UNTRACEABLE" in x and "61.999" in x for x in v), v)
 
     def test_number_from_daily_report_allowed(self):
         bad = WEEKLY_OK.replace("区间 60.75–60.867", "区间 60.75–60.867,期间见 33.013")
-        self.assertTrue(check_report.check_weekly(bad, DIGEST))          # 无日报时被拦
+        self.assertTrue(check_report.check_weekly(bad, DIGEST, RING_DAILY))          # 无日报时被拦
         daily = "PHP 33.013"
         self.assertEqual(check_report.check_weekly(bad, DIGEST, [daily]), [])
 
@@ -1359,9 +1359,12 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         # `--prior`(上一份日报,PRIOR_PERIOD_* 那条不变量的入参)是 2026-08-14
         # **新注册**的选项 —— 这条断言当场变红,正是它存在的意义:选项集合
         # 变了必须是显式动作、进 diff。这里是**加一项**,不是放宽判据。
+        # `--decision-log`(决策日志 jsonl,DECISION_TRIGGER_NOT_SOURCED 那条
+        # 不变量的入参)是 2026-08-14 **新注册**的选项 —— 与 `--prior` 同规矩,
+        # 这里是**加一项**,不是放宽判据。
         self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
                                 "--strict-brief", "--digest", "--daily",
-                                "--prior"})
+                                "--prior", "--decision-log"})
 
     # 「当前 mode 不读的既有选项」的**期望字面量**。它**不驱动任何变体** ——
     # 驱动第六族的是 `unread_option_specs()` 的推导结果(见该函数)。
@@ -1373,8 +1376,12 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     # args.prior:` 这种零成本扳机从来没被第六族试过。daily 侧不变。
     UNREAD_OPTIONS_EXPECTED = {
         "daily": (("--digest", True), ("--daily", True)),
+        # `--decision-log` 与 `--prior` 同形:只在 daily 分支被读,于是它是
+        # weekly 侧新的"注册了却不读"的选项,必须进这张表 —— 不进就意味着
+        # `if args.mode == "weekly" and args.decision_log:` 这种零成本扳机
+        # 从来没被第六族试过。
         "weekly": (("--brief", True), ("--strict-brief", False),
-                   ("--prior", True)),
+                   ("--prior", True), ("--decision-log", True)),
     }
 
     def test_unread_option_derivation_matches_literal(self):
@@ -1506,7 +1513,8 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     # 而生产命令行加 `--digest off` / `--daily off` / `--brief off` 分别
     # rc 1→0(`CHECK FAILED (5)`→`CHECK PASSED`、weekly 侧 `(4)`→PASSED)。
     UNREAD_OPTION_VALUE = {"--digest": "w_multi", "--daily": "d_report",
-                           "--brief": "brief", "--prior": "d_report"}
+                           "--brief": "brief", "--prior": "d_report",
+                           "--decision-log": "d_log"}
 
     def _variants(self, base, free_positional=None, unread_options=()):
         """base 之上派生 argv。free_positional 给的是"可塞魔法值的既有位置参数"
@@ -1661,10 +1669,12 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
             "w_report": WEEKLY_OK,
             "w_multi": json.dumps(wobj, ensure_ascii=False),
             "w_container": json.dumps(wcont, ensure_ascii=False),
+            "d_log": DECISION_LOG,
         }
         cls.paths = {}
         for name, text in files.items():
-            ext = ".md" if name.endswith(("report", "brief")) else ".json"
+            ext = ".md" if name.endswith(("report", "brief")) \
+                else (".jsonl" if name.endswith("log") else ".json")
             p = os.path.join(t, name + ext)
             with open(p, "w", encoding="utf-8") as f:
                 f.write(text)
@@ -4328,13 +4338,28 @@ class WeeklyJudgementLayerIsDeclaredTest(unittest.TestCase):
         self.assertIn("3 处", line)
 
     def test_the_declaration_names_all_five_codes(self):
-        """点名五个码:读者据此知道周报少了哪几层,而不是"少了点什么"。"""
+        """点名五个码:读者据此知道周报少了哪几层,而不是"少了点什么"。
+
+        ---- 2026-08-14 更正:五个码现在分两条声明,理由不同 ----
+        判断环三码**已经在周报模式跑起来了**(见 `check_weekly_judgement_ring`),
+        所以 `WEEKLY_JUDGEMENT_LAYER_SKIPPED` 退化成**闸门不成立**时才出的那
+        一条 —— 它点名的只剩三码。数字归属那两码是**结构性不适用**(周报输入
+        没有按币种分键的快照切片),另出 `WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE`
+        并把"为什么不适用"写进去。
+        断言因此拆成两半,**五个码一个都不许少** —— 少一个就意味着某一层
+        既不跑、也不出声,那正是本类要消灭的形态。
+        """
         notes = []
         check_report.check_weekly(make_weekly(), notes=notes)
-        line = [n for n in notes
+        gate = [n for n in notes
                 if n.startswith("WEEKLY_JUDGEMENT_LAYER_SKIPPED:")][0]
-        for code in FIVE_NEW_CODES:
-            self.assertIn(code, line)
+        na = [n for n in notes
+              if n.startswith("WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE:")][0]
+        for code in FIVE_NEW_CODES[:3]:
+            self.assertIn(code, gate)
+        for code in FIVE_NEW_CODES[3:]:
+            self.assertIn(code, na)
+        self.assertIn("SUMMARY_NUMBER_WRONG_CURRENCY", na)
 
     def test_the_weekly_cli_no_longer_prints_a_bare_check_passed(self):
         """端到端:生产周报命令行(带 --digest)必须打出这条声明。"""
@@ -4484,6 +4509,11 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     "NUMBER_WRONG_SECTION": "DISPOSITION_WRONG_SECTION",
     "SUMMARY_NUMBER_NOT_IN_BODY": "DISPOSITION_SUMMARY_BODY",
     "SUMMARY_NUMBER_WRONG_CURRENCY": "DISPOSITION_SUMMARY_CURRENCY",
+    # 2026-08-14 新增:速览「条件方向」格与决策日志 trigger 的同源同字。
+    # SKILL 第 185/375 行写了这条规则,而校验器此前对它零提及
+    # (`grep -n "decision\|决策日志" scripts/check_report.py` 无输出),
+    # 实测 25 条里 10 条当前就是违反的、六份产物却全绿。
+    "DECISION_TRIGGER_NOT_SOURCED": "DISPOSITION_DECISION_TRIGGER",
 }
 # 同一层的**声明码**(走 notes,不改退出码,因此不带处置)。
 NEW_LAYER_NOTE_CODES = frozenset({
@@ -4496,6 +4526,18 @@ NEW_LAYER_NOTE_CODES = frozenset({
     "SUMMARY_NUMBER_SKIPPED_NO_CURRENCY_NAMED",
     "SUMMARY_NUMBER_SKIPPED_AMBIGUOUS",
     "WEEKLY_JUDGEMENT_LAYER_SKIPPED",
+    # ---- 2026-08-14:三个「强制力够不着」的洞接上之后新增的声明 ----
+    # 速览表解析的三态(缺表 / 列名不符 / 缺行),各带计数。
+    "OVERVIEW_TABLE_SKIPPED", "OVERVIEW_TABLE_COLUMN_MISMATCH",
+    "OVERVIEW_ROW_MISSING",
+    # 速览「失效条件」列与节内翻转指标同源同字(SKILL 第 186/273 行要求),
+    # 因此**不能**当 ② 的失效条件来源 —— 这一条把该事实打进 stdout。
+    "FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP",
+    # 周报:数字归属结构性不适用 / 无 --digest 时 ③ 判不了锚点。
+    "WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE",
+    "WEEKLY_ASSUMPTION_ANCHOR_SKIPPED_NO_DIGEST",
+    # 决策日志:未提供路径 / 日志里没有该日期该币种的条目。
+    "DECISION_LOG_ABSENT_SKIPPED", "DECISION_LOG_NO_ENTRY",
 })
 # 这一层**之外**的既有码,写死在这里只为让上面两张表闭合:
 # 「全部码 = 既有 ∪ VERDICT ∪ 本层」,新增任何码都必须显式入某一张表。
@@ -4528,7 +4570,7 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
                 | set(VERDICT_NOTE_CODES))
         self.assertEqual(found, want,
                          "校验器的码清单与冻结表对不上;新增码必须同时入表")
-        self.assertEqual(len(want), 49, len(want))
+        self.assertEqual(len(want), 58, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4586,6 +4628,24 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
                     check_report.main([rp, sp, "--brief", bp,
                                        "--mode", "daily", "--strict-brief"])
                 out.append((label, buf.getvalue()))
+        # 第三次:决策日志那一条。它的宿主是**速览表**,而上面两份 fixture
+        # 的速览表是 `| 币种 | 方向 |` 两列(走 OVERVIEW_TABLE_COLUMN_MISMATCH),
+        # 取不到「条件方向」格,所以必须单独喂一份带完整表头的报告 ——
+        # 否则 DECISION_TRIGGER_NOT_SOURCED 只有映射、没有任何用例触发。
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, sp, bp, lp = (os.path.join(tmp, n)
+                              for n in ("r.md", "s.json", "b.md", "log.jsonl"))
+            drifted = DECISION_LOG.replace("若 C 升破 60.9 → 关注丙(T+2)",
+                                           "日志里另写了一版触发条件")
+            for path, text in ((rp, OVERVIEW_REPORT), (sp, SNAP_TEXT),
+                               (bp, BRIEF), (lp, drifted)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main([rp, sp, "--brief", bp, "--mode", "daily",
+                                   "--decision-log", lp])
+            out.append(("decision-log", buf.getvalue()))
         return out
 
     def test_every_new_layer_note_code_is_reachable(self):
@@ -4596,3 +4656,452 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         for code in NEW_LAYER_NOTE_CODES:
             self.assertIn('"%s: ' % code, src.replace("\n", " ").replace(
                 '"\n', '"').replace("  ", " ") or src, code)
+
+
+# ==================== 本轮:三个「强制力够不着」的洞 + 一处散文零强制 =========
+#
+# 上一轮把每处放行/不可达/整层不查都改成打印声明,声明照出了三个洞。
+# 本轮把它们接上。四条的**判据来源**逐条写在各自的类里,不写在这里 ——
+# 一处总述会与实现漂移,而漂移后没有断言看得见。
+
+OVERVIEW_REPORT = """# 外汇日报 2026-08-10
+
+## 执行摘要
+- 摘要第 1 条
+
+## 速览
+
+| 币种 | 条件方向(时限) | 核心依据 | 失效条件 |
+| --- | --- | --- | --- |
+| USD | 若 A 升破 60.843 → 关注甲(T+2) | 依据甲 | 甲位回落(T+2) |
+| EUR | 若 B 升破 0.921 → 关注乙(T+2) | 依据乙 | 乙位回落(T+2) |
+| PHP | 若 C 升破 60.9 → 关注丙(T+2) | 依据丙 | 丙位回落(T+2) |
+| THB | 若 D 升破 35.2 → 关注丁(T+2) | 依据丁 | 丁位回落(T+2) |
+| BRL | 若 E 升破 5.43 → 关注戊(T+2) | 依据戊 | 戊位回落(T+2) |
+
+## 美元(USD)
+正文。
+
+## 复盘
+- 首次运行,无历史观点可复盘
+
+## 数据缺漏
+无
+"""
+
+
+class OverviewTableParseTest(unittest.TestCase):
+    """速览表按**表头列名**解析,不得按固定列序号硬取。
+
+    判据来源:`reports/daily/2026-08-14.md:11-16` 的实际表结构
+    `| 币种 | 条件方向(时限) | 核心依据 | 失效条件 |`。
+
+    ---- 为什么必须按列名 ----
+    按序号硬取时,列序一变就**错位取值**且完全静默:把「核心依据」当成
+    「失效条件」比对,判定照跑、结论全错。列名解析让"列序变了"变成一条
+    带计数的声明,而不是一次错位。
+    """
+
+    def test_rows_are_keyed_by_currency_and_column_name(self):
+        secs = check_report.sections(OVERVIEW_REPORT)
+        rows = check_report.overview_rows(secs)
+        self.assertEqual(set(rows), set(check_report.CURRENCIES))
+        self.assertEqual(rows["PHP"][check_report.OVERVIEW_COL_TRIGGER],
+                         "若 C 升破 60.9 → 关注丙(T+2)")
+        self.assertEqual(rows["PHP"][check_report.OVERVIEW_COL_INVALIDATION],
+                         "丙位回落(T+2)")
+
+    def test_column_order_change_is_followed_not_mis_indexed(self):
+        """把「核心依据」与「失效条件」两列**对调**(表头与数据行一起调):
+        按列名解析必须仍然取到失效条件那一格;按序号硬取则会取到依据。"""
+        swapped = OVERVIEW_REPORT.replace(
+            "| 币种 | 条件方向(时限) | 核心依据 | 失效条件 |",
+            "| 币种 | 条件方向(时限) | 失效条件 | 核心依据 |")
+        swapped = swapped.replace("| 依据丙 | 丙位回落(T+2) |",
+                                  "| 丙位回落(T+2) | 依据丙 |")
+        rows = check_report.overview_rows(check_report.sections(swapped))
+        self.assertEqual(rows["PHP"][check_report.OVERVIEW_COL_INVALIDATION],
+                         "丙位回落(T+2)")
+
+    def test_missing_column_declares_with_a_count(self):
+        broken = OVERVIEW_REPORT.replace("| 核心依据 | 失效条件 |",
+                                         "| 核心依据 | 没这一列 |")
+        notes = []
+        rows = check_report.overview_rows(check_report.sections(broken),
+                                          notes=notes)
+        self.assertEqual(rows, {})
+        line = "\n".join(notes)
+        self.assertIn("OVERVIEW_TABLE_COLUMN_MISMATCH", line)
+        self.assertRegex(line, r"\d+")
+
+    def test_missing_section_declares_with_a_count(self):
+        notes = []
+        rows = check_report.overview_rows(
+            check_report.sections("# r\n\n## 执行摘要\n- 一\n"), notes=notes)
+        self.assertEqual(rows, {})
+        line = "\n".join(notes)
+        self.assertIn("OVERVIEW_TABLE_SKIPPED", line)
+        self.assertRegex(line, r"\d+")
+
+    def test_missing_currency_row_declares_with_a_count(self):
+        dropped = "\n".join(l for l in OVERVIEW_REPORT.splitlines()
+                            if not l.startswith("| THB |"))
+        notes = []
+        rows = check_report.overview_rows(check_report.sections(dropped),
+                                          notes=notes)
+        self.assertNotIn("THB", rows)
+        line = "\n".join(notes)
+        self.assertIn("OVERVIEW_ROW_MISSING", line)
+        self.assertIn("THB", line)
+        self.assertRegex(line, r"\d+")
+
+
+class FlipIndicatorReachabilityTest(unittest.TestCase):
+    """② 的可达性:失效条件句的**两种落法**都要认得。
+
+    ---- 实测口径(本轮,先跑后抄)----
+    修前 `FLIP_INDICATOR_CHECK_UNREACHABLE` 在真实产物上:
+    2026-08-13 5/5 个 full 体裁币种节判不出失效条件句;2026-08-14 2/5。
+    根因是识别器只认**前缀式**「不成立时X」,而报告写的是:
+      ① **后缀式**「……这条弱势腿不成立。」—— 标签在句尾,`_ring_payload`
+         取标签之后的那一段,结果是空串,该句被当成"没有载荷"丢掉;
+      ② 「……本判断**作废**。」—— 措辞根本不在标签表里。
+    两条都不是"报告没写失效条件",是识别器认不出。与 e74134d
+    「识别器认历史措辞」同一形制。
+    """
+
+    def test_suffix_form_yields_the_clause_before_the_label(self):
+        s = "若下月加息后仍留有余地,-0.499 会被后续路径改写,这条弱势腿不成立。"
+        got = check_report._ring_payload(s, check_report.INVALIDATION_LABELS)
+        self.assertTrue(got, "后缀式失效条件句的载荷不得为空")
+        self.assertIn("0499", got)
+
+    def test_prefix_form_still_yields_the_clause_after_the_label(self):
+        """前缀式一字不改 —— 后缀回退只在"标签之后为空"时才生效。"""
+        s = "不成立时同一读数只剩这一条路径,美元反而走弱。"
+        got = check_report._ring_payload(s, check_report.INVALIDATION_LABELS)
+        self.assertIn("同一读数只剩这一条路径", got)
+        self.assertNotIn("不成立时", got)
+
+    def test_void_wording_is_recognised_as_an_invalidation_label(self):
+        self.assertIn("作废", check_report.INVALIDATION_LABELS)
+
+    def test_restated_flip_is_still_caught_through_the_suffix_form(self):
+        """回退不得把 ② 变松:失效条件用后缀式写、翻转指标照抄它,仍要红。"""
+        body = ("**分歧与判断**:关键假设是甲乙丙这一条继续成立;"
+                "若不然,甲乙丙这一条不成立。替代解释:丁。"
+                "翻转指标:甲乙丙这一条。")
+        v, _ = check_report._check_one_ring("PHP", body, {"60.843"})
+        self.assertTrue(any("FLIP_INDICATOR_IS_INVALIDATION_RESTATED" in x
+                            for x in v), v)
+
+    def test_overview_invalidation_column_is_declared_as_the_flip_itself(self):
+        """速览「失效条件」列**不是** ② 可用的失效条件来源。
+
+        判据(本轮实测,先跑后抄):`skills/fx-daily-report/SKILL.md:186-187`
+        与 `:273` 两处逐字要求速览「失效条件」那一格与该币种节判断环的
+        **翻转指标同源同字**。在 reports/daily/2026-08-10..14 五份产物上
+        逐条比对,两侧去标点后**逐字相同 20/20**(08-13 那一份的五个节没有
+        独立的翻转指标句,不计入)。
+        于是"从速览表取失效条件喂给 ②"= 拿翻转指标和它自己比,按构造
+        必然 25/25 全红,一条真缺陷都不代表。
+        这一条不判违规,只**带计数声明**,让"该列不能当来源"这件事出现在
+        stdout 里,而不是只留在某个人的汇报里。
+        """
+        notes = []
+        body = "**分歧与判断**:关键假设甲。替代解释乙。翻转指标:丙位回落(T+2)。"
+        check_report.check_overview_invalidation_column(
+            {"PHP": {check_report.OVERVIEW_COL_INVALIDATION: "丙位回落(T+2)"}},
+            {"PHP": body}, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP", line)
+        self.assertRegex(line, r"1/1")
+
+
+WEEKLY_RING = """# 外汇周报 2026-W33
+
+> 覆盖日报:3 份(2026-08-07, 2026-08-08, 2026-08-10);缺失日期:无
+
+## 本周主线
+
+### 主线一:比索这条腿(影响 PHP)
+**宏观背景**:参考价 60.843。
+**关键假设**:参考价 60.843 在下一次定盘前不动;不成立时这条线退回按本地驱动重估。
+**替代解释**:承接厚度(它自己的翻转指标:下一次定盘次序翻过来)。
+**翻转指标(T+3)**:下一次定盘比索退回 60.9 之下。
+
+### 主线二:泰铢那条腿(影响 THB)
+**宏观背景**:参考价 35.2。
+**关键假设**:参考价 35.2 之下已无政策空间;不成立时这条线整条作废。
+**替代解释**:输入性成本(它自己的翻转指标:能源价回落而泰铢不动)。
+**翻转指标(T+3)**:下一次定盘泰铢退回 35.2 之下。
+
+## 各币种一周归因
+USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%s / THB / BRL
+
+## 复盘汇总
+- 命中 1、未命中 0、无法判定 15、未判定 10
+
+## 下周关注
+- 关注定盘更新
+
+## 缺漏汇总
+- 无
+""" % (FIX_PHP, ART_PHP, OFF_PHP)
+
+# 周报数字白名单 = 聚合文件 ∪ 当周日报 ∪ 小整数。fixture 的主线段引了三个
+# 参考价,它们来自日报那一侧,所以测试必须把日报正文一并传入 —— 否则红的是
+# NUMBER_UNTRACEABLE,与本类要测的判断环无关。
+RING_DAILY = ["PHP 60.843 60.9", "THB 35.2"]
+
+
+class WeeklyJudgementRingTest(unittest.TestCase):
+    """判断环三码在**周报模式**也跑。
+
+    ---- 修前实测(先跑后抄)----
+    `python3 scripts/check_report.py --mode weekly reports/weekly/2026-W33.md
+     --digest … --daily …×5` 打出:
+      WEEKLY_JUDGEMENT_LAYER_SKIPPED: …本份周报里有 27 处判断环标签
+      (关键假设 8、替代解释 5、翻转指标 14)未校验
+    也就是三码在周报上的执行次数是 **0**。
+
+    ---- 取数方式:H3 主线段,不是币种节 ----
+    实测 `reports/weekly/2026-W33.md` 的结构:`## 本周主线` 之下是五个
+    `### 主线N:…(影响 …)` 子节,每个子节自带
+    **关键假设 / 替代解释 / 翻转指标** 三件。币种在周报里没有自己的节
+    (`## 各币种一周落点` 是一张表),所以判断环的宿主是**主线段**。
+
+    ---- 判定逻辑只有一份 ----
+    走的是与日报**同一个** `_check_one_ring`,两侧只有"取哪些段"不同。
+    判定复制两份后漂移是本仓库栽过的坑(见 scripts/fixings.py)。
+
+    ---- 闸门 ----
+    日报侧的闸门是 `derived.body_plan` 的体裁,周报侧没有这个东西。
+    这里用**结构闸门**:`## 本周主线` 节之下的 `### ` 子节。理由是它
+    与"判断环写在哪里"是同一件事 —— 有主线段才有判断环,没有主线段时
+    三码无处可判。闸门不成立时照旧打 `WEEKLY_JUDGEMENT_LAYER_SKIPPED`,
+    带计数。
+    """
+
+    def test_ring_codes_run_on_theme_subsections(self):
+        broken = WEEKLY_RING.replace(
+            "**替代解释**:承接厚度(它自己的翻转指标:下一次定盘次序翻过来)。\n", "")
+        v = check_report.check_weekly(broken, DIGEST, RING_DAILY)
+        self.assertTrue(any("JUDGEMENT_RING_INCOMPLETE" in x and "替代解释" in x
+                            for x in v), v)
+
+    def test_restated_flip_is_caught_in_weekly(self):
+        bad = WEEKLY_RING.replace(
+            "**翻转指标(T+3)**:下一次定盘比索退回 60.9 之下。",
+            "**翻转指标(T+3)**:这条线退回按本地驱动重估。")
+        v = check_report.check_weekly(bad, DIGEST, RING_DAILY)
+        self.assertTrue(any("FLIP_INDICATOR_IS_INVALIDATION_RESTATED" in x
+                            for x in v), v)
+
+    def test_unanchored_assumption_is_caught_in_weekly(self):
+        bad = WEEKLY_RING.replace(
+            "**关键假设**:参考价 60.843 在下一次定盘前不动;不成立时这条线退回按本地驱动重估。",
+            "**关键假设**:市场结构不会变;不成立时这条线整条作废。")
+        v = check_report.check_weekly(bad, DIGEST, RING_DAILY)
+        self.assertTrue(any("ASSUMPTION_UNANCHORED" in x for x in v), v)
+
+    def test_compliant_weekly_with_rings_still_passes(self):
+        self.assertEqual(check_report.check_weekly(WEEKLY_RING, DIGEST, RING_DAILY), [])
+
+    def test_gate_not_met_declares_with_a_count(self):
+        """没有 H3 主线子节时照旧声明,并带计数 —— 与修前同一条码。"""
+        notes = []
+        check_report.check_weekly(WEEKLY_OK, DIGEST, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("WEEKLY_JUDGEMENT_LAYER_SKIPPED", line)
+        self.assertRegex(line, r"\d+ 处判断环标签")
+
+    def test_number_attribution_inapplicability_is_declared_with_a_count(self):
+        """数字归属两码在周报上**结构性不适用**,必须把"为什么"写成带计数
+        的声明,不能只是不跑。
+
+        理由(实测):两码的判据是"这个数出自**哪个币种的快照切片**",而
+        周报的输入里根本没有按币种分键的快照 —— `--digest` 是周度聚合、
+        `--daily` 是已过溯源的日报正文,两者都不提供 `rates[币种]` /
+        `derived.real_rate[经济体]` 这种切片。没有切片就判不出归属。
+        """
+        notes = []
+        check_report.check_weekly(WEEKLY_RING, DIGEST, RING_DAILY, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE", line)
+        self.assertIn("NUMBER_WRONG_SECTION", line)
+        self.assertRegex(line, r"\d+")
+
+    def test_assumption_anchor_without_digest_declares_with_a_count(self):
+        """没有 --digest 时白名单建不起来,③ 判不了锚点 —— 出声,不静默。"""
+        notes = []
+        check_report.check_weekly(WEEKLY_RING, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("WEEKLY_ASSUMPTION_ANCHOR_SKIPPED_NO_DIGEST", line)
+        self.assertRegex(line, r"\d+")
+
+    def test_the_ring_judgement_has_exactly_one_implementation(self):
+        """判定逻辑只有一份:周报侧不得另写一套。
+
+        判据是**源码级**的:`_check_one_ring` 是三码字符串唯一的产地,
+        日报与周报两条路径都必须落到它上面。另写一套时三个码会在别的函数
+        里再出现一次,这条断言就红。
+        """
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        owners = {}
+        for fn in [n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef)]:
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Constant) \
+                        and isinstance(node.value, str):
+                    for code in ("JUDGEMENT_RING_INCOMPLETE",
+                                 "FLIP_INDICATOR_IS_INVALIDATION_RESTATED",
+                                 "ASSUMPTION_UNANCHORED"):
+                        if node.value.startswith(code + ":"):
+                            owners.setdefault(code, set()).add(fn.name)
+        self.assertEqual(owners, {c: {"_check_one_ring"} for c in owners},
+                         "判断环三码的产地不唯一:%s" % owners)
+        self.assertEqual(len(owners), 3, owners)
+
+
+DECISION_LOG = "\n".join([
+    json.dumps({"date": "2026-08-10", "currency": "PHP",
+                "scenario": "情景丙", "trigger": "若 C 升破 60.9 → 关注丙(T+2)",
+                "watch_direction": "up"}, ensure_ascii=False),
+    json.dumps({"date": "2026-08-10", "currency": "USD",
+                "scenario": "情景甲", "trigger": "若 A 升破 60.843 → 关注甲(T+2)",
+                "watch_direction": None}, ensure_ascii=False),
+]) + "\n"
+
+
+class DecisionTriggerSourcedTest(unittest.TestCase):
+    """速览「条件方向」格必须逐字包含决策日志同日同币种的 `trigger`。
+
+    ---- 为什么新增这一码(实测,先跑后抄)----
+    `skills/fx-daily-report/SKILL.md:185` 与 `:375` 两处写明二者**同源同字**,
+    而校验器对它**零提及**:`grep -n "decision|决策日志" scripts/check_report.py`
+    无输出。散文规则、零强制。
+    本周实测违约率(判据:log 的 trigger 整串是否出现在当日速览「条件方向」
+    那一格里):2026-08-10 五币种全 False、2026-08-11 五币种全 False、
+    08-12/08-13/08-14 各五条全 True —— **25 条里 10 条当前就是违反的**,
+    而六份产物全绿。
+
+    ---- 方向:表是源,日志是抄件 ----
+    `SKILL.md:374-375` 写的是"把速览表五行的条件方向整理成 JSON 数组"经
+    `log_decision.py` 写入,所以两者不一致时,**错的是日志**。
+    git 证据(本轮实测):日志最后一次写入 `eef783e`,五份日报重生成于
+    `ee7a2c6`,且 `git merge-base --is-ancestor eef783e ee7a2c6` 为真 ——
+    日志确实是旧的那一份。
+    """
+
+    def _entries(self, text=DECISION_LOG):
+        entries, problems = check_report.parse_decision_log(text)
+        self.assertEqual(problems, [])
+        return entries
+
+    def test_matching_trigger_passes(self):
+        v = check_report.check_decision_trigger(
+            check_report.sections(OVERVIEW_REPORT), "2026-08-10",
+            self._entries())
+        self.assertEqual(v, [])
+
+    def test_trigger_not_verbatim_in_the_cell_is_a_violation(self):
+        drifted = DECISION_LOG.replace("若 C 升破 60.9 → 关注丙(T+2)",
+                                       "另写了一版触发条件")
+        v = check_report.check_decision_trigger(
+            check_report.sections(OVERVIEW_REPORT), "2026-08-10",
+            self._entries(drifted))
+        self.assertTrue(any("DECISION_TRIGGER_NOT_SOURCED" in x and "PHP" in x
+                            for x in v), v)
+
+    def test_violation_carries_its_own_disposition(self):
+        drifted = DECISION_LOG.replace("若 C 升破 60.9 → 关注丙(T+2)", "另一版")
+        v = check_report.check_decision_trigger(
+            check_report.sections(OVERVIEW_REPORT), "2026-08-10",
+            self._entries(drifted))
+        self.assertTrue(v[0].endswith(check_report.DISPOSITION_DECISION_TRIGGER),
+                        v[0])
+
+    def test_no_entry_for_the_date_declares_with_a_count(self):
+        notes = []
+        check_report.check_decision_trigger(
+            check_report.sections(OVERVIEW_REPORT), "2026-08-99",
+            self._entries(), notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("DECISION_LOG_NO_ENTRY", line)
+        self.assertRegex(line, r"\d+")
+
+    def test_corrupt_log_is_reported_not_swallowed(self):
+        entries, problems = check_report.parse_decision_log("{ 这不是 JSON\n")
+        self.assertTrue(problems)
+
+    def test_cli_without_the_flag_declares_with_a_count(self):
+        """`--decision-log` 缺席是合法形态(与 `--prior` 同规矩),但必须
+        出带计数的声明 —— 否则"没查"与"查过且全过"在 stdout 上同形。"""
+        with tempfile.TemporaryDirectory() as t:
+            rp, sp, bp = (os.path.join(t, n)
+                          for n in ("r.md", "s.json", "b.md"))
+            for path, text in ((rp, make_report()), (sp, SNAP_TEXT),
+                               (bp, BRIEF)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp, "--brief", bp,
+                                        "--mode", "daily"])
+            self.assertEqual(rc, 0)
+            out = buf.getvalue()
+            self.assertIn("DECISION_LOG_ABSENT_SKIPPED", out)
+            self.assertRegex(out, r"DECISION_LOG_ABSENT_SKIPPED[^\n]*\d+")
+
+    def test_cli_with_a_corrupt_log_exits_2(self):
+        """给了却读不成 = 响亮失败,与 `--digest` 同规格 rc=2。
+        这一条不走 fail-open:调用方以为查了、脚本静默跳过,正是上一轮
+        weekly 位置参数那条缺陷的形状。"""
+        with tempfile.TemporaryDirectory() as t:
+            rp, sp, bp, lp = (os.path.join(t, n)
+                              for n in ("r.md", "s.json", "b.md", "log.jsonl"))
+            for path, text in ((rp, make_report()), (sp, SNAP_TEXT),
+                               (bp, BRIEF), (lp, "{ 坏掉的行\n")):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                rc = check_report.main([rp, sp, "--brief", bp,
+                                        "--decision-log", lp])
+            self.assertEqual(rc, 2, buf.getvalue())
+
+
+class NumberWrongSectionSentenceDeltaTest(unittest.TestCase):
+    """`NUMBER_WRONG_SECTION` 的点名放行:判定单位**保留在节**,但声明必须
+    把"收到句会多炸多少"这个数一起打出来。
+
+    ---- 本轮实测(先跑后抄)----
+    五份日报上「币种节 × 别的币种」整池放行:9/20、10/20、13/20、15/20、
+    16/20。把判定单位从节收到句后,**新增 22 条**(节级 0 → 句级 22)。
+    用户给的红线是 15,22 超线,于是逐条核了这 22 条:
+    **22 条全部来自 6 个句子,且 6 个句子是同一个结构类** —— 句子用
+    **集合指代**点名其余币种(「四条本币对美元的参考价……」「三条同时越过
+    61.178、33.105、5.1049」「四者未同次同向升破 0.867、61.325、33.13、
+    5.1811」「0.705%、0.279%、0.129% 与 -1.613、-1.42、-0.499 顺序一一
+    对上」),然后按固定次序并列列出各自的值。别名表按构造看不见
+    「四条」「四者」「三条」这类集合量词,所以句级判定对这一类**必然**误报。
+    这正是"结构性误报"的允许项:保留节级 + 收紧声明。
+    """
+
+    def test_named_pass_note_also_reports_the_sentence_level_delta(self):
+        notes = []
+        # USD 节**跨句**引欧元:第一句点名「欧元」,第二句只写 0.921。
+        # 节级判定放行(节内点过名),句级判定会炸第二句 —— 差值恰好 1,
+        # 声明里的那个数因此是可断言的,不是"打印了某个数字"。
+        bodies = {"USD": "**驱动**:欧元这一腿另算。参考价 0.921 同期未动。"}
+        check_report.check_number_section_mapping(
+            check_report.sections(map_report(bodies=bodies)), MAP_SNAP,
+            MAP_BRIEF, set(check_report.CURRENCIES),
+            check_report.numbers_in(MAP_SNAP_TEXT)
+            | check_report.numbers_in(MAP_BRIEF)
+            | check_report.ALLOWED_SMALL, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("NUMBER_WRONG_SECTION_NAMED_PASS", line)
+        self.assertRegex(line, r"收到句会多炸 1 条")

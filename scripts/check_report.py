@@ -167,6 +167,11 @@ DISPOSITION_SUMMARY_CURRENCY = ("处置:在**这一条摘要 bullet 里**点名�
                                 "属于哪个币种(写「雷亚尔 5.1049」,"
                                 "不要光写 5.1049);"
                                 "确实说的是别的币种就换成本条点名的那个币种的数")
+DISPOSITION_DECISION_TRIGGER = ("处置:先判哪一份是旧的 —— SKILL 第 374 行"
+                                "写明日志由速览表「条件方向」整理而来,表是源、"
+                                "日志是抄件;改了表没回写就用 "
+                                "`scripts/log_decision.py` 回填日志,"
+                                "不要反过来改表")
 DISPOSITION_AMBIGUOUS = ("处置:把重名的小节标题改成互不包含的标题,"
                          "或合并成一节;校验器**不猜**哪一节是正主,"
                          "这一条不改,依赖该节的检查就一直不执行")
@@ -204,7 +209,13 @@ RING_LABELS = (ASSUMPTION_LABEL, "替代解释", FLIP_LABEL)
 # 按 SKILL 要求写的后半句「不成立时/则……」。两种都要认 —— 只认前者时,
 # 本仓实际产出的报告(逐字见 reports/daily/2026-08-14.md)一条都不匹配,
 # 整个 ② 会变成永不触发的空码。
-INVALIDATION_LABELS = ("失效条件", "不成立时", "不成立则", "不成立")
+# 「作废」是本轮补的第三种落法。实测(reports/daily/2026-08-13.md 五个币种节)
+# 报告写的是「若 4.75 上调,负利差被修复,本判断**作废**。」—— 语义上就是失效
+# 条件,措辞不在表里,于是 ② 在那一份上 5/5 判不出、一次都没执行。
+# 与 e74134d「识别器认历史措辞」同一形制:**识别器必须认得产出端实际写出来的
+# 措辞**,否则码只是看上去存在。补它不放宽任何阈值 —— 多认一种写法只会让 ②
+# 多跑几次,不会让任何一条本该红的变绿(实测:补前后在五份产物上新增违规 0 条)。
+INVALIDATION_LABELS = ("失效条件", "不成立时", "不成立则", "不成立", "作废")
 # 「去除标点与空白」:`\W` 在 unicode 模式下把中英文标点、括号、`*`、`+`、
 # 小数点一并去掉,CJK 与字母数字是 word 字符,原样保留。两边同样处理,
 # 所以它只影响"标点算不算差异",不影响谁和谁比。
@@ -482,14 +493,34 @@ def _ring_payload(sentence, labels):
     码 —— 那正是本轮要消灭的「非检查」形态。剥掉标签后比的是标签**之后**
     那段话,也就是作弊时被原样搬过去的那一段。
     取最后一个:替代解释那一句写成「……(其翻转指标:X)」,要的是 X。
+
+    ---- 后缀式回退(本轮补)----
+    上面那套只认**前缀式**「不成立时X」。实测 reports/daily/2026-08-14.md 的
+    EUR 节写的是**后缀式**「若下月加息后仍留有余地,-0.499 会被后续路径改写,
+    这条弱势腿**不成立**。」—— 标签落在句尾,标签之后是空的,于是这一句被当成
+    「没有载荷」整句丢掉,② 在该节因此没有执行(那一天 2/5 判不出失效条件句,
+    这是其中一条)。
+    回退规则:标签之后剥完为空时,取**第一个**标签之前的那一段。后缀式里
+    要比的内容正好在标签前面。只在"之后为空"时才回退,所以前缀式一字不受影响
+    (由 test_prefix_form_still_yields_the_clause_after_the_label 钉住)。
+    这不是放宽:回退只把**原本被丢掉**的句子还回来参与比较,② 因此**多判**
+    而不是少判(test_restated_flip_is_still_caught_through_the_suffix_form
+    正是拿后缀式写的失效条件去钓 ②,要求它照样红)。
     """
-    cut = -1
-    for lab in labels:
-        p = sentence.rfind(lab)
-        if p >= 0:
-            cut = max(cut, p + len(lab))
-    tail = sentence if cut < 0 else sentence[cut:]
-    return _RING_STRIP_RE.sub("", tail)
+    cuts = sorted({sentence.rfind(lab) + len(lab) for lab in labels
+                   if sentence.rfind(lab) >= 0}, reverse=True)
+    if not cuts:
+        return _RING_STRIP_RE.sub("", sentence)
+    # 由后往前取第一个**非空**载荷。只取"最靠后那一个"会在同一句里同时出现
+    # 前缀式与后缀式标签时取空:实测「不成立时这条线整条作废。」两个标签都
+    # 在,最靠后的「作废」之后只剩句号,而要比的内容在它前面。
+    for cut in cuts:
+        out = _RING_STRIP_RE.sub("", sentence[cut:])
+        if out:
+            return out
+    # 纯后缀式(「……这条弱势腿不成立。」):标签之后全空,内容在第一个标签之前
+    heads = [sentence.find(lab) for lab in labels if sentence.find(lab) >= 0]
+    return _RING_STRIP_RE.sub("", sentence[:min(heads)] if heads else "")
 
 
 def check_judgement_ring(secs, derived, covered, allowed, notes=None):
@@ -591,12 +622,151 @@ def check_judgement_ring(secs, derived, covered, allowed, notes=None):
     return v
 
 
+# ---- 速览表:按**表头列名**解析,不按列序号硬取 ----
+# 表结构逐字见 reports/daily/2026-08-14.md:11-16:
+#   | 币种 | 条件方向(时限) | 核心依据 | 失效条件 |
+# 键按**包含**匹配表头单元格(表头写的是「条件方向(时限)」,带括号补语)。
+# **为什么不按序号**:列序一变,按序号取就静默错位 —— 把「核心依据」当成
+# 「失效条件」比对,判定照跑、结论全错,而 stdout 上一个字都不会变。按列名
+# 解析时"列序变了"要么自动跟上(列还在,换了位置),要么变成一条带计数的
+# 声明(列没了),两种都不是错位取值。
+OVERVIEW_SECTION_KEY = "速览"
+OVERVIEW_COL_CURRENCY = "币种"
+OVERVIEW_COL_TRIGGER = "条件方向"
+OVERVIEW_COL_INVALIDATION = "失效条件"
+OVERVIEW_COLUMNS = (OVERVIEW_COL_CURRENCY, OVERVIEW_COL_TRIGGER,
+                    OVERVIEW_COL_INVALIDATION)
+
+
+def _pipe_rows(body):
+    """markdown 管道表 → [[单元格]]。分隔行(`| --- |`)剔除。"""
+    rows = []
+    for line in body.splitlines():
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if cells and all(set(c) <= set("-: ") and c for c in cells):
+            continue                                  # 分隔行
+        rows.append(cells)
+    return rows
+
+
+def overview_rows(secs, notes=None):
+    """速览表 → {币种: {列名: 单元格}}。解析不出时返回 `{}` 并出声。
+
+    三态,每一态都带计数 —— 「跳过」与「通过」在输出上必须可区分:
+
+    - 没有速览节 / 节里没有表 → `OVERVIEW_TABLE_SKIPPED`
+    - 表头找不到某个要用的列名 → `OVERVIEW_TABLE_COLUMN_MISMATCH`,**整表不用**
+      (失败关闭:少一列时按剩下的列硬取就是错位)
+    - 某些币种没有行 → `OVERVIEW_ROW_MISSING`,其余币种照常返回
+
+    notes : **出参**,同 check_daily。
+    """
+    sec = find_section(secs, OVERVIEW_SECTION_KEY)
+    rows = _pipe_rows(sec[1]) if sec else []
+    if not rows:
+        if notes is not None:
+            notes.append("OVERVIEW_TABLE_SKIPPED: 报告没有可解析的「%s」表"
+                         "(节%s、表行 %d 行),%d 个币种的速览表判据未校验"
+                         % (OVERVIEW_SECTION_KEY, "在" if sec else "缺失",
+                            len(rows), len(CURRENCIES)))
+        return {}
+    header = rows[0]
+    idx = {}
+    for key in OVERVIEW_COLUMNS:
+        hits = [i for i, h in enumerate(header) if key in h]
+        if len(hits) == 1:
+            idx[key] = hits[0]
+    missing = [k for k in OVERVIEW_COLUMNS if k not in idx]
+    if missing:
+        if notes is not None:
+            notes.append("OVERVIEW_TABLE_COLUMN_MISMATCH: 速览表表头的 %d 列"
+                         "(%s)里,%d 个要用的列名(%s)不是恰好一列;"
+                         "整表按失败关闭不取值,%d 个币种的速览表判据未校验"
+                         % (len(header), "、".join(header), len(missing),
+                            "、".join(missing), len(CURRENCIES)))
+        return {}
+    out = {}
+    for cells in rows[1:]:
+        if max(idx.values()) >= len(cells):
+            continue
+        cur = cells[idx[OVERVIEW_COL_CURRENCY]]
+        if cur in CURRENCIES:
+            out[cur] = {k: cells[i] for k, i in idx.items()}
+    absent = [c for c in CURRENCIES if c not in out]
+    if absent and notes is not None:
+        notes.append("OVERVIEW_ROW_MISSING: 速览表缺少 %d/%d 个币种的行(%s),"
+                     "这些币种的速览表判据未校验"
+                     % (len(absent), len(CURRENCIES), "、".join(absent)))
+    return out
+
+
+def check_overview_invalidation_column(rows, bodies, notes=None):
+    """速览「失效条件」列**不是** ② 可用的失效条件来源 —— 把这件事出声。
+
+    ---- 为什么不从这一列取(本轮实测,先跑后抄)----
+    `skills/fx-daily-report/SKILL.md:186-187` 与 `:273` 两处逐字要求:速览表
+    「失效条件」那一格必须与该币种节判断环的**翻转指标同源同字**。
+    在 reports/daily/2026-08-10..14 五份产物上逐条比对,两侧去掉标点空白后
+    **逐字相同 20/20**(2026-08-13 那一份五个节没有独立的翻转指标句,不计入)。
+    所以"从速览表取失效条件喂给 ②"= 拿翻转指标和它自己比:按构造 25/25 全红,
+    一条真缺陷都不代表。**判据放错地方的修法不能是换一个更错的地方。**
+    ② 真正该比的失效条件在币种节正文里 —— 关键假设那一句的「不成立/作废」
+    后半句,`INVALIDATION_LABELS` 认的就是它;本轮修的是那个识别器
+    (见 `_ring_payload` 的后缀式回退与 `INVALIDATION_LABELS` 的「作废」)。
+
+    这一条**不判违规**:20/20 相同正是 SKILL 要求的形态,报告没有错。
+    它只把"该列与翻转指标同字、因此不能当独立来源"打成一条带计数的声明,
+    让这个事实出现在 stdout 里,而不是只留在某个人的汇报里。
+    报告与 SKILL 之间这处口径矛盾(一边定义翻转指标为"出现即改判"、一边要求
+    它与"失效条件"同字)已由 reports/daily/2026-08-14.md 的附录 D 登记,
+    须在 SKILL 层裁决后统一改,不在校验器里单方面裁定。
+
+    rows   : `overview_rows` 的返回值
+    bodies : {币种: 币种节正文}
+    """
+    if notes is None:
+        return
+    same = []
+    for c in CURRENCIES:
+        cell = (rows.get(c) or {}).get(OVERVIEW_COL_INVALIDATION)
+        body = bodies.get(c)
+        if not cell or not body:
+            continue
+        col = _RING_STRIP_RE.sub("", cell)
+        flips = [s for s in split_sentences(body) if FLIP_LABEL in s]
+        pays = [p for p in (_ring_payload(f, (FLIP_LABEL,)) for f in flips) if p]
+        if col and any(col == p or col in p or p in col for p in pays):
+            same.append(c)
+    both = [c for c in CURRENCIES
+            if (rows.get(c) or {}).get(OVERVIEW_COL_INVALIDATION)
+            and bodies.get(c)]
+    if same:
+        notes.append("FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP: 速览表「%s」列在 "
+                     "%d/%d 个币种上与该币种节的翻转指标去标点后逐字相同"
+                     "(SKILL 第 186/273 行要求二者同源同字),该列因此不是"
+                     "独立的失效条件来源,② 不从该列取数"
+                     % (OVERVIEW_COL_INVALIDATION, len(same), len(both)))
+
+
 def _check_one_ring(currency, body, allowed):
     """单个 full 体裁币种节的三码判定。见 check_judgement_ring 的诚实标注。
 
     返回 (violations, flip_unreachable)。`flip_unreachable` 为真 = 本节写了
     翻转指标句、却判不出任何带载荷的失效条件句,② 因此**没有执行** ——
     调用点必须把它计数打印出来,不出声就与「比过了、没重复」不可分辨。
+
+    allowed : 可溯源数字白名单。**`None` 表示这一轮建不起白名单**(周报侧
+            未提供 `--digest`),此时 ③ 整条不判 —— 拿一个只有小整数的空
+            白名单去判锚点,会把每一句关键假设都打成假红。调用点必须为这
+            一态打带计数的声明(`WEEKLY_ASSUMPTION_ANCHOR_SKIPPED_NO_DIGEST`)。
+
+    **本函数是判断环三码字面量的唯一产地**,日报与周报两条路径都落到它上面 ——
+    判定复制两份后漂移是本仓库栽过的坑(见 scripts/fixings.py)。由
+    WeeklyJudgementRingTest::test_the_ring_judgement_has_exactly_one_implementation
+    的 AST 断言钉住:三个码只许在这个函数里出现。
     """
     v = []
     missing = [lab for lab in RING_LABELS if lab not in body]
@@ -634,7 +804,7 @@ def _check_one_ring(currency, body, allowed):
                          "失效条件原文:「%s」;%s"
                          % (currency, f, i, DISPOSITION_FLIP))
     for s in sents:
-        if ASSUMPTION_LABEL not in s:
+        if ASSUMPTION_LABEL not in s or allowed is None:
             continue
         if not (numbers_in(s) & allowed):
             v.append("ASSUMPTION_UNANCHORED: %s 节的关键假设句里没有可溯源"
@@ -853,7 +1023,7 @@ def check_number_section_mapping(secs, snap, brief_text, covered, allowed,
                          "不判归属" % len(unattributed))
     own = {c: currency_number_pool(snap, brief_text, c) for c in CURRENCIES}
     no_slice = []
-    named_pairs = total_pairs = released = 0
+    named_pairs = total_pairs = released = sentence_bad = 0
     for c in sorted(covered):
         if not currency_snapshot_slice(snap, c):
             no_slice.append(c)
@@ -871,6 +1041,15 @@ def check_number_section_mapping(secs, snap, brief_text, covered, allowed,
         here = numbers_in(body) & allowed
         bad = sorted(here - pool)
         released += len((here - strict) - set(bad))
+        # 「收到句会多炸多少」——**只统计,不判定**。判定单位仍是节(理由见
+        # 诚实边界 1 与下面 NUMBER_WRONG_SECTION_NAMED_PASS 的实测口径)。
+        for sent in split_sentences(body):
+            spool = set(strict)
+            for other in CURRENCIES:
+                if other != c and any(a in sent
+                                      for a in CURRENCY_ALIASES[other]):
+                    spool |= own[other]
+            sentence_bad += len((numbers_in(sent) & allowed) - spool)
         for n in bad:
             src = sorted(o for o in CURRENCIES if o != c and n in own[o])
             v.append("NUMBER_WRONG_SECTION: %s 节写了 %s,它只出自 %s 的快照"
@@ -881,11 +1060,26 @@ def check_number_section_mapping(secs, snap, brief_text, covered, allowed,
         # 诚实边界 1 说的那 44%(本轮在五份产物上复算为 59/100)此前**零声明**:
         # 「放行了大半」与「全查过且全过」在 stdout 上逐字不可分辨。
         # 声明带两个计数 ——「有跳过」不可操作,得说跳过了多少。
+        # ---- 本轮补的第三个数:**收到句会多炸多少** ----
+        # 「放行了大半」上一轮已经出声,但读者据它判断不了"收紧一档能换来
+        # 多少检出力" —— 而那正是决定要不要收紧的那个数。不给它,"保留节级"
+        # 就是一句无法复核的断言。
+        # 实测口径(本轮,reports/daily/2026-08-10..14 五份产物):
+        # 节级 0 条 → 句级 22 条,新增 22。逐条核下来 **22 条全部来自 6 个
+        # 句子、且是同一个结构类**:句子用**集合指代**点名其余币种
+        # (「四条本币对美元的参考价……」「三条同时越过 61.178、33.105、
+        # 5.1049」「四者未同次同向升破 0.867、61.325、33.13、5.1811」
+        # 「0.705%、0.279%、0.129% 与 -1.613、-1.42、-0.499 顺序一一对上」),
+        # 再按固定次序并列列出各自的值。别名表按构造看不见「四条」「四者」
+        # 「三条」这类**集合量词**,所以句级判定对这一类必然误报 —— 22 条里
+        # 真缺陷 0 条。据此**保留节级判定**,把这个数打出来代替收紧。
         notes.append("NUMBER_WRONG_SECTION_NAMED_PASS: %d/%d 个「币种节 × 别的"
                      "币种」组合因节内点名了对方而整池放行,其中 %d 个数字实例"
                      "因此未判归属(归属的判定单位是节,不是句,见 "
-                     "check_number_section_mapping 的诚实边界 1)"
-                     % (named_pairs, total_pairs, released))
+                     "check_number_section_mapping 的诚实边界 1);"
+                     "同一批输入把判定单位收到句会多炸 %d 条"
+                     % (named_pairs, total_pairs, released,
+                        max(sentence_bad - len(v), 0)))
     if no_slice and notes is not None:
         notes.append("NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE: %s 在快照里没有"
                      "任何自有切片(rates/events/derived/macro 都没有该币种或"
@@ -1050,8 +1244,194 @@ def check_summary_numbers_in_body(secs, notes=None, ambiguous=()):
     return v
 
 
+def parse_decision_log(text):
+    """决策日志(jsonl)→ ({(日期, 币种): 条目}, problems)。
+
+    与 `parse_snapshot` 同规格:**外部数据,可能损坏**,所以解析问题逐条
+    返回而不是抛。调用点(`main`)据此 rc=2 响亮失败 —— 这一条刻意**不走
+    fail-open**:"给了 `--decision-log` 却读不成 → 静默不查" 正是上一轮
+    weekly 位置参数那条缺陷的形状(调用方以为查了、脚本以为没传,两边都
+    不出声)。给了就必须读成,读不成就报错。
+
+    **本文件不做路径解析**:日志路径由 `--decision-log` 传入。校验器不读
+    环境变量是不变量(见文件头),而"自己去仓库根目录找 state/…"要么得
+    import os、要么得靠 `__file__` 猜仓库布局,两条都在把闸门的输入交给
+    校验器自己拼 —— 与 `--digest` / `--prior` 同规矩,路径由调用方给。
+    """
+    entries, problems = {}, []
+    for i, line in enumerate(text.splitlines()):
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+        except (ValueError, RecursionError) as e:
+            problems.append("决策日志第 %d 行无法解析: %s" % (i + 1, e))
+            continue
+        if not isinstance(obj, dict):
+            problems.append("决策日志第 %d 行应为对象,实为 %s"
+                            % (i + 1, type(obj).__name__))
+            continue
+        date, cur = obj.get("date"), obj.get("currency")
+        if isinstance(date, str) and isinstance(cur, str):
+            entries[(date, cur)] = obj
+    return entries, problems
+
+
+def check_decision_trigger(secs, date, entries, notes=None):
+    """`DECISION_TRIGGER_NOT_SOURCED` —— 速览「条件方向」格 ⊇ 日志 `trigger`。
+
+    ---- 为什么新增(本轮实测,先跑后抄)----
+    `skills/fx-daily-report/SKILL.md:185` 与 `:375` 两处写明速览表「条件方向」
+    那一格与当日写进决策日志的 `trigger` **同源同字**,而校验器对它零提及:
+    `grep -n "decision\\|决策日志" scripts/check_report.py` 无输出。
+    散文规则、零强制。本周实测违约率(判据:log 的 trigger 整串是否出现在
+    当日速览「条件方向」那一格里):2026-08-10 五币种全 False、2026-08-11
+    五币种全 False、08-12/08-13/08-14 各五条全 True —— **25 条里 10 条当前
+    就是违反的,而六份产物全绿**。
+    更刺眼的一条:`reports/daily/2026-08-14.md:21` 逐字写着「与
+    state/decision-log.jsonl 当日五条 trigger 逐字同源(本期实跑比对:
+    五条全中)」—— 报告在自证一条没有裁判的规则。
+
+    ---- 判据:包含,不是相等 ----
+    速览那一格按模板写的是 `<可观测触发> → 关注<方向>(T+N)`,而日志的
+    `trigger` 只登记触发那一半(SKILL 第 375 行:「把速览表五行的"条件方向"
+    整理成 JSON 数组」)。所以判的是**格里逐字包含 trigger 整串**,不是相等 ——
+    要求相等会把每一条合规的都打红。
+
+    ---- 方向:表是源,日志是抄件 ----
+    SKILL 第 374 行写明日志由速览表整理而来,所以两者不一致时**错的是日志**
+    (处置文案照此写)。git 证据(本轮实测):日志最后一次写入 `eef783e`,
+    五份日报重生成于 `ee7a2c6`,`git merge-base --is-ancestor eef783e ee7a2c6`
+    为真 —— 日志确实是旧的那一份。
+
+    date : 当日日期。**取自快照的 `date` 字段**(脚本产出),不从报告正文里
+           抓 —— 报告是被查对象,让它自己说"我是哪一天"就等于把闸门的输入
+           交给被查方(与 V7/V8/V12 三条真绕过同型)。
+
+    notes : **出参**,同 check_daily。日志里没有当日/该币种条目 → 带计数声明。
+    """
+    v = []
+    rows = overview_rows(secs)
+    if not rows:
+        return v          # overview_rows 已出 OVERVIEW_TABLE_* 声明,不重复
+    checked, absent = 0, []
+    for c in CURRENCIES:
+        cell = (rows.get(c) or {}).get(OVERVIEW_COL_TRIGGER)
+        if cell is None:
+            continue      # 该币种没有速览行,OVERVIEW_ROW_MISSING 已声明
+        entry = entries.get((date, c))
+        trigger = entry.get("trigger") if isinstance(entry, dict) else None
+        if not isinstance(trigger, str) or not trigger.strip():
+            absent.append(c)
+            continue
+        checked += 1
+        if trigger not in cell:
+            v.append("DECISION_TRIGGER_NOT_SOURCED: 速览表 %s 行的「%s」格"
+                     "没有逐字包含决策日志 %s/%s 的 trigger;"
+                     "日志原文:「%s」;速览原文:「%s」;%s"
+                     % (c, OVERVIEW_COL_TRIGGER, date, c, trigger, cell,
+                        DISPOSITION_DECISION_TRIGGER))
+    if absent and notes is not None:
+        notes.append("DECISION_LOG_NO_ENTRY: 决策日志里没有 %s 的 %d/%d 个币种"
+                     "条目(%s,或条目的 trigger 缺失/为空),这些币种的"
+                     "「条件方向」同源同字未校验(已校验 %d 个)"
+                     % (date, len(absent), len(CURRENCIES),
+                        "、".join(absent), checked))
+    return v
+
+
+# ---- 周报侧判断环的宿主:`## 本周主线` 之下的 `### 主线N` 子节 ----
+# 实测 reports/weekly/2026-W33.md 的结构:五个 `### 主线N:…(影响 …)` 子节,
+# 每个自带 **关键假设 / 替代解释 / 翻转指标** 三件(实测 27 处标签)。
+# 币种在周报里**没有自己的节**(`## 各币种一周落点` 是一张表),所以判断环的
+# 宿主只能是主线段 —— 按币种取会一个都取不到,那正是"整层不查"的来源。
+WEEKLY_THEME_SECTION_KEY = "本周主线"
+
+
+def theme_subsections(secs):
+    """`## 本周主线` 之下的 `### ` 子节 → [(标题, 正文)];没有则空列表。
+
+    `sections()` 只在 `## ` 处切,`### ` 行原样留在节正文里,所以这里在
+    节正文上再切一层。节定位仍走 `find_section`(重名返回 None → 空列表,
+    失败关闭与别处同规矩)。
+    """
+    sec = find_section(secs, WEEKLY_THEME_SECTION_KEY)
+    if sec is None:
+        return []
+    out, cur, buf = [], None, []
+    for line in sec[1].splitlines():
+        if line.startswith("### "):
+            if cur is not None:
+                out.append((cur, "\n".join(buf)))
+            cur, buf = line[4:].strip(), []
+        elif cur is not None:
+            buf.append(line)
+    if cur is not None:
+        out.append((cur, "\n".join(buf)))
+    return out
+
+
+def check_weekly_judgement_ring(secs, report, allowed, notes=None):
+    """判断环三码在**周报模式**的执行入口。
+
+    ---- 修前:整层不查 ----
+    实测(先跑后抄)周报模式打出的是
+      `WEEKLY_JUDGEMENT_LAYER_SKIPPED: …本份周报里有 27 处判断环标签
+       (关键假设 8、替代解释 5、翻转指标 14)未校验`
+    也就是三码在周报上的执行次数是 **0**,而周报里照样写满了判断环。
+    声明本身是上一轮补的,它照出的洞就是这一条。
+
+    ---- 闸门:结构闸门,不是体裁闸门 ----
+    日报侧的闸门是 `derived.body_plan` 给的体裁(脚本给,不由 LLM 给);
+    周报侧**没有** body_plan,也没有等价的脚本产出物。这里改用**结构闸门**:
+    `## 本周主线` 之下的 `### ` 子节。理由:判断环写在哪里与主线段在哪里
+    是同一件事 —— 有主线段才有判断环,没有主线段时三码无处可判,不是
+    "查过且全过"。闸门不成立时照旧出 `WEEKLY_JUDGEMENT_LAYER_SKIPPED`
+    并带计数(标签数就是"漏掉了多少"的度量)。
+    体裁闸门那条路刻意不选:周报的 minimal/full 体裁不存在,凭标题猜"这一段
+    该不该有判断环"就是编造,与 JUDGEMENT_RING_SKIPPED_NO_MODE 拒绝猜同理。
+
+    allowed : 见 `_check_one_ring`。`None`(未提供 --digest)时 ③ 不判并出声。
+    """
+    v = []
+    themes = theme_subsections(secs)
+    if not themes:
+        if notes is not None:
+            notes.append("WEEKLY_JUDGEMENT_LAYER_SKIPPED: 周报没有可用的"
+                         "「%s」H3 主线子节,判断环三码(%s)无处可判;"
+                         "本份周报里有 %d 处判断环标签(%s)未校验"
+                         % (WEEKLY_THEME_SECTION_KEY,
+                            "/".join(("JUDGEMENT_RING_INCOMPLETE",
+                                      "FLIP_INDICATOR_IS_INVALIDATION_RESTATED",
+                                      "ASSUMPTION_UNANCHORED")),
+                            sum(report.count(lab) for lab in RING_LABELS),
+                            "、".join("%s %d" % (lab, report.count(lab))
+                                      for lab in RING_LABELS)))
+        return v
+    if allowed is None and notes is not None:
+        notes.append("WEEKLY_ASSUMPTION_ANCHOR_SKIPPED_NO_DIGEST: 未提供 "
+                     "--digest,可溯源数字白名单建不起来,%d 个主线段的 "
+                     "ASSUMPTION_UNANCHORED 未校验(另两码照常执行)"
+                     % len(themes))
+    unreachable = []
+    for heading, body in themes:
+        # 段名取标题里冒号之前那一截(`主线一:…` → `主线一`),违规行要靠它
+        # 定位到具体哪一段;整条标题太长,打出来读者反而找不到重点
+        name = re.split(r"[::]", heading, 1)[0].strip() or heading
+        found, flip_unreachable = _check_one_ring(name, body, allowed)
+        v.extend(found)
+        if flip_unreachable:
+            unreachable.append(name)
+    if unreachable and notes is not None:
+        notes.append("FLIP_INDICATOR_CHECK_UNREACHABLE: %d/%d 个主线段(%s)"
+                     "写了「%s」但判不出失效条件句(找的标签:%s),② 在这些段未执行"
+                     % (len(unreachable), len(themes), "、".join(unreachable),
+                        FLIP_LABEL, "/".join(INVALIDATION_LABELS)))
+    return v
+
+
 def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None,
-                prior_text=None):
+                prior_text=None, decision_entries=None):
     """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
 
     prior_text : 上一份日报正文;`None` 表示**没提供**,跨期逐字重复整条
@@ -1250,6 +1630,27 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     if prior_text is not None:
         v.extend(check_prior_period(report, prior_text, notes=notes,
                                     ambiguous=amb))
+    # ---- 速览表那一层:先解析一次,两个用途共用 ----
+    # ① 决策日志同源同字(`check_decision_trigger`);
+    # ② 「失效条件」列与翻转指标同字的声明(`check_overview_invalidation_column`)。
+    # 解析放在这里而不是各自解析:两处各解析一次会各打一遍
+    # OVERVIEW_TABLE_* 声明,读者看到的是同一件事说两遍。
+    if OVERVIEW_SECTION_KEY not in amb:
+        rows = overview_rows(secs, notes=notes)
+        bodies = {c: find_section(secs, c)[1] for c in sorted(covered)}
+        check_overview_invalidation_column(rows, bodies, notes=notes)
+        if decision_entries is not None:
+            date = snap.get("date") if isinstance(snap, dict) else None
+            if isinstance(date, str) and date:
+                v.extend(check_decision_trigger(secs, date, decision_entries,
+                                                notes=notes))
+            elif notes is not None:
+                # 快照没有可用的 date:判不出该查日志的哪一天。猜"今天"就是
+                # 编造(校验器不读时钟,与不读环境同一条理由),所以只声明。
+                notes.append("DECISION_LOG_NO_ENTRY: 快照没有可用的 date 字段"
+                             "(实为 %r),判不出该比对哪一天的决策日志,"
+                             "%d 个币种的「%s」同源同字未校验"
+                             % (date, len(CURRENCIES), OVERVIEW_COL_TRIGGER))
     return v
 
 
@@ -1316,6 +1717,9 @@ def build_parser():
     ap.add_argument("--prior", default=None,
                     help="daily:上一份日报路径,启用「本期相对上期的变化」节"
                          "的跨期逐字重复检查")
+    ap.add_argument("--decision-log", default=None,
+                    help="daily:决策日志 jsonl 路径,启用速览「条件方向」与"
+                         "日志 trigger 的同源同字检查")
     return ap
 
 
@@ -1359,9 +1763,30 @@ def main(argv=None):
             # WEEKLY_DIGEST_ABSENT_SKIPPED / BRIEF_REVIEW_BLOCK_SKIPPED 同一原则。
             notes.append("PRIOR_PERIOD_ABSENT_SKIPPED: 未提供 --prior,"
                          "本次未校验「本期相对上期的变化」节的跨期逐字重复")
+        decision_entries = None
+        if args.decision_log:
+            log_text, err = _read_file(args.decision_log, "决策日志")
+            if err:
+                print(err, file=sys.stderr)
+                return 2
+            decision_entries, problems = parse_decision_log(log_text)
+            if problems:
+                # 给了却读不成 = 响亮失败,与 --digest 同规格。**不 fail-open**:
+                # 静默跳过时调用方以为查了、脚本以为没传,两边都不出声。
+                for p in problems:
+                    print("决策日志损坏: " + p, file=sys.stderr)
+                return 2
+        else:
+            # 缺席是合法形态(第一份日报、手动重跑),与 --prior 同规矩:
+            # 不是违规、不改退出码,但必须带计数出声 —— 否则"没查"与
+            # "查过且全过"在 stdout 上逐字不可分辨。
+            notes.append("DECISION_LOG_ABSENT_SKIPPED: 未提供 --decision-log,"
+                         "%d 个币种的速览「%s」与决策日志 trigger 的同源同字"
+                         "未校验" % (len(CURRENCIES), OVERVIEW_COL_TRIGGER))
         violations = check_daily(report, snapshot_text, brief_text,
                                  strict_brief=args.strict_brief, notes=notes,
-                                 prior_text=prior_text)
+                                 prior_text=prior_text,
+                                 decision_entries=decision_entries)
     else:
         # ---- weekly **不接受位置参数**:那是本文件最后一条静默放行路径 ----
         # `snapshot` 是 `nargs="?"` 的位置参数,而这一支从来不读它 —— 修前
@@ -1449,21 +1874,26 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
     v = []
     secs = sections(report)
     if notes is not None:
-        # **只声明,不移植**:五个码的判据全部按日报的形状建(币种节 × 快照
-        # 切片 × 要点表分节),周报既没有按币种分的快照切片、也没有要点表,
-        # 硬搬过来只会造出一层判不准的红。能诚实交付的是"说清楚没查"。
-        rings = sum(report.count(lab) for lab in RING_LABELS)
-        notes.append("WEEKLY_JUDGEMENT_LAYER_SKIPPED: 周报模式不运行判断环三码"
-                     "(%s)与数字归属两码(%s),本份周报里有 %d 处判断环标签"
-                     "(%s)未校验"
-                     % ("/".join(("JUDGEMENT_RING_INCOMPLETE",
-                                  "FLIP_INDICATOR_IS_INVALIDATION_RESTATED",
-                                  "ASSUMPTION_UNANCHORED")),
-                        "/".join(("NUMBER_WRONG_SECTION",
+        # ---- 数字归属两码:**结构性不适用**,而"为什么"必须带计数出声 ----
+        # 两码的判据是"这个数出自**哪个币种的快照切片**"(见
+        # `currency_snapshot_slice`:rates/events/derived.rates/derived.events
+        # 按币种分键,derived.real_rate 与 macro 行按经济体分键)。周报的输入
+        # 里没有这种东西:`--digest` 是周度聚合、`--daily` 是**已过溯源**的
+        # 日报正文,两者都不提供按币种分键的快照切片;`SUMMARY_NUMBER_*` 那一
+        # 侧还要一份按 `## <币种>` 分节的要点表,周报流程根本不产出要点表。
+        # 没有切片就判不出归属 —— 硬搬过来只会造出一层判不准的红。
+        # 「不适用」与「忘了跑」在 stdout 上必须可区分,所以这里不是沉默,
+        # 是一条带计数的声明。
+        nums = len(numbers_in(report))
+        notes.append("WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE: 数字归属两码"
+                     "(%s)在周报模式结构性不适用 —— 周报输入没有按币种分键的"
+                     "快照切片、也没有按币种分节的要点表,归属判不出;本份周报"
+                     "里 %d 个数字因此只过 NUMBER_UNTRACEABLE 那一层存在性校验,"
+                     "%d 个币种的归属未校验"
+                     % ("/".join(("NUMBER_WRONG_SECTION",
+                                  "SUMMARY_NUMBER_WRONG_CURRENCY",
                                   "SUMMARY_NUMBER_NOT_IN_BODY")),
-                        rings,
-                        "、".join("%s %d" % (lab, report.count(lab))
-                                  for lab in RING_LABELS)))
+                        nums, len(CURRENCIES)))
     # 节定位唯一化,理由与 check_daily 同(见 find_section)。周报侧 `本周主线`
     # 重名会让 THEME_TOO_MANY 数错那一节,`缺漏汇总` 重名会让 GAP_OMITTED
     # 对着空节比 —— 两种都是静默放行。
@@ -1497,6 +1927,7 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
         for tok in ("命中", "未命中", "无法判定"):
             if tok not in rs[1]:
                 v.append("REVIEW_TOKEN_MISSING: 复盘汇总缺少「%s」" % tok)
+    allowed = None
     if digest_text:
         # 周报此前完全没有数字溯源(只查结构),数字纪律纯靠 prompt 禁令。
         # 白名单 = 聚合文件 ∪ 当周日报 ∪ 小整数:日报本身已过溯源,链条完整。
@@ -1505,6 +1936,10 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
             allowed |= numbers_in(text)
         for n in sorted(numbers_in(report) - allowed):
             v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于周度聚合文件或当周日报" % n)
+    # 判断环三码必须排在 `allowed` 之后:③ 的锚点判据逐字复用同一个白名单,
+    # 它自己不另建一份 —— 与日报侧同规矩。`allowed` 为 None(未给 --digest)
+    # 时 ③ 不判并出声,另两码照常执行。
+    v.extend(check_weekly_judgement_ring(secs, report, allowed, notes=notes))
     if isinstance(digest, dict):
         # 与日报的 GAP_OMITTED 对称:聚合出的每个缺漏源都必须在缺漏汇总里出现
         by_source = digest.get("gaps_by_source")

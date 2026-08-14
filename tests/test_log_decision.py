@@ -201,5 +201,75 @@ class LogDecisionTypeGateTest(unittest.TestCase):
         self.assertIn("命中 0 / 未命中 0 / 无法判定 0 / 未判定 1", r.stdout)
 
 
+class AmendTriggerTest(unittest.TestCase):
+    """`amend-trigger`:把**已登记**条目的 trigger 改成速览表那一格的原文。
+
+    ---- 为什么需要这条子命令(本轮实测)----
+    `skills/fx-daily-report/SKILL.md:374` 写明日志由速览表「条件方向」整理
+    而来 —— **表是源、日志是抄件**。改了表没回写时两者漂移,而
+    `check_report.py` 新增的 `DECISION_TRIGGER_NOT_SOURCED` 会把它打红。
+    实测:2026-08-10 与 2026-08-11 各五条正处在这个状态(共 10 条)。
+    修法只能走脚本 —— SKILL 第 373 行写着「经脚本代笔,**禁止直接编辑
+    jsonl**」,而既有三个子命令(add / set-review / stats)都改不了 trigger。
+
+    ---- 非破坏:旧值搬到 `trigger_superseded`,不丢 ----
+    这些条目的 `review.trigger_judgement` 是**对着旧 trigger 写的**,而且
+    已经逐字发布在下游日报里(reports/daily/2026-08-12.md 的复盘节原样引了
+    2026-08-11 五条的判词)。直接覆盖会让那段判词失去它评判的对象 ——
+    记录对不上了,却没有任何地方说得清为什么。
+    所以旧值**留在条目里**:契约(trigger 与速览表同源同字)得到修复,
+    审计链(判词当时在评判哪一句)同时保住。
+    """
+
+    def test_amend_replaces_the_trigger(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-trigger", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--trigger", "比索升破 61.178(T+2)"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(read_log(root)[0]["trigger"], "比索升破 61.178(T+2)")
+
+    def test_amend_keeps_the_superseded_value(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            run_cmd(["amend-trigger", "--root", root, "--date", "2026-08-10",
+                     "--currency", "PHP", "--trigger", "新的一版"])
+            self.assertEqual(read_log(root)[0]["trigger_superseded"],
+                             ENTRY["trigger"])
+
+    def test_amend_does_not_touch_the_review(self):
+        """判词与 verdict 一个字都不改 —— 那是当时做出的判断,不是本次要修的
+        契约。改它等于事后重写一条已发布的历史记录。"""
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            run_cmd(["set-review", "--root", root, "--date", "2026-08-10",
+                     "--currency", "PHP", "--judgement", "当时的判词",
+                     "--verdict", "无法判定"])
+            run_cmd(["amend-trigger", "--root", root, "--date", "2026-08-10",
+                     "--currency", "PHP", "--trigger", "新的一版"])
+            rev = read_log(root)[0]["review"]
+            self.assertEqual(rev["trigger_judgement"], "当时的判词")
+            self.assertEqual(rev["verdict"], "无法判定")
+
+    def test_unknown_entry_is_an_error_not_a_silent_noop(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-trigger", "--root", root, "--date", "2026-08-99",
+                         "--currency", "PHP", "--trigger", "新的一版"])
+            self.assertEqual(r.returncode, 2)
+
+    def test_amending_twice_keeps_the_original_not_the_intermediate(self):
+        """再改一次时 `trigger_superseded` 仍是**最初**那一版 —— 它记的是
+        "这条判词当时在评判哪一句",不是"上一次改之前是什么"。"""
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            for t in ("第二版", "第三版"):
+                run_cmd(["amend-trigger", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--trigger", t])
+            e = read_log(root)[0]
+            self.assertEqual(e["trigger"], "第三版")
+            self.assertEqual(e["trigger_superseded"], ENTRY["trigger"])
+
+
 if __name__ == "__main__":
     unittest.main()

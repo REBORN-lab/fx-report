@@ -127,7 +127,8 @@ BIS 用 `XM` 表示欧元区,采集层映射到仓库内部的 `EA`。
 校验(新流程必须带溯源参数):
 
     python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json \
-      --brief briefs/DATE-brief.md --mode daily --strict-brief
+      --brief briefs/DATE-brief.md --mode daily --strict-brief \
+      --prior reports/daily/<前一日>.md --decision-log state/decision-log.jsonl
     python3 scripts/check_report.py reports/weekly/WEEK.md --mode weekly \
       --digest state/weekly-digest-WEEK.json --daily reports/daily/<每一天>.md
 

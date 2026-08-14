@@ -117,6 +117,46 @@ def cmd_set_review(args):
     return 2
 
 
+def cmd_amend_trigger(args):
+    """把已登记条目的 `trigger` 改成速览表「条件方向」那一格的原文。
+
+    ---- 为什么要有它 ----
+    `skills/fx-daily-report/SKILL.md:374` 写明日志由速览表整理而来:
+    **表是源、日志是抄件**。改了表没回写时两者漂移,而
+    `scripts/check_report.py` 的 `DECISION_TRIGGER_NOT_SOURCED` 会把它打红。
+    既有三个子命令(add / set-review / stats)都改不了 trigger,而 SKILL
+    第 373 行禁止直接编辑 jsonl —— 于是"回填"这条路此前根本不存在。
+
+    ---- 非破坏:旧值搬进 `trigger_superseded` ----
+    这些条目的 `review.trigger_judgement` 是对着**旧** trigger 写的,并且
+    可能已经逐字发布在下游日报里(实测:reports/daily/2026-08-12.md 的复盘
+    节原样引了 2026-08-11 五条判词)。直接覆盖会让那段判词失去它评判的对象。
+    旧值留在条目里:契约修好,审计链也保住。
+    **只写一次** —— 第二次改动时 `trigger_superseded` 仍是最初那一版,
+    因为它记的是"判词当时在评判哪一句",不是"上次改之前是什么"。
+
+    `review` 一个字都不改:那是当时做出的判断,事后重写等于伪造记录。
+    """
+    entries = load(args.root)
+    for e in entries:
+        if e.get("date") == args.date and e.get("currency") == args.currency:
+            old = e.get("trigger")
+            if old == args.trigger:
+                print("trigger 已是该值,未改动: %s %s"
+                      % (args.date, args.currency))
+                return 0
+            if "trigger_superseded" not in e and isinstance(old, str):
+                e["trigger_superseded"] = old
+            e["trigger"] = args.trigger
+            save(args.root, entries)
+            print("trigger amended: %s %s" % (args.date, args.currency))
+            return 0
+    # 找不到就报错,不静默 no-op:静默成功的回填与"从来没跑过"不可分辨,
+    # 而调用方会以为契约已经修好了
+    print("未找到条目 %s/%s" % (args.date, args.currency), file=sys.stderr)
+    return 2
+
+
 def cmd_stats(args):
     counts = {"命中": 0, "未命中": 0, "无法判定": 0, "未判定": 0}
     detail = []
@@ -151,6 +191,12 @@ def main(argv=None):
     p.add_argument("--verdict", required=True)
     p.add_argument("--root", default=ROOT)
     p.set_defaults(fn=cmd_set_review)
+    p = sub.add_parser("amend-trigger")
+    p.add_argument("--date", required=True)
+    p.add_argument("--currency", required=True)
+    p.add_argument("--trigger", required=True)
+    p.add_argument("--root", default=ROOT)
+    p.set_defaults(fn=cmd_amend_trigger)
     p = sub.add_parser("stats")
     p.add_argument("--from", dest="date_from", required=True)
     p.add_argument("--to", dest="date_to", required=True)
