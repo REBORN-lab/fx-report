@@ -1356,17 +1356,25 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         而真 CLI rc 1→0(见 `UNREAD_OPTION_VALUE`)。"""
         opts = {s for a in check_report.build_parser()._actions
                 for s in a.option_strings}
+        # `--prior`(上一份日报,PRIOR_PERIOD_* 那条不变量的入参)是 2026-08-14
+        # **新注册**的选项 —— 这条断言当场变红,正是它存在的意义:选项集合
+        # 变了必须是显式动作、进 diff。这里是**加一项**,不是放宽判据。
         self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
-                                "--strict-brief", "--digest", "--daily"})
+                                "--strict-brief", "--digest", "--daily",
+                                "--prior"})
 
     # 「当前 mode 不读的既有选项」的**期望字面量**。它**不驱动任何变体** ——
     # 驱动第六族的是 `unread_option_specs()` 的推导结果(见该函数)。
     # 这里只是**防退化哨兵**:AST 走空、`main()` 被重构成推导认不出的形状时,
     # 推导会静默塌成空集,第六族随之整族消失 —— 那正是 T8e 要消灭的那个病
     # (静默的覆盖缺口),所以它必须响亮失败而不是悄悄不跑。
+    # `--prior` 只在 daily 分支被读,于是它是 **weekly** 侧新的"注册了却不读"
+    # 的选项,必须进这张表 —— 不进就意味着 `if args.mode == "weekly" and
+    # args.prior:` 这种零成本扳机从来没被第六族试过。daily 侧不变。
     UNREAD_OPTIONS_EXPECTED = {
         "daily": (("--digest", True), ("--daily", True)),
-        "weekly": (("--brief", True), ("--strict-brief", False)),
+        "weekly": (("--brief", True), ("--strict-brief", False),
+                   ("--prior", True)),
     }
 
     def test_unread_option_derivation_matches_literal(self):
@@ -1498,7 +1506,7 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     # 而生产命令行加 `--digest off` / `--daily off` / `--brief off` 分别
     # rc 1→0(`CHECK FAILED (5)`→`CHECK PASSED`、weekly 侧 `(4)`→PASSED)。
     UNREAD_OPTION_VALUE = {"--digest": "w_multi", "--daily": "d_report",
-                           "--brief": "brief"}
+                           "--brief": "brief", "--prior": "d_report"}
 
     def _variants(self, base, free_positional=None, unread_options=()):
         """base 之上派生 argv。free_positional 给的是"可塞魔法值的既有位置参数"
@@ -2758,3 +2766,208 @@ class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
         self.assertEqual(bad, [],
                          "校验器读了环境变量(或引入了能读到的模块):%s"
                          % "; ".join(bad))
+
+
+# ---- PRIOR_PERIOD_* 的处置文案:**逐字钉死在这里**,不从被测模块取 ----
+# 与 WANT_QUOTE_VERBATIM / WANT_SCRIPT_BUG_VERBATIM 同一形制:期望值若由被测
+# 二进制自己提供(`check_report.DISPOSITION_PRIOR_PERIOD`),改文案永远不会红,
+# 断言等于没写。改文案就必须同时改这里 —— 显式动作、进 diff。
+WANT_PRIOR_PERIOD_DISPOSITION = ("处置:写明本期相对上期究竟哪里变了;"
+                                 "若确无变化,写明为什么没变")
+
+
+class PriorPeriodBoilerplateTest(unittest.TestCase):
+    """ICD 203 第 7 条的机器强制:周期性产品必须说明本期判断相对上期有何
+    变化,**且不得使用模板套话**。
+
+    实测缺陷(调研报告 §依据②):三个币种的实际利率四天一字未变,却把同一句
+    话写了四遍。跨期逐字重复是少数**能机械判定**的论证质量信号 —— 而"论证
+    有没有深度"不能机械判定(IMF 实测评分器只按关键词与章节存在性打分),
+    所以本轮只加这一条,不加第二条。
+
+    三态在这里各有一条测试,因为三态**互为对方的静默失败形态**:
+    未提供上一份 → 声明跳过(不是通过);当前缺该节 → 违规;上一份缺该节
+    → 声明跳过(上一份可能是改造前的旧格式,不是当前这份报告的错)。
+    """
+
+    HEADING = "## 本期相对上期的变化"
+    # 每句都以「。」收尾,且**句内不含任何句末标点**(。;!? 及其半角),
+    # 于是"这一节有几句"在测试里是可数的确定值,不随切分实现的细节漂移。
+    # 句内也不含数字:本类多处断言「除本码外零违规」,数字会引来
+    # NUMBER_UNTRACEABLE,把断言的失败原因搅浑。
+    S_USD = "- USD:实际利率一档由上期的偏紧转为中性,这是本期新出现的变化。"
+    S_EUR = "- EUR:与上期一致而判断未变,没变的原因是欧央行例会尚未召开。"
+    S_PHP = "- PHP:替代解释由外需走弱换成了资本流出。"
+    S_THB = "- THB:关键假设不变,但翻转指标新增了旅游收入的月度读数。"
+    S_PHP_ALT = "- PHP:替代解释仍是外需走弱,只是权重下调。"
+    S_THB_ALT = "- THB:关键假设不变,翻转指标维持原样。"
+
+    def _report(self, sentences):
+        """一份**结构合规**的日报,尾部带上「本期相对上期的变化」节。"""
+        return (make_report() + "\n\n" + self.HEADING + "\n"
+                + "\n".join(sentences) + "\n")
+
+    def _prior_period_codes(self, v):
+        return [x for x in v if x.startswith("PRIOR_PERIOD")]
+
+    def _check(self, cur_sentences, prior_sentences, notes=None):
+        prior = (make_report() if prior_sentences is None
+                 else self._report(prior_sentences))
+        return check_report.check_daily(
+            self._report(cur_sentences), SNAP_TEXT, BRIEF,
+            notes=notes, prior_text=prior)
+
+    # ---- 三态之一:上一份日报没给 ----
+
+    def _cli(self, cur_text, prior_text=None):
+        """真 CLI(进程内 main),返回 (rc, stdout)。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            argv = [rp, sp, "--brief"]
+            bp = os.path.join(tmp, "b.md")
+            argv.append(bp)
+            files = [(rp, cur_text), (sp, SNAP_TEXT), (bp, BRIEF)]
+            if prior_text is not None:
+                pp = os.path.join(tmp, "prior.md")
+                files.append((pp, prior_text))
+                argv += ["--prior", pp]
+            for path, text in files:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main(argv)
+            return rc, buf.getvalue()
+
+    def test_absent_prior_prints_a_skip_declaration_alongside_pass(self):
+        """**变异靶点①:未提供上一份时静默通过。**
+
+        不检查是设计内的合法形态(第一份日报、或手动重跑),但它跑出的若是
+        **裸 CHECK PASSED**,就与"比对过且没有套话"逐字不可分辨 —— 与
+        VERDICT_SKIPPED_NO_DERIVED / WEEKLY_DIGEST_ABSENT_SKIPPED 同一原则。
+        """
+        rc, out = self._cli(self._report([self.S_USD, self.S_EUR]))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("PRIOR_PERIOD_ABSENT_SKIPPED", out)
+        self.assertIn("CHECK PASSED", out)
+
+    def test_giving_prior_removes_the_absent_declaration(self):
+        """跳过声明不许在**真比对过**的那一次也照打 —— 否则它退化成噪声,
+        读者读到它也不知道到底比没比。"""
+        cur = self._report([self.S_USD, self.S_PHP])
+        rc, out = self._cli(cur, prior_text=self._report([self.S_EUR,
+                                                          self.S_THB]))
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("PRIOR_PERIOD_ABSENT_SKIPPED", out)
+        self.assertIn("CHECK PASSED", out)
+
+    # ---- 三态之二:上一份日报没有该节(改造前的旧格式)----
+
+    def test_prior_without_the_section_is_declared_skipped_not_violated(self):
+        """**变异靶点⑤:上一份缺该节时误判违规。**
+
+        上一份可能是本次改造**之前**产出的旧格式日报,那不是当前这份报告的
+        缺陷 —— 判它违规会让改造落地当天的第一份报告必红,而"必红"很快就会
+        被人用 `--prior` 不传绕过,整条不变量随之作废。
+        """
+        notes = []
+        v = self._check([self.S_USD, self.S_EUR], None, notes=notes)
+        self.assertEqual(self._prior_period_codes(v), [])
+        self.assertTrue(any(n.startswith("PRIOR_PERIOD_SKIPPED_NO_SECTION")
+                            for n in notes), notes)
+
+    def test_prior_without_the_section_still_prints_a_declaration_in_cli(self):
+        """声明必须真的打到 stdout —— 只进 notes 而 main 不打印,与静默同效。"""
+        rc, out = self._cli(self._report([self.S_USD]),
+                            prior_text=make_report())
+        self.assertEqual(rc, 0, out)
+        self.assertIn("PRIOR_PERIOD_SKIPPED_NO_SECTION", out)
+        self.assertIn("CHECK PASSED", out)
+
+    # ---- 三态之三:当前报告缺该节 ----
+
+    def test_current_report_without_the_section_is_a_violation(self):
+        """**变异靶点④:当前报告缺该节时静默跳过。**
+
+        "整节删掉"是绕过本不变量**最省事**的一条路:没有该节就没有可比的句子,
+        逐句比对天然零重复。所以它必须是违规,而不是第二种跳过。
+        """
+        v = check_report.check_daily(
+            make_report(), SNAP_TEXT, BRIEF,
+            prior_text=self._report([self.S_USD, self.S_EUR]))
+        codes = self._prior_period_codes(v)
+        self.assertEqual(len(codes), 1, codes)
+        self.assertTrue(codes[0].startswith("PRIOR_PERIOD_SECTION_MISSING:"),
+                        codes)
+        self.assertTrue(codes[0].endswith(WANT_PRIOR_PERIOD_DISPOSITION),
+                        codes)
+
+    # ---- 判据本身:逐句、过半 ----
+
+    def test_half_the_sentences_repeat_verbatim_while_the_section_differs(self):
+        """**变异靶点②:比对整节而非逐句。**
+
+        两节的**整段文本不相等**(后两句都改过),整节比对因此零命中;而四句
+        里有两句一字不差 —— 那正是实测缺陷的形状(几个币种照抄上期,其余几个
+        真的更新了)。断言里显式钉住"整节不相等",免得日后有人把 fixture 改成
+        整节相同,让这条测试对整节比对也绿。
+        """
+        cur = [self.S_USD, self.S_EUR, self.S_PHP, self.S_THB]
+        prior = [self.S_USD, self.S_EUR, self.S_PHP_ALT, self.S_THB_ALT]
+        self.assertNotEqual("\n".join(cur), "\n".join(prior))
+        codes = self._prior_period_codes(self._check(cur, prior))
+        self.assertEqual(len(codes), 1, codes)
+        self.assertTrue(codes[0].startswith("PRIOR_PERIOD_BOILERPLATE:"), codes)
+
+    def test_below_half_repeated_passes(self):
+        """**变异靶点③:阈值反向。**
+
+        四句里只有一句照抄 —— 这是**正常**的周期性产品(某个币种确实没动)。
+        判为违规会把整条不变量变成"每句都必须改字",而"每句都必须改字"逼出的
+        正是套话。与上一条(恰好一半 → 违规)成对,把阈值两侧都钉住。
+        """
+        cur = [self.S_USD, self.S_EUR, self.S_PHP, self.S_THB]
+        prior = [self.S_USD, self.S_PHP_ALT, self.S_THB_ALT]
+        self.assertEqual(self._prior_period_codes(self._check(cur, prior)), [])
+
+    def test_exactly_half_is_already_a_violation(self):
+        """阈值取 `≥ 一半`(不是 `>`)。上一条守下界,这一条守边界点本身:
+        `>` 会让"四句抄两句"这个**实测最常见**的形态整类逃掉。"""
+        cur = [self.S_USD, self.S_EUR, self.S_PHP, self.S_THB]
+        prior = [self.S_USD, self.S_EUR, self.S_PHP_ALT, self.S_THB_ALT]
+        v = self._check(cur, prior)
+        self.assertTrue(any("PRIOR_PERIOD_BOILERPLATE" in x for x in v), v)
+
+    def test_a_single_repeated_sentence_is_a_violation(self):
+        """只有一句时,该句相同即违规 —— minimal 体裁的币种在该节仍占一行,
+        "整节就一句"是合法形态,不能因为"分母小"就白送。"""
+        v = self._check([self.S_USD], [self.S_USD, self.S_PHP_ALT])
+        self.assertTrue(any("PRIOR_PERIOD_BOILERPLATE" in x for x in v), v)
+
+    def test_a_single_changed_sentence_passes(self):
+        v = self._check([self.S_USD], [self.S_PHP_ALT, self.S_THB_ALT])
+        self.assertEqual(self._prior_period_codes(v), [], v)
+
+    # ---- 错误信息必须可操作 ----
+
+    def test_violation_message_quotes_the_repeated_sentences_and_disposition(self):
+        """"有 2 句重复"不可操作 —— 读者得自己去两份报告里对拍才知道是哪两句。
+        原文 + 处置一起打出来,才是拿到就能改的东西。"""
+        cur = [self.S_USD, self.S_EUR, self.S_PHP, self.S_THB]
+        prior = [self.S_USD, self.S_EUR, self.S_PHP_ALT, self.S_THB_ALT]
+        line = [x for x in self._check(cur, prior)
+                if x.startswith("PRIOR_PERIOD_BOILERPLATE")][0]
+        self.assertIn(self.S_USD, line)
+        self.assertIn(self.S_EUR, line)
+        self.assertNotIn(self.S_PHP, line)      # 没重复的句子不该被点名
+        self.assertTrue(line.endswith(WANT_PRIOR_PERIOD_DISPOSITION), line)
+
+    def test_cli_turns_a_boilerplate_section_red(self):
+        """端到端:进程内断言全绿而真 CLI 放行,是本仓库栽过的形态。"""
+        cur = [self.S_USD, self.S_EUR, self.S_PHP, self.S_THB]
+        prior = [self.S_USD, self.S_EUR, self.S_PHP_ALT, self.S_THB_ALT]
+        rc, out = self._cli(self._report(cur), prior_text=self._report(prior))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("PRIOR_PERIOD_BOILERPLATE", out)
+        self.assertIn("CHECK FAILED", out)

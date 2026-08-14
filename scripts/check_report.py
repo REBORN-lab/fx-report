@@ -122,12 +122,42 @@ DISPOSITION_QUOTE = ("处置:把上面「期望原文」那一句整句抄进该
                      "一个字符都不改;这一条改报告即可,不要动脚本")
 DISPOSITION_SCRIPT_BUG = ("处置:这是脚本缺陷,改报告没用;"
                           "重跑产出这份快照/聚合文件的那一步,仍复现就报 bug")
+DISPOSITION_PRIOR_PERIOD = ("处置:写明本期相对上期究竟哪里变了;"
+                            "若确无变化,写明为什么没变")
 # **两个降级码(VERDICT_SKIPPED_NO_DERIVED / VERDICT_SKIPPED_LEGACY)的处置
 # 仍留在 SKILL,这是有意的**,不是漏改。它们的处置分两支,判别标准是"采集
 # 窗口是否还覆盖 DATE" —— 校验器不知道窗口边界(那在 collect/events.py 的
 # GNEWS_WINDOW_H 与 GDELT timespan 里,且与运行时刻有关),写不出可执行的
 # 单一处置。凡是脚本自己说得出的才搬进来;说不出的搬进来只会变成第三份
 # 会漂移的拷贝。守它们的是 SkippedCodeDispositionTest。
+
+
+# ---- ICD 203 第 7 条的机器强制:跨期不得逐字重复 ----
+# 情报体系的强制评审标准点名 `daily crisis reports`:周期性产品必须说明本期
+# 判断相对上期有何变化,**且不得使用模板套话**。实测缺陷与它一一对应:
+# 三个币种的实际利率四天一字未变,同一句话写了四遍。
+# **为什么只加这一条**:调研实测「用 LLM 自动审计报告论证质量」不可行 ——
+# IMF 那套评分器按关键词与章节存在性打分,`without fully evaluating the depth
+# or quality of that discussion`,于是"填满的四环"会被读成"有深度"。
+# 跨期逐字重复是少数**能机械判定、且直接对应真实缺陷**的质量信号,
+# 所以这里只装这一条,不顺手加别的码。
+PRIOR_PERIOD_SECTION_KEY = "本期相对上期"
+# 句末标点(全角与半角)与换行都是句界。**刻意不切逗号**:切得越碎,短片段
+# 跨期偶然相同的概率越高,而本码的判据是"过半",误报会直接把它变成噪声。
+# 句末标点**留在句子里**(用 findall 而不是 split):判据是"逐字相同",
+# 而违规信息要把重复的**原文**打出来 —— 切掉标点的那份不是原文,读者拿它去
+# 报告里搜还得自己补一个字。
+SENTENCE_RE = re.compile(r"[^。;!?;!?\n]+[。;!?;!?]*")
+
+
+def split_sentences(text):
+    """按句切分,返回去掉首尾空白后的非空句子(**顺序保留**)。
+
+    保留列表标记(`- USD:…`)不做规范化:判据是"逐字重复",规范化会引入
+    "改了标记就算改了内容"与"只改标记也算重复"两种争议,而两种都无谓 ——
+    真实的套话是整行照抄。
+    """
+    return [s for s in (p.strip() for p in SENTENCE_RE.findall(text)) if s]
 
 
 def sections(md):
@@ -157,6 +187,49 @@ def numbers_in(text):
 
 def list_items(body):
     return [line for line in body.splitlines() if LIST_ITEM_RE.match(line)]
+
+
+def check_prior_period(report, prior_text, notes=None):
+    """「本期相对上期的变化」节不得与**上一份日报**的同节逐字重复。
+
+    三态,互为对方的静默失败形态:
+
+    - 两份都有该节 → **逐句**比对,整句逐字相同的句子数 ≥ 该节句数的一半
+      即 PRIOR_PERIOD_BOILERPLATE。逐句(而不是整节)是要害:实测缺陷的
+      形状是"几个币种照抄上期、其余几个真的更新了",整节比对对它完全不敏感。
+    - 当前报告**缺**该节 → PRIOR_PERIOD_SECTION_MISSING。整节删掉是绕过本
+      不变量最省事的一条路(没有句子就没有重复),必须是违规而不是跳过。
+    - 上一份**缺**该节 → 打印跳过声明、不判违规。上一份可能是本次改造之前
+      产出的旧格式日报,那不是当前这份报告的缺陷。
+
+    notes : **出参**,同 check_daily。跳过声明必须打印 ——「跳过」与「通过」
+            在输出上不可分辨,正是这一族检查要消灭的形态。
+    """
+    v = []
+    cur = find_section(sections(report), PRIOR_PERIOD_SECTION_KEY)
+    if cur is None:
+        return ["PRIOR_PERIOD_SECTION_MISSING: 缺少「%s的变化」节"
+                "(周期性产品必须说明本期判断相对上期有何变化);%s"
+                % (PRIOR_PERIOD_SECTION_KEY, DISPOSITION_PRIOR_PERIOD)]
+    prior = find_section(sections(prior_text), PRIOR_PERIOD_SECTION_KEY)
+    if prior is None:
+        if notes is not None:
+            notes.append("PRIOR_PERIOD_SKIPPED_NO_SECTION: 上一份日报没有"
+                         "「%s的变化」节(可能是改造前的旧格式),本次未比对"
+                         % PRIOR_PERIOD_SECTION_KEY)
+        return v
+    cur_sents = split_sentences(cur[1])
+    prior_sents = set(split_sentences(prior[1]))
+    repeated = [s for s in cur_sents if s in prior_sents]
+    # `cur_sents` 为空时 0 ≥ 0 恒真 —— 不加这个门,空节会假报违规,
+    # 而空节该由谁管不在本码的射程内(本码只判"抄没抄上期")
+    if cur_sents and len(repeated) * 2 >= len(cur_sents):
+        v.append("PRIOR_PERIOD_BOILERPLATE: 「%s的变化」节 %d/%d 句与上一份"
+                 "日报逐字相同(过半即违规);重复的原文:%s;%s"
+                 % (PRIOR_PERIOD_SECTION_KEY, len(repeated), len(cur_sents),
+                    "、".join("「%s」" % s for s in repeated),
+                    DISPOSITION_PRIOR_PERIOD))
+    return v
 
 
 def is_generated_review_line(line):
@@ -278,8 +351,13 @@ def check_verdicts(report, container, fields, covered, required, label):
     return v, skipped
 
 
-def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None):
+def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None,
+                prior_text=None):
     """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
+
+    prior_text : 上一份日报正文;`None` 表示**没提供**,跨期逐字重复整条
+            不检查(声明由 CLI 层打印,见 `main`)。空串是"提供了但内容为空"
+            的合法形态,走 check_prior_period 的第三态。
 
     notes : **出参**。传入的 list 会被追加「非违规的降级声明」
             (VERDICT_SKIPPED_LEGACY / VERDICT_SKIPPED_NO_DERIVED)。
@@ -427,6 +505,8 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
         brief_allowed = numbers_in(snapshot_text) | ALLOWED_SMALL
         for n in sorted(numbers_in("\n".join(traced)) - brief_allowed):
             v.append("BRIEF_NUMBER_UNTRACEABLE: 要点表数字 %s 不见于快照" % n)
+    if prior_text is not None:
+        v.extend(check_prior_period(report, prior_text, notes=notes))
     return v
 
 
@@ -490,6 +570,9 @@ def build_parser():
                     help="weekly:周度聚合文件,启用周报数字溯源")
     ap.add_argument("--daily", action="append", default=[],
                     help="weekly:当周日报路径,可重复;并入数字白名单")
+    ap.add_argument("--prior", default=None,
+                    help="daily:上一份日报路径,启用「本期相对上期的变化」节"
+                         "的跨期逐字重复检查")
     return ap
 
 
@@ -519,8 +602,23 @@ def main(argv=None):
             if err:
                 print(err, file=sys.stderr)
                 return 2
+        prior_text = None
+        if args.prior:
+            prior_text, err = _read_file(args.prior, "上一份日报")
+            if err:
+                print(err, file=sys.stderr)
+                return 2
+        else:
+            # 「没给上一份日报」是设计内的合法形态(第一份日报、手动重跑),
+            # 不是违规、不改退出码 —— 但它若跑出**裸 CHECK PASSED**,就与
+            # 「比对过且没有套话」逐字不可分辨。「跳过」与「通过」在输出上
+            # 必须可区分,与 VERDICT_SKIPPED_NO_DERIVED /
+            # WEEKLY_DIGEST_ABSENT_SKIPPED / BRIEF_REVIEW_BLOCK_SKIPPED 同一原则。
+            notes.append("PRIOR_PERIOD_ABSENT_SKIPPED: 未提供 --prior,"
+                         "本次未校验「本期相对上期的变化」节的跨期逐字重复")
         violations = check_daily(report, snapshot_text, brief_text,
-                                 strict_brief=args.strict_brief, notes=notes)
+                                 strict_brief=args.strict_brief, notes=notes,
+                                 prior_text=prior_text)
     else:
         # ---- weekly **不接受位置参数**:那是本文件最后一条静默放行路径 ----
         # `snapshot` 是 `nargs="?"` 的位置参数,而这一支从来不读它 —— 修前
