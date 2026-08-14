@@ -66,5 +66,5 @@
 - [x] 8.6 更正 `build_parser()` docstring 里「weekly 模式下 `args.snapshot` 不读」那半句:原文保留、追加更正,说明它当时描述的是一条真缺陷而非假想绕过
 - [x] 8.7 proposal.md 追加「## 更正(2026-08-14 实测)」:①那条 `CHECK PASSED` 来自位置参数形态、根本没加载 digest;②「15 与 5 出现在别处即通过」与实测相反——base-ref `799f3f7` 上 `--digest` 形态 `CHECK FAILED (11)` 恰含「数字 15 不见于…」,而 `5` 属 `ALLOWED_SMALL` 小整数白名单,从不在争议范围。原文一字不删;核心命题(`verdict` 零命中,`grep -c -i verdict` = 0)仍成立
 - [x] 8.8 delta spec 补条文与 4 条验收场景(未提供聚合文件时须声明 / 提供了则不得声明 / weekly 拒位置参数 / 位置参数不得被当作聚合文件);`openspec validate fx-verdict-enforcement --strict` rc=0
-- [ ] 8.9 变异电池补本次修复与上一次修复(`BRIEF_REVIEW_BLOCK_*`)的靶点,地板同步上调,实跑全部 KILLED
-- [ ] 8.10 全量 715 通过 rc=0(基线 701);五天日报 + 周报生产命令逐条复跑抄返回码
+- [x] 8.9 变异电池补本次修复(M16-M20)与上一次修复(M21-M25,`BRIEF_REVIEW_BLOCK_*`)的靶点,地板 15→25,实跑全部 KILLED:`KILLED 25 / 执行 25 / 登记 25(地板 25)` rc=0(跑在提交 `1665e8c`,`BASELINE OK — Ran 715 tests`);电池跑完另用 `git status --porcelain` 独立复核工作树已还原(空输出)
+- [x] 8.10 全量 `Ran 715 tests` / `OK` / rc=0(基线 701);五天日报生产命令 2026-08-10…08-14 逐条 rc=0,周报 SKILL 形态 rc=0;修复前后对照:位置参数形态由 `CHECK PASSED` rc=0 变为 rc=2 + 可操作提示,无 `--digest` 形态由裸 `CHECK PASSED` 变为带 `WEEKLY_DIGEST_ABSENT_SKIPPED` 声明行且仍 rc=0
