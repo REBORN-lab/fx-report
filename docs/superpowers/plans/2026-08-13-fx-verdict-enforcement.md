@@ -2331,7 +2331,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Modify: `state/weekly-digest-2026-W33.json`(重跑聚合器)
 - Modify: `reports/weekly/2026-W33.md`
 
-- [ ] **T9 Step 1: 确认它现在确实红(改之前先看见问题)**
+- [x] **T9 Step 1: 确认它现在确实红(改之前先看见问题)**
 
 ```bash
 python3 scripts/weekly_digest.py --week 2026-W33
@@ -2345,7 +2345,7 @@ echo "rc=$?"
 
 Expected: `CHECK FAILED (N)`,`rc=1`,违规里含多条 `VERDICT_NOT_QUOTED`(旧正文写的是 5 天窗口的结论句)与若干 `NUMBER_UNTRACEABLE`。**把实际输出记下来**,后面要逐条消掉。
 
-- [ ] **T9 Step 2: 导出必须逐字出现的全部结论句**
+- [x] **T9 Step 2: 导出必须逐字出现的全部结论句**
 
 ```bash
 python3 - <<'PY'
@@ -2369,7 +2369,7 @@ PY
 
 Expected: 打印出 14 句(events 5 币种 × 2 + rates 4 币种 × 1)。**这些句子必须原样粘贴进周报,一个字符都不能改** —— 包括全角括号与顿号。
 
-- [ ] **T9 Step 3: 重写周报**
+- [x] **T9 Step 3: 重写周报**
 
 按 `skills/fx-weekly-report/SKILL.md` 第 2 步的模板重写 `reports/weekly/2026-W33.md`。硬性要求:
 
@@ -2384,7 +2384,7 @@ Expected: 打印出 14 句(events 5 币种 × 2 + rates 4 币种 × 1)。**这�
    正文提日期一律写完整 `YYYY-MM-DD`。
 5. 除结论句里的数字外,**不要引入任何新数字**;需要展开细节时只能引 digest 里已有的值。
 
-- [ ] **T9 Step 4: 先自查 14 句都在,再跑校验器**
+- [x] **T9 Step 4: 先自查 14 句都在,再跑校验器**
 
 ```bash
 python3 - <<'PY'
@@ -2418,7 +2418,7 @@ echo "rc=$?"
 
 Expected: `CHECK PASSED`,`rc=0`。仍有 `NUMBER_UNTRACEABLE` 就是正文引了 digest 与日报之外的数,删掉那个数,**不要**去放宽白名单。
 
-- [ ] **T9 Step 5: 日报侧端到端复核(存量快照走降级路径)**
+- [x] **T9 Step 5: 日报侧端到端复核(存量快照走降级路径)**
 
 ```bash
 for d in 2026-08-07 2026-08-08 2026-08-09 2026-08-10 2026-08-11 2026-08-12; do
@@ -2454,7 +2454,7 @@ PY
 
 Expected: `schema_version: 2`,`PHP events_verdict: 当日采到 1 条`,`gaps: []`。
 
-- [ ] **T9 Step 6: 全量回归 + 勾选提交**
+- [x] **T9 Step 6: 全量回归 + 勾选提交**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
