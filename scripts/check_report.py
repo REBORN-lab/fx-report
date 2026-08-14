@@ -453,6 +453,16 @@ def build_parser():
     (weekly 模式下 `args.snapshot` 不读);③ 只给 `--mode` 加一个 choices
     (`option_strings` 逐字不变);④ 在 main 里把 `parse_args` 换成
     `parse_known_args` 并读 `_rest`(**零注册**,而 `--tolerant` 字面可用)。
+
+    **更正(2026-08-14):② 括号里那半句已不再成立,而它当时描述的是一条真
+    缺陷,不只是一条假想绕过。** 「weekly 模式下 `args.snapshot` 不读」在这里
+    被当作"可以拿来当豁免扳机的性质"写了下来,却没人把它当缺陷修掉 —— 于是
+        check_report.py <weekly.md> <digest.json> --mode weekly
+    这条形态一直静默放行:`--digest` 缺席 → 结论句闸门与数字溯源整层不跑,
+    照样 `CHECK PASSED` rc=0。决定性实测(HEAD eef783e):把那个位置参数换成
+    `/does/not/exist.json`,**仍然 CHECK PASSED rc=0**。
+    现在 weekly 分支收到非空位置参数即 rc=2(见 `main`),所以 ② 这条路已封;
+    ①③④ 三条依旧成立,原文保留不删。
     能挡住这四条的是 `tests/test_check_report.py` 里的行为级断言
     (`test_listed_exemption_tokens_cannot_make_verdict_codes_disappear`):
     在**生产命令行的完整形状**(含 `--brief`/`--strict-brief`/`--daily`)
@@ -512,10 +522,36 @@ def main(argv=None):
         violations = check_daily(report, snapshot_text, brief_text,
                                  strict_brief=args.strict_brief, notes=notes)
     else:
+        # ---- weekly **不接受位置参数**:那是本文件最后一条静默放行路径 ----
+        # `snapshot` 是 `nargs="?"` 的位置参数,而这一支从来不读它 —— 修前
+        # `build_parser()` 的 docstring 自己把这件事当"绕过手法之二"写着
+        # (「复用既有参数的魔法值(weekly 模式下 `args.snapshot` 不读)」),
+        # 却没人把它当缺陷修掉。于是
+        #   check_report.py reports/weekly/W.md state/weekly-digest-W.json --mode weekly
+        # 看上去把聚合文件传进去了,实际上 `--digest` 缺席 → 结论句闸门与数字
+        # 溯源**整层不跑**,照样 `CHECK PASSED` rc=0。
+        # 决定性实测(HEAD eef783e,真实产物,未改任何报告):把位置参数换成
+        # `/does/not/exist.json` —— **仍然 CHECK PASSED rc=0**,连"文件在不在"
+        # 都没查过。
+        # **刻意不猜意图**:不把它当 digest 用,哪怕 `--digest` 没给。猜测正是
+        # 这条缺陷的来源(调用方以为传了、脚本以为没传,两边都不出声);
+        # 猜对一次,下一个人还会只传位置参数。所以只要它非空就 rc=2。
+        if args.snapshot:
+            print("weekly 模式不接受位置参数快照;周度聚合文件请用 `--digest` "
+                  "传入,并用 `--daily` 传入当周全部日报", file=sys.stderr)
+            return 2
         if args.daily and not args.digest:
             print("--daily 需与 --digest 同用(单独给日报不会启用数字溯源)",
                   file=sys.stderr)
             return 2
+        if args.digest is None:
+            # 「未提供聚合文件」是 delta spec 里的**合法**形态(退回结构检查),
+            # 不是违规、不改退出码 —— 但它此前跑出的是**裸 CHECK PASSED**,
+            # 与"结论句与数字溯源全查过且全过"逐字不可分辨。
+            # 「跳过」与「通过」在输出上必须可区分,与 VERDICT_SKIPPED_LEGACY /
+            # VERDICT_SKIPPED_NO_DERIVED / BRIEF_REVIEW_BLOCK_SKIPPED 同一原则。
+            notes.append("WEEKLY_DIGEST_ABSENT_SKIPPED: 未提供 --digest,"
+                         "本次未校验结论句与数字溯源")
         digest_text = None
         if args.digest is not None:
             digest_text, err = _read_file(args.digest, "周度聚合文件")

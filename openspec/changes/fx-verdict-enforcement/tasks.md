@@ -53,3 +53,18 @@
 - [x] 7.7 变异电池 6/6 KILLED(不切段 / 不校验行式样 / 删声明 / 两块头静默取第一个 / 块头在校验器里再写一遍 / 行式样凭印象写)
 - [x] 7.8 全量 701 通过 rc=0(基线 687);2026-08-07..13 七天生产命令逐条 rc=0;08-10 与 08-13 报告首行的「未通过自动自检」声明已删除并复跑确认仍 rc=0
 - [x] 7.9 `specs/fx-daily-report/spec.md` 的 `### Requirement: 数字纪律` 补条文与 7 条验收场景;`openspec validate fx-verdict-enforcement --strict` rc=0
+
+## 8. weekly 静默放行路径
+
+`--mode weekly` 下位置参数 `snapshot` 被接受却**完全不读**(修前 `build_parser()` 的 docstring 自己把这件事当"绕过手法之二"写着),而 `--digest` 缺席时结论句闸门与数字溯源**整层不跑**,却照样 `CHECK PASSED` rc=0。决定性实测(HEAD `eef783e`,真实产物,未改任何报告):把位置参数换成 `/does/not/exist.json`,**仍然 `CHECK PASSED` rc=0** —— 那个参数一个字节都没被读过。这条路径同时污染了本 change proposal 里记录的复现命令(见 proposal「## 更正(2026-08-14 实测)」)。
+
+- [x] 8.1 先写会红的用例并实跑确认红:weekly + 位置参数须 rc=2;提示写成 warning 却跑完 rc=0 须红;无 `--digest` 时声明行缺失须红;声明行被做成违规(改 rc)须红;daily 模式被波及须红。实跑 RED:8 处失败,失败原因逐条为 `rc 0 != 2` 与「声明行 not found in 'CHECK PASSED\n'」
+- [x] 8.2 weekly 分支收到非空位置参数即 rc=2 + stderr 可操作提示(点名 `--digest` 与 `--daily`);**不猜测意图**,不把它当 digest 用,`--digest` 同时给了也一律拒收——猜测正是这条缺陷的来源
+- [x] 8.3 weekly 未提供 `--digest` 时打印声明行 `WEEKLY_DIGEST_ABSENT_SKIPPED: 未提供 --digest,本次未校验结论句与数字溯源`;**不是违规、不改退出码**(「未提供聚合文件」是 delta spec 里既有的合法形态),但必须出现在输出里且先于结论行——与 `VERDICT_SKIPPED_*` / `BRIEF_REVIEW_BLOCK_SKIPPED` 同一套原则
+- [x] 8.4 daily 模式行为一个字不改(位置参数仍必需且仍被读),由 `test_daily_mode_still_takes_its_positional_snapshot` 与 `test_daily_mode_never_prints_it` 两侧钉住
+- [x] 8.5 `NoLegacyExemptionSwitchTest._bases()` 删去 weekly 的 `snap_slot` 维:weekly 拒收位置参数后那条 base 自己就是 rc=2、跑不出任何码(实测全量 `FAILED (failures=1)`,消息为「base「weekly daily=2 snapslot=1」的基线码集合与写死的期望不符」)。**这不是放宽断言,是那条 argv 已不再是合法输入**;它守的绕过手法 ② 由 `test_no_exemption_token_survives_the_positional_slot` 接管并守得更死(逐个 `EXEMPTION_TOKEN` 塞进位置参数,全部要求 rc=2 且无结论行)
+- [x] 8.6 更正 `build_parser()` docstring 里「weekly 模式下 `args.snapshot` 不读」那半句:原文保留、追加更正,说明它当时描述的是一条真缺陷而非假想绕过
+- [x] 8.7 proposal.md 追加「## 更正(2026-08-14 实测)」:①那条 `CHECK PASSED` 来自位置参数形态、根本没加载 digest;②「15 与 5 出现在别处即通过」与实测相反——base-ref `799f3f7` 上 `--digest` 形态 `CHECK FAILED (11)` 恰含「数字 15 不见于…」,而 `5` 属 `ALLOWED_SMALL` 小整数白名单,从不在争议范围。原文一字不删;核心命题(`verdict` 零命中,`grep -c -i verdict` = 0)仍成立
+- [x] 8.8 delta spec 补条文与 4 条验收场景(未提供聚合文件时须声明 / 提供了则不得声明 / weekly 拒位置参数 / 位置参数不得被当作聚合文件);`openspec validate fx-verdict-enforcement --strict` rc=0
+- [ ] 8.9 变异电池补本次修复与上一次修复(`BRIEF_REVIEW_BLOCK_*`)的靶点,地板同步上调,实跑全部 KILLED
+- [ ] 8.10 全量 715 通过 rc=0(基线 701);五天日报 + 周报生产命令逐条复跑抄返回码

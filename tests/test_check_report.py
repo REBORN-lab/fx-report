@@ -598,6 +598,230 @@ class DigestFailClosedTest(unittest.TestCase):
             self.assertEqual(self._run(tmp, DIGEST), 0)
 
 
+class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
+    """weekly 模式收到位置参数即**响亮失败**(rc=2),不得静默放行。
+
+    ---- 这条缺陷是「不读的参数」这一族里最贵的一个,实测口径如下 ----
+
+    `build_parser()` 注册的 `snapshot` 是 `nargs="?"` 的位置参数,而 `main()`
+    的 weekly 分支**从来不读它**(修前 `check_report.py:453` 的 docstring 自己
+    把这一点当成"绕过手法之二"写着:「复用既有参数的魔法值(weekly 模式下
+    `args.snapshot` 不读)」)。于是这条命令行:
+
+        check_report.py reports/weekly/W.md state/weekly-digest-W.json --mode weekly
+
+    看上去"把聚合文件传进去了",实际上 `--digest` 缺席 → 结论句闸门与数字
+    溯源**整层不跑**,却照样 `CHECK PASSED` / rc=0。
+
+    实测(HEAD eef783e,本仓库真实产物,未改任何报告):
+    - 位置参数形态 → `CHECK PASSED` rc=0;
+    - **把位置参数换成一个根本不存在的路径** `/does/not/exist.json`
+      → 仍然 `CHECK PASSED` rc=0 —— 决定性证据:那个参数一个字节都没被读过,
+      连"文件在不在"都没查。
+    - 同一份产物换 `--digest` 形态 → 结论句层与数字溯源层才真的跑起来。
+
+    **修法刻意不猜意图**:不把位置参数"当作 digest 用"。猜测正是这条缺陷的
+    来源 —— 调用方以为传进去了,脚本以为没传,两边都不报错。所以只要
+    `--mode weekly` 且位置参数非空,就 rc=2 + stderr 可操作提示,**无论
+    `--digest` 是否同时给了**。
+    """
+
+    def _run(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = check_report.main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def _inputs(self, tmp):
+        rp = os.path.join(tmp, "w.md")
+        dp = os.path.join(tmp, "d.json")
+        for path, text in ((rp, WEEKLY_OK), (dp, DIGEST)):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        return rp, dp
+
+    def test_positional_snapshot_is_rc2(self):
+        """修前实测:这一条正是 `CHECK PASSED` rc=0。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, dp = self._inputs(tmp)
+            rc, _, err = self._run([rp, dp, "--mode", "weekly"])
+        self.assertEqual(rc, 2)
+        self.assertTrue(err.strip(), "rc=2 却没有 stderr 说明")
+
+    def test_rejection_names_the_two_flags_to_use_instead(self):
+        """提示必须**可操作**:光说"不接受"会让调用方改成删掉那个参数,
+        于是从"静默不查"变成"静默不查且没人知道该传什么"。两个开关都要点名。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, dp = self._inputs(tmp)
+            _, _, err = self._run([rp, dp, "--mode", "weekly"])
+        self.assertIn("--digest", err)
+        self.assertIn("--daily", err)
+
+    def test_rejection_stops_the_run_instead_of_warning(self):
+        """**变异靶心**:把提示写成 warning 却继续跑完并 rc=0。
+        判据是"结论行一个都不许出现" —— 只断言 rc 时,`print(...)` 之后
+        照跑照打 `CHECK PASSED` 的写法只要再把 rc 改回 0 就活了。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, dp = self._inputs(tmp)
+            rc, out, _ = self._run([rp, dp, "--mode", "weekly"])
+        self.assertEqual(rc, 2)
+        self.assertNotIn("CHECK PASSED", out)
+        self.assertNotIn("CHECK FAILED", out)
+
+    def test_positional_is_rejected_even_when_digest_is_also_given(self):
+        """**不得猜测意图**。允许"位置参数 + --digest 并存"就等于承认那个位置
+        还有语义,下一个人照样会只传位置参数。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, dp = self._inputs(tmp)
+            rc, out, _ = self._run([rp, dp, "--mode", "weekly", "--digest", dp])
+        self.assertEqual(rc, 2)
+        self.assertNotIn("CHECK PASSED", out)
+
+    def test_positional_is_not_silently_treated_as_a_digest(self):
+        """把位置参数**当 digest 用**是最像"体贴"的修法,也正是缺陷的来源。
+        判据:喂一个**结构不符**的位置参数,rc 必须是"拒收位置参数"的 2,
+        且 stderr 说的是位置参数那句,不是"聚合文件结构不符"。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, _ = self._inputs(tmp)
+            bad = os.path.join(tmp, "bad.json")
+            with open(bad, "w", encoding="utf-8") as f:
+                f.write(json.dumps({"foo": 1}))
+            rc, _, err = self._run([rp, bad, "--mode", "weekly"])
+        self.assertEqual(rc, 2)
+        self.assertIn("--digest", err)
+        self.assertNotIn("结构不符", err)
+
+    def test_no_exemption_token_survives_the_positional_slot(self):
+        """**接管 `NoLegacyExemptionSwitchTest` 删掉的那一维覆盖。**
+
+        那边的 base 此前有一维 `snap_slot`,配合「既有位置参数魔法值」那一族,
+        守的是类注释里的绕过手法 ②:*不新增任何注册,直接拿 weekly 不读的
+        那个位置参数当豁免扳机*(`if args.snapshot == "legacy": ...`)。
+        weekly 拒收位置参数之后,那条 base 自己就是 rc=2,整维随之作废。
+
+        覆盖不能跟着一起消失,所以搬到这里,而且守得更死:逐个把
+        `EXEMPTION_TOKENS` 塞进位置参数,要求**每一个**都 rc=2 且 stdout
+        不出现任何结论行 —— 魔法值连被读到的机会都没有。扳机若被插在拒收
+        之前(唯一还能生效的位置),这里立刻红。
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, dp = self._inputs(tmp)
+            for tok in NoLegacyExemptionSwitchTest.EXEMPTION_TOKENS:
+                for argv in ([rp, tok, "--mode", "weekly"],
+                             [rp, tok, "--mode", "weekly", "--digest", dp]):
+                    with self.subTest(token=tok, argv=len(argv)):
+                        rc, out, _ = self._run(argv)
+                        self.assertEqual(rc, 2, out)
+                        self.assertNotIn("CHECK PASSED", out)
+                        self.assertNotIn("CHECK FAILED", out)
+
+    def test_daily_mode_still_takes_its_positional_snapshot(self):
+        """daily 模式**一个字不改**:它的位置参数是必需的,且真的被读。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            bp = os.path.join(tmp, "b.md")
+            for path, text in ((rp, make_report()), (sp, SNAP_TEXT),
+                               (bp, BRIEF)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            rc, out, _ = self._run([rp, sp, "--brief", bp, "--mode", "daily"])
+        self.assertEqual(rc, 0)
+        self.assertIn("CHECK PASSED", out)
+
+    def test_weekly_without_the_positional_is_unaffected(self):
+        """拒收的是"给了位置参数",不是 weekly 本身。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, dp = self._inputs(tmp)
+            rc, out, _ = self._run([rp, "--mode", "weekly", "--digest", dp])
+        self.assertEqual(rc, 0)
+        self.assertIn("CHECK PASSED", out)
+
+
+class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
+    """weekly 未提供 `--digest` 时,**「跳过」与「通过」在输出上必须可区分**。
+
+    「未提供聚合文件」是 delta spec 里既有的**合法**形态(`#### Scenario:
+    未提供聚合文件` —— 退回结构检查、行为不变、且不得报结论句字段缺失),
+    所以它**不是违规、不改退出码**。但它此前跑出的是**裸 `CHECK PASSED`**,
+    与"结论句与数字溯源全部查过且全过"逐字不可分辨 —— 这正是本 change 反复
+    要消灭的那个形态,同一套原则已经产出过 `VERDICT_SKIPPED_LEGACY`、
+    `VERDICT_SKIPPED_NO_DERIVED`、`BRIEF_REVIEW_BLOCK_SKIPPED` 三条声明。
+
+    这一条与上面那条拒收位置参数是一对:拒收把"以为传了"变成响亮失败,
+    声明把"确实没传"变成看得见的事实。少任何一半,静默放行都还在。
+    """
+
+    LINE = "WEEKLY_DIGEST_ABSENT_SKIPPED: 未提供 --digest,本次未校验结论句与数字溯源"
+
+    def _run(self, argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = check_report.main(argv)
+        return rc, out.getvalue()
+
+    def _report(self, tmp, text=WEEKLY_OK):
+        rp = os.path.join(tmp, "w.md")
+        with open(rp, "w", encoding="utf-8") as f:
+            f.write(text)
+        return rp
+
+    def test_declaration_is_printed_when_digest_is_absent(self):
+        """**变异靶心**:删掉声明行 → 退回裸 CHECK PASSED,本条必须红。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, out = self._run([self._report(tmp), "--mode", "weekly"])
+        self.assertIn(self.LINE, out)
+        self.assertEqual(rc, 0)
+
+    def test_declaration_is_not_a_violation(self):
+        """**变异靶心**:把它做成违规(进 violations / 改 rc)→ 本条必须红。
+        「未提供聚合文件」是 spec 里的合法形态,不是错误。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, out = self._run([self._report(tmp), "--mode", "weekly"])
+        self.assertEqual(rc, 0)
+        self.assertIn("CHECK PASSED", out)
+        self.assertNotIn("CHECK FAILED", out)
+        self.assertNotIn(" - " + self.LINE, out)   # 违规是带 " - " 前缀打印的
+
+    def test_declaration_precedes_the_verdict_line(self):
+        """降级声明必须先于结论行 —— 读者在看到 PASSED 之前就得知道少查了什么。
+        与既有 notes 的打印顺序同一条规矩。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            _, out = self._run([self._report(tmp), "--mode", "weekly"])
+        self.assertLess(out.index(self.LINE), out.index("CHECK PASSED"))
+
+    def test_declaration_is_absent_when_digest_is_given(self):
+        """闭合件:无条件打印这行,声明就退化成噪声,"查过没查过"又不可分辨。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            dp = os.path.join(tmp, "d.json")
+            with open(dp, "w", encoding="utf-8") as f:
+                f.write(DIGEST)
+            rc, out = self._run([self._report(tmp), "--mode", "weekly",
+                                 "--digest", dp])
+        self.assertEqual(rc, 0)
+        self.assertNotIn("WEEKLY_DIGEST_ABSENT_SKIPPED", out)
+
+    def test_declaration_still_printed_when_the_report_is_violating(self):
+        """rc=1 那条路径上同样要出声:少查了什么与查出了什么互不替代。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = self._report(tmp, WEEKLY_OK.replace("## 下周关注", "## 删掉了"))
+            rc, out = self._run([rp, "--mode", "weekly"])
+        self.assertEqual(rc, 1)
+        self.assertIn(self.LINE, out)
+
+    def test_daily_mode_never_prints_it(self):
+        """daily 模式**一个字不改**。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            for path, text in ((rp, make_report()), (sp, SNAP_TEXT)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            rc, out = self._run([rp, sp, "--mode", "daily"])
+        self.assertEqual(rc, 0)
+        self.assertNotIn("WEEKLY_DIGEST_ABSENT_SKIPPED", out)
+
+
 class WeeklyGapOmittedTest(unittest.TestCase):
     """I9 收口检查此前零测试(变异存活):digest 的每个缺漏源须在缺漏汇总出现。"""
 
@@ -1514,18 +1738,24 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
                     out.append(("daily mode=%d brief=%d strict=%d"
                                 % (use_mode, use_brief, use_strict), argv, None,
                                 self.DAILY_BASE_CODES, d_unread))
+        # weekly 侧此前还有一维 `snap_slot`(往不读的位置参数里塞一份快照),
+        # 并把 `free_positional=1` 喂给「既有位置参数魔法值」那一族。
+        # **那一维已随 weekly 拒收位置参数一起消失**:`--mode weekly` 且位置
+        # 参数非空现在是 rc=2,base 自己就跑不出任何码
+        # (实测:加完拒收后全量 `FAILED (failures=1)`,红的正是本条,消息为
+        # 「base「weekly daily=2 snapslot=1」的基线码集合与写死的期望不符 ——
+        # 少了 ['VERDICT_ABSENT','VERDICT_EMPTY','VERDICT_MALFORMED',
+        # 'VERDICT_NOT_QUOTED']」)。
+        # **这不是放宽断言,是那条 argv 已经不再是合法输入。** 它守的东西
+        # (「拿不读的位置参数当豁免扳机」,即类注释里的绕过手法 ②)现在由
+        # `WeeklyRejectsPositionalSnapshotTest` 承接,并且守得更死:那里对
+        # **每一个 EXEMPTION_TOKEN** 逐个塞进位置参数,要求全部 rc=2 且
+        # stdout 不出现任何结论行 —— 魔法值连被读到的机会都没有。
         for n_daily in (2, 1, 0):
-            for snap_slot in (False, True):
-                argv = [p["w_report"]]
-                fp = None
-                if snap_slot:
-                    argv.append(p["d_multi"])
-                    fp = 1
-                argv += ["--mode", "weekly", "--digest", p["w_multi"]]
-                argv += ["--daily", p["d_report"]] * n_daily
-                out.append(("weekly daily=%d snapslot=%d"
-                            % (n_daily, snap_slot), argv, fp,
-                            self.WEEKLY_BASE_CODES, w_unread))
+            argv = [p["w_report"], "--mode", "weekly", "--digest", p["w_multi"]]
+            argv += ["--daily", p["d_report"]] * n_daily
+            out.append(("weekly daily=%d" % n_daily, argv, None,
+                        self.WEEKLY_BASE_CODES, w_unread))
         out.append(("daily 容器坏",
                     [p["d_report"], p["d_container"], "--brief", p["brief"],
                      "--mode", "daily", "--strict-brief"], None,

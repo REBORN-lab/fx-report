@@ -1,5 +1,13 @@
 """fx-verdict-enforcement 变异电池 —— Design Doc §7 的 10 条靶点 + BOUND 一条
-+ T8b 的 M12/M13/M14 + T8c 的 M15,共 15 条。
++ T8b 的 M12/M13/M14 + T8c 的 M15 + T9 的 M16-M25,共 25 条。
+
+**T9 补的十条,补的是两次"修完就没人再打"的修复**(地板 15→25):
+M16-M20 打本轮修掉的 weekly 静默放行路径(位置参数被接受却完全不读 +
+`--digest` 缺席时结论句闸门与数字溯源整层不跑却打印通过);
+M21-M25 打上一次修复(tasks §7 的复盘材料块豁免,已在 HEAD 里)——
+那次只跑了一次性的 6/6 变异,**没有留下常驻靶点**,处境与本 change 早期
+那些"修完就没人再打"的修复完全相同。靶点表因此第一次覆盖到
+`split_brief_review_block` / `is_generated_review_line` 这两个函数。
 
 在**仓库根目录**运行:python3 docs/superpowers/evidence/2026-08-13-fx-verdict-mutations.py
 
@@ -137,6 +145,16 @@
 靶点都没有。** 结论句的**产出端**因此在这套电池里**零覆盖** ——
 「KILLED 15/15」对 derive 一个字都没说,别把它读成「产出端也验过了」。
 
+**更新(T9,2026-08-14,提交 `eef783e` + 本轮改动,同一种数法实测)**:
+补 M16-M25 之后是 **25 条**、仍然只落在**同样这 4 个文件**上:
+`scripts/check_report.py` **22** 条、`scripts/verdicts.py` **1** 条、
+`skills/fx-daily-report/SKILL.md` **1** 条、
+`skills/fx-weekly-report/SKILL.md` **1** 条。
+**`scripts/collect/derive.py` 依旧是 0 条** —— 十条新靶点全部落在校验器上,
+产出端的零覆盖**一个字都没有改善**。「KILLED 25/25」同样不该被读成
+「产出端也验过了」;这条边界随条数从 15 涨到 25 而**原样保留**,
+因为涨的那部分与它无关。
+
 **3. 反制措辞(必须原样保留,否则 M14 那一行会被读反)。** 只读报告的人
 最容易把「M14 隐藏豁免开关 KILLED」理解成「校验器没有豁免路径 / 这一类
 已经封死」。**不是。** 杀手是 `test_cli_option_set_is_frozen` 与
@@ -238,7 +256,7 @@ FILES = (C, D, V, S, W)
 # 登记条数的**地板**,与 len(M) 无关的独立常量。汇总行的「登记」= len(M),
 # 三个数同源、一起缩水时仍然相等(实测 M[:2] → 2/2/2 退出 0;M=[] → 0/0/0
 # 退出 0)。要少一条靶点,就得先动这个数字 —— 那是显式动作,会进 diff。
-EXPECTED_TARGETS = 15
+EXPECTED_TARGETS = 25
 
 # 子进程环境**白名单**。名字黑名单挡不住没写进名单的那些:实测
 # `FRED_API_KEY=dummy` 原样转发进子进程后全量 11 条失败。这里只放
@@ -346,6 +364,76 @@ M = [
      '                     % (c, DISPOSITION_SCRIPT_BUG))',
      '                     "该币种的结论句一条都未校验;%s"\n'
      '                     % (c, DISPOSITION_QUOTE))'),
+    # ---- M16-M20(T9 新增,地板 15→25 的前半):weekly 静默放行路径 ----
+    # 修前 `--mode weekly` 接受位置参数却**完全不读**,而 `--digest` 缺席时
+    # 结论句闸门与数字溯源整层不跑,照样 CHECK PASSED rc=0。决定性实测
+    # (HEAD eef783e,真实产物):位置参数换成 `/does/not/exist.json` 仍然
+    # CHECK PASSED rc=0 —— 连"文件在不在"都没查。五条靶点分别打这条修复的
+    # 五种退化形态。
+    ("M16 weekly 位置参数拒收失效", C,
+     "        if args.snapshot:\n"
+     '            print("weekly 模式不接受位置参数快照;周度聚合文件请用 `--digest` "',
+     "        if False:\n"
+     '            print("weekly 模式不接受位置参数快照;周度聚合文件请用 `--digest` "'),
+    # M17:**最像"已经修了"的退化** —— 提示照打,却不中断。修前那条静默放行
+    # 于是原样还在,只是多了一行给人看的字。只断言 rc 的测试对它免疫,
+    # 判据必须是"结论行一个都不许出现"。
+    ("M17 拒收降级成 warning 仍跑完", C,
+     '                  "传入,并用 `--daily` 传入当周全部日报", file=sys.stderr)\n'
+     "            return 2\n",
+     '                  "传入,并用 `--daily` 传入当周全部日报", file=sys.stderr)\n'),
+    # M18:声明行被删 → 退回裸 CHECK PASSED,「跳过」与「通过」重新不可分辨。
+    ("M18 无 digest 声明行被删", C,
+     '            notes.append("WEEKLY_DIGEST_ABSENT_SKIPPED: 未提供 --digest,"\n'
+     '                         "本次未校验结论句与数字溯源")',
+     "            pass"),
+    # M19:反方向的退化 —— 无条件打印。声明退化成噪声,"查过没查过"同样
+    # 不可分辨。删声明与滥打声明必须各有一条靶点。
+    ("M19 声明行无条件打印", C,
+     "        if args.digest is None:\n"
+     "            # 「未提供聚合文件」是 delta spec 里的**合法**形态(退回结构检查),",
+     "        if True:\n"
+     "            # 「未提供聚合文件」是 delta spec 里的**合法**形态(退回结构检查),"),
+    # M20:**"体贴"的修法**,也正是这条缺陷的来源 —— 猜测调用方意图,把位置
+    # 参数当 digest 用。它会让 rc 从 2 变成 0/1,静默放行换个形式复活:
+    # 下一个人照样只传位置参数,而脚本这次"猜对了",于是没人再去修调用方。
+    ("M20 猜测意图:位置参数当 digest 用", C,
+     "        if args.snapshot:\n"
+     '            print("weekly 模式不接受位置参数快照;周度聚合文件请用 `--digest` "\n'
+     '                  "传入,并用 `--daily` 传入当周全部日报", file=sys.stderr)\n'
+     "            return 2\n",
+     "        if args.snapshot and not args.digest:\n"
+     "            args.digest = args.snapshot\n"),
+    # ---- M21-M25(T9 新增,地板 15→25 的后半):要点表复盘材料块豁免 ----
+    # 上一次修复(tasks §7,已在 HEAD 里)当时只跑了一次性的 6/6 变异,**没有
+    # 留下常驻靶点** —— 也就是说它和本 change 早期那些"修完就没人再打"的修复
+    # 处境相同。这五条把它接进常驻电池。
+    ("M21 复盘块整块豁免(不校验行式样)", C,
+     "        (exempt if is_generated_review_line(ln) else traced).append(ln)",
+     "        (exempt if True else traced).append(ln)"),
+    ("M22 豁免声明 BRIEF_REVIEW_BLOCK_SKIPPED 被删", C,
+     '            notes.append("BRIEF_REVIEW_BLOCK_SKIPPED: 复盘材料块 %d 行未纳入"\n'
+     '                         "要点表数字溯源" % len(exempt))',
+     "            pass"),
+    # M23:块头 ≥2 时"静默取第一个"。挑一个是静默决策,而被查方正好能靠多写
+    # 一个块头把选择权拿过去 —— 失败关闭必须保持。
+    ("M23 两个块头静默取第一个", C,
+     "    if len(heads) != 1:\n        return lines, [], len(heads)",
+     "    if len(heads) < 1:\n        return lines, [], len(heads)"),
+    # M24:块头常量在校验器里再写一遍。唯一事实源是产出方 review.py;
+    # 两处各写一遍必然漂移,而漂移后豁免要么整段失效、要么整段过宽,两种都静默。
+    ("M24 块头常量在校验器里再写一遍", C,
+     "try:\n"
+     "    from scripts.review import REVIEW_BLOCK_HEADING\n"
+     "except ImportError:                                  # pragma: no cover - 直跑分支\n"
+     "    from review import REVIEW_BLOCK_HEADING\n",
+     'REVIEW_BLOCK_HEADING = "## 复盘材料(scripts/review.py 生成,勿手改)"\n'),
+    # M25:行式样"凭印象写" —— review.py 那两处括号是 **ASCII** `()`,正则里
+    # 不转义就成了捕获组,式样反而要求「没有括号」,于是真行一条都认不出、
+    # 豁免整块失效。这一脚实测踩过,由 test_review 的端到端用例当场抓到。
+    ("M25 行式样括号不转义(捕获组)", C,
+     r'    r"|参考价未更新\(非工作日\)) \| 方向核对: (?:命中|未命中|无法判定)")',
+     r'    r"|参考价未更新(非工作日)) \| 方向核对: (?:命中|未命中|无法判定)")'),
 ]
 
 missing = [p for p in FILES if not os.path.exists(p)]
