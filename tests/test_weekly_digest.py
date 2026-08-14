@@ -109,18 +109,27 @@ class EventsAndGapsTest(unittest.TestCase):
 
 class VerdictTest(unittest.TestCase):
     LOG = [
-        {"date": "2026-08-07", "currency": "PHP", "review": {"verdict": "命中"}},
-        {"date": "2026-08-08", "currency": "PHP", "review": {"verdict": "无法判定"}},
-        {"date": "2026-08-09", "currency": "PHP", "review": {"verdict": None}},  # 当天无快照
-        {"date": "2026-07-01", "currency": "PHP", "review": {"verdict": "命中"}},  # 窗口外
+        {"date": "2026-08-07", "currency": "PHP", "review": {"status": "命中"}},
+        {"date": "2026-08-08", "currency": "PHP", "review": {"status": "无法判定"}},
+        {"date": "2026-08-09", "currency": "PHP", "review": {"status": None}},  # 当天无快照
+        {"date": "2026-07-01", "currency": "PHP", "review": {"status": "命中"}},  # 窗口外
         "junk",
     ]
 
     def test_counts_within_window_only(self):
         """按覆盖区间过滤:08-09 当天无快照但有观点,仍须计入(精确匹配会漏掉它)。"""
         d, _ = wd.build(WEEK_SNAPS, self.LOG, "2026-W33")
-        self.assertEqual(d["verdicts"], {"命中": 1, "未命中": 0,
-                                         "无法判定": 1, "未判定": 1})
+        self.assertEqual(d["verdicts"], {"命中": 1, "未命中": 0, "无法判定": 1,
+                                         "未到期": 0, "未复盘": 1})
+
+    def test_pending_has_its_own_bucket(self):
+        """「还没到该看的时候」不得并进「未复盘」—— 合栏正是读者看不清的
+        老毛病换个地方复发。"""
+        d, _ = wd.build(WEEK_SNAPS,
+                        [{"date": "2026-08-08", "currency": "PHP",
+                          "review": {"status": "未到期"}}], "2026-W33")
+        self.assertEqual(d["verdicts"]["未到期"], 1)
+        self.assertEqual(d["verdicts"]["未复盘"], 0)
 
     def test_entries_outside_window_excluded(self):
         d, _ = wd.build(WEEK_SNAPS, self.LOG, "2026-W33")
@@ -145,12 +154,12 @@ class VerdictAvailabilityTest(unittest.TestCase):
         self.assertEqual(problems, [])
 
     def test_malformed_verdicts_do_not_crash_or_pollute(self):
-        log = [{"date": "2026-08-07", "review": {"verdict": ["命中"]}},   # unhashable
-               {"date": "2026-08-08", "review": {"verdict": "部分命中"}},  # 表外
-               {"date": "2026-08-10", "review": {"verdict": 7}}]
+        log = [{"date": "2026-08-07", "review": {"status": ["命中"]}},   # unhashable
+               {"date": "2026-08-08", "review": {"status": "部分命中"}},  # 表外
+               {"date": "2026-08-10", "review": {"status": 7}}]
         d, _ = wd.build(WEEK_SNAPS, log, "2026-W33")
         self.assertEqual(sorted(d["verdicts"]), sorted(wd.VERDICTS))
-        self.assertEqual(d["verdicts"]["未判定"], 3)
+        self.assertEqual(d["verdicts"]["未复盘"], 3)
 
 
 class SnapshotOrderingTest(unittest.TestCase):
@@ -323,11 +332,11 @@ class UndatedSnapshotTest(unittest.TestCase):
 
 class VerdictDetailTest(unittest.TestCase):
     def test_details_provide_script_source_for_the_breakdown(self):
-        log = [{"date": "2026-08-10", "currency": "PHP", "review": {"verdict": "命中"}},
-               {"date": "2026-08-07", "currency": "EUR", "review": {"verdict": None}}]
+        log = [{"date": "2026-08-10", "currency": "PHP", "review": {"status": "命中"}},
+               {"date": "2026-08-07", "currency": "EUR", "review": {"status": None}}]
         d, _ = wd.build(WEEK_SNAPS, log, "2026-W33")
         self.assertEqual(d["verdict_details"],
-                         [{"date": "2026-08-07", "currency": "EUR", "verdict": "未判定"},
+                         [{"date": "2026-08-07", "currency": "EUR", "verdict": "未复盘"},
                           {"date": "2026-08-10", "currency": "PHP", "verdict": "命中"}])
 
     def test_details_null_when_log_unavailable(self):
@@ -532,21 +541,21 @@ class VerdictDetailGuardTest(unittest.TestCase):
 
     def test_out_of_vocabulary_verdict_normalised(self):
         det, counts = self._run([{"date": "2026-08-08", "currency": "PHP",
-                                  "review": {"verdict": "大致命中"}}])
-        self.assertEqual([r["verdict"] for r in det], ["未判定"])
-        self.assertEqual(counts["未判定"], 1)
+                                  "review": {"status": "大致命中"}}])
+        self.assertEqual([r["verdict"] for r in det], ["未复盘"])
+        self.assertEqual(counts["未复盘"], 1)
 
     def test_entry_outside_coverage_window_excluded(self):
         det, counts = self._run([{"date": "2026-07-01", "currency": "PHP",
-                                  "review": {"verdict": "命中"}}])
+                                  "review": {"status": "命中"}}])
         self.assertEqual(det, [])
         self.assertEqual(sum(counts.values()), 0)   # 明细条数 == 计数之和
 
     def test_non_str_currency_does_not_crash_sort(self):
         det, _ = self._run([{"date": "2026-08-08", "currency": {"x": 1},
-                             "review": {"verdict": "命中"}},
+                             "review": {"status": "命中"}},
                             {"date": "2026-08-08", "currency": "PHP",
-                             "review": {"verdict": "命中"}}])
+                             "review": {"status": "命中"}}])
         self.assertEqual(len(det), 2)
         self.assertIsNone(det[0]["currency"])
 class ChannelSymmetryTest(unittest.TestCase):

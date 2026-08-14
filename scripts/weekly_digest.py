@@ -23,10 +23,16 @@ from scripts.collect.events import GNEWS_SOFT_CAP, landed_count_capped
 from scripts.collect.events import MAX_RECORDS as GDELT_DAILY_CAP
 from scripts.collect.feeds import MAX_ITEMS as OFFICIAL_DAILY_CAP
 from scripts.fixings import distinct_fixings, num as _num
+from scripts.claims import STATUSES as CLAIM_STATUSES
 from scripts.verdicts import join_verdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERDICTS = ["命中", "未命中", "无法判定", "未判定"]
+# 复盘计数的栏位。四档取自 `scripts/claims.STATUSES`(唯一事实源),
+# 再加一栏「未复盘」= 还没交给判定的条目。
+# **「未到期」与「未复盘」必须分栏**:前者是"还没到该看的时候",后者是
+# "压根没复盘过";合成一栏正是读者看不清的老毛病换个地方复发。
+UNREVIEWED = "未复盘"
+VERDICTS = ["命中", "未命中", "无法判定", CLAIM_STATUSES[0], UNREVIEWED]
 SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 WEEK_RE = re.compile(r"\d{4}-W\d{2}")
 SEEN_DATE_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})T")
@@ -612,11 +618,11 @@ def _verdict_details(log_entries, dates):
         if not isinstance(date_, str) or not (lo <= date_ <= hi):
             continue
         review = e.get("review")
-        verdict = review.get("verdict") if isinstance(review, dict) else None
+        status = review.get("status") if isinstance(review, dict) else None
         out.append({"date": date_,
                     "currency": currency if isinstance(currency, str) else None,
-                    "verdict": verdict if isinstance(verdict, str) and verdict in VERDICTS
-                    else "未判定"})
+                    "verdict": status if isinstance(status, str) and status in VERDICTS
+                    else UNREVIEWED})
     return sorted(out, key=lambda r: (r["date"], r["currency"] or ""))
 
 
@@ -634,10 +640,10 @@ def _verdicts(log_entries, dates):
         if not isinstance(date, str) or not (lo <= date <= hi):
             continue
         review = e.get("review")
-        verdict = review.get("verdict") if isinstance(review, dict) else None
+        status = review.get("status") if isinstance(review, dict) else None
         # 可哈希门 + 词表白名单:外部日志可能是 list(unhashable → TypeError)
         # 或表外字符串(会凭空多出一个 JSON 键)。与 log_decision.py 同规格。
-        key = verdict if isinstance(verdict, str) and verdict in counts else "未判定"
+        key = status if isinstance(status, str) and status in counts else UNREVIEWED
         counts[key] += 1
     return counts
 

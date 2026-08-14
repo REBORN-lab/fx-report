@@ -1,30 +1,59 @@
 #!/usr/bin/env python3
-"""混合复盘的确定性一半:用两日快照算汇率方向,回填 direction_outcome,
-并把复盘材料追加进当日要点表。触发条件是否发生由 LLM 判定(SKILL 第 4 步)。"""
+"""复盘节的确定性来源:把**时限已到**的观点交给 `scripts/claims.resolve_claim`
+判定,把结论与依据句写回决策日志,并把复盘材料追加进当日要点表。
+
+---- 修前是什么样 ----
+
+`target = prior_dates[-1]` —— 永远只复盘"上一个记过的日子",而速览表的触发
+条件写的是 `(T+3)` / `(T+5)`。于是一条"三个运行日内升破 33.13"的观点,**第二天**
+就被拿去判;判据还只是两次定盘的高低,参考价没更新的那天两值相等 → 直接
+「无法判定」。实测 40 条里 33 条落在这一档,而它们绝大多数的诚实答案是
+「未到期」。
+
+---- 现在是什么样 ----
+
+每天扫全部**尚未定论**的结构化观点,逐条按它自己登记的时限判定:
+时限没到 → 顺延(不写日志、不出材料行,只进那条带计数的声明);
+时限已到 → 结论与依据句由 `resolve_claim` 给出,写回日志、出一行材料。
+结论词与依据句本文件一个字都不自己拼 —— 它只负责选出该判哪些条目。
+"""
 import argparse
 import json
-import math
 import os
 import sys
 
-# 结论句的拼装口只有一个(head 与 caveat 列表怎么连,只有 verdicts 说了算)。
-# 自己用 % / join 拼会在分隔符(全角顿号)、括号(ASCII)与"没有 caveat 时
-# 不得拼出空括号"三处各漂一次,而这三处正是逐字引用检查的比对对象。
-# 两条分支对应两种运行形态:包内导入(测试、`python3 -m`)与
-# `python3 scripts/review.py` 直跑(此时 sys.path[0] 就是 scripts/)。
+# 判定与结论句的唯一来源。两条分支对应两种运行形态:包内导入(测试、
+# `python3 -m`)与 `python3 scripts/review.py` 直跑(此时 sys.path[0] 就是
+# scripts/)。
 try:
-    from scripts.verdicts import join_verdict
+    from scripts import claims
 except ImportError:                                  # pragma: no cover - 直跑分支
-    from verdicts import join_verdict
+    import claims
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EMPTY_REVIEW = {"direction_outcome": None, "trigger_judgement": None, "verdict": None}
+EMPTY_REVIEW = {"status": None, "basis": None}
 # 复盘材料块的块头。**唯一事实源在这里**(本脚本是产出方),
 # `scripts/check_report.py` 只许导入 —— 它据此把要点表切成「LLM 手写」与
-# 「本脚本生成」两段,后者豁免「要点表 ⊆ 当日快照」那一层的数字溯源
-# (该层 2026-08-14 起**默认开启**,弱化入口是 `--no-strict-brief`)。
+# 「本脚本生成」两段,后者豁免「要点表 ⊆ 当日快照」那一层的数字溯源。
 # 两处各写一遍必然漂移,而漂移的后果是豁免整段失效或整段过宽,都不会有人发现。
 REVIEW_BLOCK_HEADING = "## 复盘材料(scripts/review.py 生成,勿手改)"
+# 带计数的声明。**唯一事实源同样在这里**,校验器只许据它推出行式样。
+# 这一行**每天都打**,不是"没东西可复盘时才打":读者要能分辨"今天没有到期的"
+# 与"今天这一层根本没跑"。
+DECLARATION_FMT = ("- 到期复盘 %d 条;未到期 %d 条顺延;已定论 %d 条不再复盘;"
+                   "结构化字段之前的历史观点 %d 条不在本节复盘范围")
+FIRST_RUN_LINE = "- 首次运行,无历史观点可复盘"
+MATERIAL_FMT = ("- %s | 观点日 %s | 情景: %s | 触发条件: %s | 复盘句: %s"
+                " | 结论: %s")
+# 顺延登记行:时限没到的观点**不出结论**,但它的原文要留在要点表里。
+# 两个理由,后一个是实测出来的:
+# ① 读者(与次日的写作者)要看得见"还在观察的是哪几条";
+# ② 报告的「本期相对上期的变化」节要引用这些观点登记时的数,而报告的数字
+#    白名单是「当日快照 ∪ 当日要点表」—— 这些条目一旦不出现在要点表里,
+#    那些数就无处可溯。实测 2026-08-13 的 0.094 / 4.249 / 9.609 三个数
+#    正是这么被判 NUMBER_UNTRACEABLE 的。
+# 行尾**没有**「| 结论:」那一段,与结论行在式样上一眼可分。
+PENDING_FMT = "- 顺延 | %s | 观点日 %s | 情景: %s | 触发条件: %s | 复盘句: %s"
 
 
 def load_log(path):
@@ -59,124 +88,50 @@ def load_snapshot(data_dir, date_str):
         return None
     with open(p, encoding="utf-8") as f:
         try:
-            return json.load(f)
+            snap = json.load(f)
         except (ValueError, RecursionError):
             return None
+    # isinstance 门:顶层不是对象的快照读不出任何读数,与"当天没跑采集"同形。
+    # 判定侧对入参形状是**失败关闭**(形状不对就抛),那条严格是给调用方的
+    # 缺陷用的;外部损坏的存量文件属于容错路径,在这里收口。
+    return snap if isinstance(snap, dict) else None
 
 
-def rate_of(snap, currency):
-    """isinstance 门逐层下钻: 任一层类型不符 → None。
-    primary 为 bool 或非数值 → None(约定 2: 数值比较前排除 bool)。"""
-    if not isinstance(snap, dict) or not isinstance(currency, str):
-        return None
-    rates = snap.get("rates")
-    if not isinstance(rates, dict):
-        return None
-    entry = rates.get(currency)
-    if not isinstance(entry, dict):
-        return None
-    primary = entry.get("primary")
-    if isinstance(primary, bool) or not isinstance(primary, (int, float)):
-        return None
-    if not math.isfinite(primary):
-        # NaN/Infinity 穿过数值比较会给出确定性错误结论 → 视为缺失
-        return None
-    return primary
+def snapshot_series(data_dir, from_date, to_date):
+    """`[(日期, 快照), …]` 升序,含两端,**第一项恒为观点日当日**。
 
-
-def ref_date_of(snap, currency):
-    """该币种的参考价定盘日期;存量快照(无此字段)或类型不符 → None。"""
-    if not isinstance(snap, dict) or not isinstance(currency, str):
-        return None
-    rates = snap.get("rates")
-    if not isinstance(rates, dict):
-        return None
-    entry = rates.get(currency)
-    if not isinstance(entry, dict):
-        return None
-    ref = entry.get("ref_date")
-    return ref if isinstance(ref, str) else None
-
-
-def unchanged_ref_date_of(prev_snap, today_snap, currency):
-    """两侧参考价定盘日期都在且相同 → 返回那个日期(参考价未更新,不是价格
-    持平);任一侧缺失(存量快照)或不同 → None,退回按数值比较的旧行为。
-
-    **谓词与日期只留这一个判据**:调用点按 `is not None` 判,不按真值判 ——
-    ref_date 为空串时旧的布尔判据认它为「未更新」,按真值判会把这一档静默
-    翻面。返回日期而不只返回布尔,是因为那句话必须带上它(见
-    `unchanged_ref_note`);两处各算一次必然算岔。
+    只列**跑过采集的那些天**(数据目录里实际存在的文件)。这既是唯一能拿到的
+    事实,也正好是判定要的东西:窗口的外沿按快照日数算,而不去猜哪天该有定盘
+    —— 猜就等于查日程表,而本脚本手上没有任何日程输入。
     """
-    prev_ref = ref_date_of(prev_snap, currency)
-    today_ref = ref_date_of(today_snap, currency)
-    return prev_ref if prev_ref is not None and prev_ref == today_ref else None
-
-
-def unchanged_ref_note(ref_date):
-    """两日同定盘时的那句话。**唯一事实源在这里**:两个产出点
-    (`direction_sentence` 的 caveat 与材料行的汇率段)共用它,
-    `scripts/check_report.py` 的行式样也由它推出、不许自己再写一遍
-    —— 与 `REVIEW_BLOCK_HEADING` 同规矩。
-
-    **只陈述事实,不断言原因。** 修前这里写的是「参考价未更新(非工作日)」,
-    而本脚本**从不查日历**:它手上只有两个 ref_date,没有任何交易所日程输入。
-    实测 2026-08-12 是周三、2026-08-14 是周五,四个币种都不休市,这句假归因
-    还经报告复盘节逐字引用流回了正文。脚本有资格说的全部内容,就是「两天的
-    定盘日期是同一个,而且是哪一个」;至于为什么没更新(休市?源未刷新?
-    采集时点早于定盘?),交给读者据这个日期自己判断。
-
-    措辞里不得出现管道语汇(「快照」等):这句话要落进**正文**,而正文位置
-    闸门禁的正是那些词,脚本自己的产出不得触发它(自伤形态)。
-    """
-    return "参考价未更新(仍为 %s 定盘)" % ref_date
-
-
-def direction_outcome(prev_rate, today_rate, watch_direction):
-    if prev_rate is None or today_rate is None or watch_direction not in ("up", "down"):
-        return "无法判定"
-    if today_rate == prev_rate:
-        return "无法判定"
-    actual = "up" if today_rate > prev_rate else "down"
-    return "命中" if actual == watch_direction else "未命中"
-
-
-def direction_sentence(date, currency, outcome, watch_direction,
-                       prev_rate, today_rate, unchanged_ref_date):
-    """方向核对的**完整一句**,供报告复盘节逐字引用。
-
-    存在理由:`direction_outcome` 由脚本机械算出,却实测**零个下游消费者** ——
-    它只以"方向核对: X"三个字躺在要点表里,而流向读者的 verdict 是 LLM 自己
-    写的。这一句是它的第一个消费者:脚本给整句,报告只准整句照抄。
-
-    三条纪律:
-    ① 经 `verdicts.join_verdict` 拼装,与 events_verdict 走同一条通道;
-    ② `watch_direction` 是 LLM 文本,只认 up/down 两个值 —— 原样插进来会把
-       任意字符(竖线、伪造的字段名、换行)带进这条要被逐字引用的话;
-    ③ 句内不出现快照字段名/文件路径/管道语汇:这句要落进**正文**,而正文
-       位置闸门禁的正是那些词,脚本自己的产出不得触发它(自伤形态);
-    ④ 句内**只给事实,不给原因** —— 脚本手上只有读数与定盘日期,任何"为什么"
-       都是它无从判断的(修前那句「非工作日」就是这么进的正文,见
-       `unchanged_ref_note`)。
-    """
-    head = "%s %s 方向核对:%s" % (date, currency, outcome)
-    caveats = ["关注方向 %s" % watch_direction
-               if watch_direction in ("up", "down") else "关注方向未记录"]
-    if unchanged_ref_date is not None:
-        # 两值相等是"没有新定盘"而非"市场持平",这一条替代两个读数。
-        # 措辞只从 unchanged_ref_note 取:句内不得自己拼(见该函数的说明)
-        caveats.append(unchanged_ref_note(unchanged_ref_date))
-    else:
-        caveats.append("观点日读数 %s" % prev_rate if prev_rate is not None
-                       else "观点日无读数")
-        caveats.append("当日读数 %s" % today_rate if today_rate is not None
-                       else "当日无读数")
-    return join_verdict(head, caveats)
+    dates = set()
+    if os.path.isdir(data_dir):
+        for name in os.listdir(data_dir):
+            if name.endswith(".json"):
+                stem = name[:-len(".json")]
+                if from_date < stem <= to_date:
+                    dates.add(stem)
+    series = [(from_date, load_snapshot(data_dir, from_date))]
+    series.extend((d, load_snapshot(data_dir, d)) for d in sorted(dates))
+    return series
 
 
 def review_of(e):
     """e['review'] 的 isinstance 门: 非 dict(缺失/外部损坏为 None)返回 None。"""
     rev = e.get("review")
     return rev if isinstance(rev, dict) else None
+
+
+# 定论 = 三档**可判的**结论。「未到期」不在其中:它是每天重算的当前状态,
+# 不是定论 —— 把它算成定论就等于把不利结果养到永远不判。
+CONCLUSIVE = tuple(s for s in claims.STATUSES if s != claims.STATUS_PENDING)
+
+
+def is_concluded(e):
+    """已定论的条目不再复盘第二次:事后重写等于伪造记录。"""
+    rev = review_of(e)
+    status = rev.get("status") if rev is not None else None
+    return isinstance(status, str) and status in CONCLUSIVE
 
 
 def flat(v):
@@ -199,60 +154,60 @@ def main(argv=None):
 
     entries = load_log(log_path)
     lines = ["", REVIEW_BLOCK_HEADING, ""]
-    prior_dates = sorted({e.get("date") for e in entries
-                          if isinstance(e.get("date"), str) and e.get("date") < args.date})
-    if not prior_dates:
-        lines.append("- 首次运行,无历史观点可复盘")
+    prior = [e for e in entries
+             if isinstance(e.get("date"), str) and e["date"] < args.date]
+    if not prior:
+        lines.append(FIRST_RUN_LINE)
     else:
-        target = prior_dates[-1]
-        prev_snap = load_snapshot(data_dir, target)
-        today_snap = load_snapshot(data_dir, args.date)
-        pending = []
-        for e in entries:
-            if e.get("date") != target:
-                continue
-            rev = review_of(e)
-            oc = rev.get("direction_outcome") if rev is not None else None
-            if oc is None:
-                pending.append(e)
-        if not pending:
-            lines.append("- 上一运行日(%s)无未复盘观点" % target)
-        for e in pending:
-            currency = e.get("currency")
-            prev_r = rate_of(prev_snap, currency)
-            today_r = rate_of(today_snap, currency)
-            oc = direction_outcome(prev_r, today_r, e.get("watch_direction"))
+        # 结构化字段之前登记的条目没有 `claim`,判不出时限也判不出观测量。
+        # 它们**不进本节**,但要进声明:静默排除与"全都复盘过了"不可分辨。
+        legacy = [e for e in prior if "claim" not in e]
+        settled = [e for e in prior if "claim" in e and is_concluded(e)]
+        open_entries = [e for e in prior
+                        if "claim" in e and not is_concluded(e)]
+        due, pending = [], []
+        for e in open_entries:
+            res = claims.resolve_claim(
+                e, snapshot_series(data_dir, e["date"], args.date))
+            (pending if res.status == claims.STATUS_PENDING else due).append(
+                (e, res))
+        lines.append(DECLARATION_FMT
+                     % (len(due), len(pending), len(settled), len(legacy)))
+        changed = False
+        # 未到期的也写回日志:日志要能回答"这条现在什么状态",否则 stats 与
+        # 周报的「未到期」栏永远是 0,拆出这一档等于白拆。但它**不出材料行**
+        # —— 复盘节只放到期的,没到该看的时候就不该占读者的注意力。
+        for e, res in pending + due:
             rev = review_of(e)
             if rev is None:
                 rev = dict(EMPTY_REVIEW)
                 e["review"] = rev
-            rev["direction_outcome"] = oc
-            # 参考价未更新时,两值相等是"没有新定盘"而非"市场持平"——必须区分,
-            # 否则 LLM 会把没有新定盘的一天写成价格观察(诊断实测:12/12 汇率对
-            # 连平全属此类)。**为什么没更新,脚本不知道**,故只报同定盘日这个事实。
-            unchanged_ref = unchanged_ref_date_of(prev_snap, today_snap, currency)
-            rate_desc = (unchanged_ref_note(unchanged_ref) if unchanged_ref is not None
-                         else "汇率 %s→%s" % (prev_r, today_r))
-            # 方向核对句嵌在**既有行内**,不新起一行:块内每一行都必须落在
+            if rev.get("status") != res.status or rev.get("basis") != res.sentence:
+                rev["status"] = res.status
+                rev["basis"] = res.sentence
+                changed = True
+        for e, res in pending:
+            lines.append(PENDING_FMT
+                         % (flat(e.get("currency")), e["date"],
+                            flat(e.get("scenario")), flat(e.get("trigger")),
+                            res.sentence))
+        for e, res in due:
+            # 复盘句嵌在**既有行内**,不新起一行:块内每一行都必须落在
             # `check_report.REVIEW_LINE_RES` 的式样里才拿得到「要点表 ⊆ 快照」
             # 那一层的豁免,新起一行会被当成 LLM 手写行照查(实测的 4 条
-            # BRIEF_NUMBER_UNTRACEABLE 就是这么来的)。字段插在"触发条件"与
-            # "关注方向"之间:前两段是 `.*`,吃得下这一段;"关注方向"那段是
-            # `[^|]*`,插在它后面会把式样撑破。
-            lines.append(
-                "- %s | 观点日 %s | 情景: %s | 触发条件: %s | 方向核对句: %s"
-                " | 关注方向: %s | %s | 方向核对: %s"
-                % (flat(currency), target, flat(e.get("scenario")),
-                   flat(e.get("trigger")),
-                   direction_sentence(target, flat(currency), oc,
-                                      e.get("watch_direction"), prev_r,
-                                      today_r, unchanged_ref),
-                   flat(e.get("watch_direction")), rate_desc, oc))
-        if pending:
+            # BRIEF_NUMBER_UNTRACEABLE 就是这么来的)。
+            lines.append(MATERIAL_FMT
+                         % (flat(e.get("currency")), e["date"],
+                            flat(e.get("scenario")), flat(e.get("trigger")),
+                            res.sentence, res.status))
+        if changed:
             # 无回填发生时不重写文件: 避免丢弃坏行、放大并发窗口
             save_log(log_path, entries)
     with open(brief_path, "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    for line in lines:
+        if line.strip() and line != REVIEW_BLOCK_HEADING:
+            print(line)
     print("review material appended to %s" % brief_path)
     return 0
 

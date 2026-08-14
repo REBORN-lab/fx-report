@@ -13,6 +13,7 @@ import unittest
 from unittest import mock
 
 from scripts import check_report
+from scripts import claims
 from scripts import weekly_digest
 from scripts.collect import derive
 from scripts.collect import events as events_mod
@@ -59,7 +60,7 @@ def ring_clause(assumption, alternative, flip):
 
 
 def make_report(summary_items=3, missing=None, php_body=None, gap_body="无",
-                extra_number=None, prior_line=PRIOR_LINE_CUR):
+                extra_number=None, prior_line=PRIOR_LINE_CUR, review=None):
     lines = ["# 外汇日报 2026-08-10", "", "## 执行摘要"]
     lines += ["- 摘要第 %d 条" % (i + 1) for i in range(summary_items)]
     sections = {
@@ -91,7 +92,7 @@ def make_report(summary_items=3, missing=None, php_body=None, gap_body="无",
         if missing and missing in name:
             continue
         lines += ["", "## " + name, body]
-    lines += ["", "## 复盘", "- 首次运行,无历史观点可复盘"]
+    lines += ["", "## 复盘", review or "- 首次运行,无历史观点可复盘"]
     lines += ["", "## 数据缺漏", gap_body]
     if prior_line:
         # `prior_line=None` 给那些**故意**要造"缺该节"形态的测试用
@@ -334,7 +335,8 @@ class MutationKillTest(unittest.TestCase):
 
 def make_weekly(coverage="覆盖日报:5 份(2026-08-04 至 2026-08-08);缺失日期:无",
                 theme_items=3, date_heading=False, drop=None,
-                review_body="- 命中 2 / 未命中 1 / 无法判定 2\n- 2026-08-05 PHP 命中",
+                review_body="- 命中 2 / 未命中 1 / 无法判定 2 / 未到期 1 / 未复盘 0"
+                            "\n- 2026-08-05 PHP 命中",
                 currency_body=None):
     lines = ["# 外汇周报 2026-W32", "", "> " + coverage if coverage else "", ""]
     lines += ["## 本周主线"] + ["- 主线 %d" % (i + 1) for i in range(theme_items)]
@@ -378,6 +380,18 @@ class CheckWeeklyTest(unittest.TestCase):
         v = check_report.check_weekly(make_weekly(review_body="- 表现不错"))
         self.assertTrue(any("REVIEW_TOKEN_MISSING" in x for x in v))
 
+    def test_pending_bucket_must_appear_in_the_weekly_review(self):
+        """「未到期」是本轮拆出来的那一档 —— 周报复盘汇总不写它,读者就还是
+        只看得到「无法判定」,病灶原样保留。"""
+        body = "- 命中 1 / 未命中 1 / 无法判定 1 / 未复盘 0"
+        v = check_report.check_weekly(make_weekly(review_body=body))
+        self.assertTrue(any("REVIEW_TOKEN_MISSING" in x and "未到期" in x
+                            for x in v), v)
+
+    def test_review_tokens_come_from_the_resolver_vocabulary(self):
+        """词表只有一份事实源 —— 校验器手抄一份,四档改名时它不会红。"""
+        self.assertEqual(check_report.REVIEW_TOKENS, claims.STATUSES)
+
     def test_missing_weekly_section(self):
         v = check_report.check_weekly(make_weekly(drop="缺漏汇总"))
         self.assertTrue(any("SECTION_MISSING" in x and "缺漏汇总" in x for x in v))
@@ -408,7 +422,8 @@ DIGEST_OBJ = {"week": "2026-W33",
                                 "fixings_verdict": FIX_PHP}},
               "events": {"PHP": {"articles_verdict": ART_PHP,
                                  "official_verdict": OFF_PHP}},
-              "verdicts": {"命中": 1, "未命中": 0, "无法判定": 15, "未判定": 10},
+              "verdicts": {"命中": 1, "未命中": 0, "无法判定": 15, "未到期": 4,
+                 "未复盘": 6},
               "verdict_details": [{"date": "2026-08-07", "currency": "PHP",
                                    "verdict": "命中"}]}
 DIGEST = json.dumps(DIGEST_OBJ, ensure_ascii=False)
@@ -424,7 +439,7 @@ WEEKLY_OK = """# 外汇周报 2026-W33
 USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%s / THB / BRL
 
 ## 复盘汇总
-- 命中 1、未命中 0、无法判定 15、未判定 10
+- 命中 1、未命中 0、无法判定 15、未到期 4、未复盘 6
 
 ## 下周关注
 - 关注定盘更新
@@ -4650,6 +4665,15 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     # (`grep -n "decision\|决策日志" scripts/check_report.py` 无输出),
     # 实测 25 条里 10 条当前就是违反的、六份产物却全绿。
     "DECISION_TRIGGER_NOT_SOURCED": "DISPOSITION_DECISION_TRIGGER",
+    # 2026-08-14 新增:决策日志的结构化观点 `claim` 必须逐字溯源到散文
+    # trigger。`claim` 是判定入口(`claims.resolve_claim` 只读它),读者却只
+    # 看得到散文 —— 两者漂移时判定照常给出四档之一,只是判的不是读者以为的
+    # 那件事,而没有任何自然后果会暴露它。
+    "DECISION_CLAIM_NOT_SOURCED": "DISPOSITION_DECISION_CLAIM",
+    # 2026-08-14 新增:复盘句必须逐字落在**正文的复盘节**。此前「结论由脚本
+    # 给出、报告逐字引用」只是 SKILL 里的散文,校验器对它零强制 —— 脚本算出的
+    # 结论走到报告边界就没人看着了。本仓库为此栽过 13 次同型。
+    "REVIEW_SENTENCE_NOT_QUOTED": "DISPOSITION_REVIEW_QUOTE",
 }
 # 同一层的**声明码**(走 notes,不改退出码,因此不带处置)。
 NEW_LAYER_NOTE_CODES = frozenset({
@@ -4678,6 +4702,11 @@ NEW_LAYER_NOTE_CODES = frozenset({
     "FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP",
     # 周报:数字归属结构性不适用 / 无 --digest 时 ③ 判不了锚点。
     "WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE",
+    # 结构化字段之前登记的条目没有 `claim`,判不了也不该判红;但"没查"与
+    # "查过且全过"必须可分辨,故带计数声明。
+    "DECISION_CLAIM_ABSENT_SKIPPED",
+    # 复盘句逐字引用的正向回执与它唯一的跳过态(复盘节标题重名)。
+    "REVIEW_SENTENCE_CHECKED", "REVIEW_SENTENCE_SKIPPED_AMBIGUOUS",
     "WEEKLY_ASSUMPTION_ANCHOR_SKIPPED_NO_DIGEST",
     # 决策日志:未提供路径 / 日志里没有该日期该币种的条目。
     # `DECISION_LOG_ABSENT_SKIPPED` 与 `PRIOR_PERIOD_ABSENT_SKIPPED`
@@ -4732,7 +4761,14 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # 加 1 条正向回执 JUDGEMENT_RING_CHECKED。**本轮是本表第一次减项** ——
         # 减项与加项同规格,必须在这里显式记一笔,否则"码没了"与"码被漏登记"
         # 在这条断言上同形。
-        self.assertEqual(len(want), 58, len(want))
+        # 58 → 60(2026-08-14,结构化观点):DECISION_CLAIM_NOT_SOURCED(违规)
+        # 与 DECISION_CLAIM_ABSENT_SKIPPED(声明)。前者守"claim 的阈值与时限
+        # 逐字溯源到散文 trigger",后者守"结构化字段之前的条目没查过"这件事
+        # 不被静默。
+        # 60 → 63(2026-08-14,复盘句逐字引用):REVIEW_SENTENCE_NOT_QUOTED
+        # (违规)+ REVIEW_SENTENCE_CHECKED(回执)+
+        # REVIEW_SENTENCE_SKIPPED_AMBIGUOUS(跳过态)。
+        self.assertEqual(len(want), 63, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4801,6 +4837,34 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 check_report.main(argv)
             out.append(("decision-log", buf.getvalue()))
+        # 第四次:结构化观点那一条。宿主同为速览表那份报告,但违规在**日志
+        # 内部**(claim 的阈值与散文 trigger 对不上),所以要另喂一份日志 ——
+        # 否则 DECISION_CLAIM_NOT_SOURCED 只有映射、没有任何用例触发。
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = json.loads(json.dumps(CLAIM_OK))
+            bad["legs"][0]["threshold"] = "60.95"
+            argv, _ = daily_files(
+                tmp, report_text=OVERVIEW_REPORT,
+                log_text=claim_log(bad, trigger="若 C 升破 60.9 → 关注丙(T+2)"),
+                extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main(argv)
+            out.append(("decision-claim", buf.getvalue()))
+        # 第五次:复盘句没被逐字抄进正文。宿主是要点表的复盘材料块 + 报告的
+        # 复盘节,与上面四份 fixture 都不同,必须单独喂一份。
+        with tempfile.TemporaryDirectory() as tmp:
+            brief = (BRIEF + "\n" + check_report.REVIEW_BLOCK_HEADING + "\n\n"
+                     + "- PHP | 观点日 2026-08-09 | 情景: s | 触发条件: t"
+                       " | 复盘句: 2026-08-09 PHP 命中(时限 T+1、按 1 个运行日计)"
+                       " | 结论: 命中\n")
+            argv, _ = daily_files(
+                tmp, report_text=make_report(review="- 这次算命中。"),
+                brief_text=brief, extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main(argv)
+            out.append(("review-quote", buf.getvalue()))
         return out
 
     def test_every_cli_usage_code_is_reachable_and_carries_no_disposition(self):
@@ -5022,7 +5086,7 @@ WEEKLY_RING = """# 外汇周报 2026-W33
 USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%s / THB / BRL
 
 ## 复盘汇总
-- 命中 1、未命中 0、无法判定 15、未判定 10
+- 命中 1、未命中 0、无法判定 15、未到期 4、未复盘 6
 
 ## 下周关注
 - 关注定盘更新
@@ -5155,6 +5219,163 @@ DECISION_LOG = "\n".join([
                 "scenario": "情景甲", "trigger": "若 A 升破 60.843 → 关注甲(T+2)",
                 "watch_direction": None}, ensure_ascii=False),
 ]) + "\n"
+
+
+CLAIM_OK = {"horizon": {"kind": "running_days", "n": 2, "quote": "T+2"},
+            "legs": [{"currency": "PHP", "field": "primary", "op": "gt",
+                      "threshold": "60.9"}]}
+
+
+def claim_log(claim=None, **over):
+    entry = {"date": "2026-08-10", "currency": "PHP", "scenario": "情景丙",
+             "trigger": "若 C 升破 60.9 → 关注丙(T+2)", "watch_direction": "up",
+             "claim": json.loads(json.dumps(CLAIM_OK)) if claim is None else claim}
+    entry.update(over)
+    return json.dumps(entry, ensure_ascii=False) + "\n"
+
+
+class ReviewSentenceQuotedInBodyTest(unittest.TestCase):
+    """`REVIEW_SENTENCE_NOT_QUOTED` —— 要点表里每条**结论行**的复盘句,
+    必须逐字出现在报告的复盘节里。
+
+    ---- 为什么这一码必须存在 ----
+    「结论由脚本给出、报告逐字引用」此前**只是 SKILL 里的散文**,校验器对它
+    零强制:脚本算出的结论走到报告边界就没人看着了,LLM 改一个字、漏抄一条、
+    或者干脆自己写一个结论词,六份产物照样全绿。本仓库为此栽过 13 次同型,
+    教训是"prompt 禁令堵不住,要改成不变量"。
+
+    判据是**整句逐字包含**,不是逐词:改一个字符即红。
+    """
+
+    BRIEF = (BRIEF + "\n" + check_report.REVIEW_BLOCK_HEADING + "\n\n"
+             + "- PHP | 观点日 2026-08-09 | 情景: s | 触发条件: t"
+               " | 复盘句: 2026-08-09 PHP 命中(时限 T+1、按 1 个运行日计)"
+               " | 结论: 命中\n")
+
+    def _report(self, review_body):
+        return make_report(review=review_body)
+
+    def test_verbatim_quote_passes(self):
+        v = check_report.check_daily(
+            self._report("- 2026-08-09 PHP 命中(时限 T+1、按 1 个运行日计)"
+                         " —— 该观点的分歧点已被检验。"),
+            SNAP_TEXT, self.BRIEF)
+        self.assertFalse([x for x in v if "REVIEW_SENTENCE_NOT_QUOTED" in x], v)
+
+    def test_missing_sentence_is_a_violation(self):
+        v = check_report.check_daily(
+            self._report("- 比索那条这次算命中,分歧点已被检验。"),
+            SNAP_TEXT, self.BRIEF)
+        self.assertTrue(any("REVIEW_SENTENCE_NOT_QUOTED" in x for x in v), v)
+
+    def test_one_character_changed_is_a_violation(self):
+        v = check_report.check_daily(
+            self._report("- 2026-08-09 PHP 命中(时限 T+1、按 2 个运行日计)"
+                         " —— 分歧点已被检验。"),
+            SNAP_TEXT, self.BRIEF)
+        self.assertTrue(any("REVIEW_SENTENCE_NOT_QUOTED" in x for x in v), v)
+
+    def test_quote_must_be_in_the_review_section_not_anywhere(self):
+        """抄在附录里不算 —— 判定类结论要落在**正文的复盘节**,
+        这与管道结论句必须留在附录是方向相反的两道闸门。"""
+        report = self._report("- 本期无可复盘观点。")
+        report += ("\n2026-08-09 PHP 命中(时限 T+1、按 1 个运行日计)\n")
+        v = check_report.check_daily(report, SNAP_TEXT, self.BRIEF)
+        self.assertTrue(any("REVIEW_SENTENCE_NOT_QUOTED" in x for x in v), v)
+
+    def test_violation_carries_its_own_disposition(self):
+        v = check_report.check_daily(
+            self._report("- 比索那条这次算命中。"), SNAP_TEXT, self.BRIEF)
+        line = [x for x in v if "REVIEW_SENTENCE_NOT_QUOTED" in x][0]
+        self.assertTrue(line.endswith(check_report.DISPOSITION_REVIEW_QUOTE),
+                        line)
+
+    def test_the_check_prints_a_receipt_with_a_count(self):
+        """「跳过必须出声」的正向形态:比过了几句要打进 stdout,
+        否则"全过"与"一句都没比"在输出上不可分辨。"""
+        notes = []
+        check_report.check_daily(
+            self._report("- 2026-08-09 PHP 命中(时限 T+1、按 1 个运行日计)"),
+            SNAP_TEXT, self.BRIEF, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("REVIEW_SENTENCE_CHECKED", line)
+        self.assertRegex(line, r"REVIEW_SENTENCE_CHECKED: 要点表给出 \d+ 条")
+
+
+class DecisionClaimSourcedTest(unittest.TestCase):
+    """`DECISION_CLAIM_NOT_SOURCED` —— 结构化观点必须**逐字**溯源到散文 trigger。
+
+    LLM 在结构化字段里只做"抄"与"选":阈值逐字取自速览表那一格已有的数,
+    比较方向与字段名从固定枚举里选。允许"差不多"就等于允许它在结构化字段里
+    另写一个数,而结构化字段才是判定入口 —— 散文与判定从此各说各话,
+    读者只看得到散文那半。校验器与 `log_decision.py` 共用同一份判据
+    (`claims.validate_claim`),两处各写一遍必然漂移。
+    """
+
+    def _entries(self, text):
+        entries, problems = check_report.parse_decision_log(text)
+        self.assertEqual(problems, [])
+        return entries
+
+    def test_wellformed_claim_passes(self):
+        v = check_report.check_decision_claim("2026-08-10",
+                                              self._entries(claim_log()))
+        self.assertEqual(v, [])
+
+    def test_threshold_absent_from_the_prose_is_a_violation(self):
+        bad = json.loads(json.dumps(CLAIM_OK))
+        bad["legs"][0]["threshold"] = "60.95"
+        v = check_report.check_decision_claim("2026-08-10",
+                                              self._entries(claim_log(bad)))
+        self.assertTrue(any("DECISION_CLAIM_NOT_SOURCED" in x
+                            and "CLAIM_THRESHOLD_NOT_SOURCED" in x for x in v), v)
+
+    def test_truncated_threshold_is_a_violation(self):
+        bad = json.loads(json.dumps(CLAIM_OK))
+        bad["legs"][0]["threshold"] = "60.9"
+        v = check_report.check_decision_claim(
+            "2026-08-10",
+            self._entries(claim_log(bad, trigger="若 C 升破 60.91 → 关注丙(T+2)")))
+        self.assertTrue(any("DECISION_CLAIM_NOT_SOURCED" in x for x in v), v)
+
+    def test_horizon_quote_absent_from_the_prose_is_a_violation(self):
+        bad = json.loads(json.dumps(CLAIM_OK))
+        bad["horizon"]["quote"] = "T+9"
+        v = check_report.check_decision_claim("2026-08-10",
+                                              self._entries(claim_log(bad)))
+        self.assertTrue(any("CLAIM_HORIZON_NOT_SOURCED" in x for x in v), v)
+
+    def test_violation_carries_its_own_disposition(self):
+        bad = json.loads(json.dumps(CLAIM_OK))
+        bad["legs"][0]["threshold"] = "60.95"
+        v = check_report.check_decision_claim("2026-08-10",
+                                              self._entries(claim_log(bad)))
+        self.assertTrue(v[0].endswith(check_report.DISPOSITION_DECISION_CLAIM),
+                        v[0])
+
+    def test_entries_without_a_claim_are_declared_with_a_count(self):
+        notes = []
+        legacy = json.dumps({"date": "2026-08-10", "currency": "PHP",
+                             "scenario": "s", "trigger": "t",
+                             "watch_direction": "up"}, ensure_ascii=False) + "\n"
+        v = check_report.check_decision_claim("2026-08-10",
+                                              self._entries(legacy), notes=notes)
+        self.assertEqual(v, [])
+        line = "\n".join(notes)
+        self.assertIn("DECISION_CLAIM_ABSENT_SKIPPED", line)
+        self.assertRegex(line, r"\d+")
+
+    def test_unstructurable_claim_with_a_reason_passes(self):
+        claim = {"horizon": {"kind": "running_days", "n": 2, "quote": "T+2"},
+                 "legs": None, "unstructurable_reason": "散文未给出阈值"}
+        v = check_report.check_decision_claim("2026-08-10",
+                                              self._entries(claim_log(claim)))
+        self.assertEqual(v, [])
+
+    def test_checker_and_add_share_one_predicate(self):
+        """两处各写一遍必然漂移:登记时放行、校验时打红(或反过来)。"""
+        self.assertIs(check_report.claims.validate_claim,
+                      claims.validate_claim)
 
 
 class DecisionTriggerSourcedTest(unittest.TestCase):

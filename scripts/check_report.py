@@ -22,9 +22,17 @@ import sys
 # **这里不引入 `os`** —— 校验器不读环境变量是不变量,由
 # VerdictGateIsOrthogonalToTheCheckedObjectTest 的 AST 断言钉住。
 try:
-    from scripts.review import REVIEW_BLOCK_HEADING, unchanged_ref_note
+    from scripts import claims
+    from scripts.claims import unchanged_ref_note
+    from scripts.review import DECLARATION_FMT, FIRST_RUN_LINE, MATERIAL_FMT
+    from scripts.review import PENDING_FMT
+    from scripts.review import REVIEW_BLOCK_HEADING
 except ImportError:                                  # pragma: no cover - 直跑分支
-    from review import REVIEW_BLOCK_HEADING, unchanged_ref_note
+    import claims
+    from claims import unchanged_ref_note
+    from review import DECLARATION_FMT, FIRST_RUN_LINE, MATERIAL_FMT
+    from review import PENDING_FMT
+    from review import REVIEW_BLOCK_HEADING
 
 CURRENCIES = ["USD", "EUR", "PHP", "THB", "BRL"]
 MAX_SUMMARY_ITEMS = 6
@@ -72,18 +80,74 @@ UNCHANGED_REF_NOTE_PAT = re.escape(unchanged_ref_note(_REF_DATE_SLOT)).replace(
 # tests/test_review.py::LegacyUnchangedRefNoteTest 三面钉住:旧行认得、新行仍
 # 认得、这个冻结值不得是当前措辞(否则就是借「历史遗留」之名手抄当前式样)。
 LEGACY_UNCHANGED_REF_NOTE = "参考价未更新(非工作日)"
-REVIEW_MATERIAL_RE = re.compile(
+LEGACY_REVIEW_MATERIAL_RE = re.compile(
     r"- [A-Z]{3} \| 观点日 \d{4}-\d{2}-\d{2} \| 情景: .* \| 触发条件: .*"
     r" \| 关注方向: [^|]* \| (?:汇率 (?:None|[-+0-9.eE]+)→(?:None|[-+0-9.eE]+)"
     r"|" + UNCHANGED_REF_NOTE_PAT +
     r"|" + re.escape(LEGACY_UNCHANGED_REF_NOTE) +
     r") \| 方向核对: (?:命中|未命中|无法判定)")
+# ---- 当前式样:两条都**从产出方的格式串推出来**,这里不手抄一个字 ----
+# `MATERIAL_FMT` / `DECLARATION_FMT` 的唯一事实源在 `scripts/review.py`,
+# 四档词表的唯一事实源在 `scripts/claims.py`。把槽位填成一个不可能自然出现的
+# 记号、re.escape 之后再换成式样,分隔符、括号宽度与全角标点就都自动对上 ——
+# 这正是上一轮手抄正则漏掉 ASCII 括号转义那个缺陷不再可能复发的原因。
+_SLOT = "\x01%d\x01"
+_SLOTS = tuple(_SLOT % i for i in range(6))
+_COUNT_SLOT = 424242424242
+# 结论词只取"可判"的三档:`未到期` 的条目按定义**不出材料行**(它还没到该看
+# 的时候),把它放进式样等于承认脚本会为未到期的观点写复盘。
+_CONCLUSIVE = tuple(s for s in claims.STATUSES if s != claims.STATUS_PENDING)
+_STATUS_PAT = "(?:%s)" % "|".join(re.escape(s) for s in _CONCLUSIVE)
+# 复盘句由 `claims.resolve_claim` 经 `verdicts.join_verdict` 拼出,形如
+# `2026-08-10 EUR 命中(时限 T+3、…)`。caveat 段用 `[^|]*` 而不是 `.*`:
+# 脚本产出的句子里不会有竖线,放宽到 `.*` 就等于把「伪造一整条格式完整的
+# 复盘行」的成本降到「在那一段写任意话」。
+_SENTENCE_PAT = (r"\d{4}-\d{2}-\d{2} [A-Z]{3} " + _STATUS_PAT
+                 + r"(?:\([^|]*\))?")
+REVIEW_MATERIAL_RE = re.compile(
+    re.escape(MATERIAL_FMT % _SLOTS)
+    .replace(re.escape(_SLOTS[0]), r"[A-Z]{3}")
+    .replace(re.escape(_SLOTS[1]), r"\d{4}-\d{2}-\d{2}")
+    # 情景/触发条件是 LLM 文本,可能含 `|`(review.flat 只扁平化换行、不转义
+    # 竖线),故这两段用 `.*` 靠尾部固定串回溯定位;其余每一段都钉死。
+    .replace(re.escape(_SLOTS[2]), r".*")
+    .replace(re.escape(_SLOTS[3]), r".*")
+    .replace(re.escape(_SLOTS[4]), _SENTENCE_PAT)
+    .replace(re.escape(_SLOTS[5]), _STATUS_PAT))
+# 顺延登记行:与结论行同样从产出方的格式串推出,唯一的差别是句末那一档
+# **只能是「未到期」**,而且行尾没有「结论」段 —— 时限没到就不该有结论,
+# 式样上放宽这一点等于允许脚本给未到期的观点写复盘。
+REVIEW_PENDING_RE = re.compile(
+    re.escape(PENDING_FMT % _SLOTS[:5])
+    .replace(re.escape(_SLOTS[0]), r"[A-Z]{3}")
+    .replace(re.escape(_SLOTS[1]), r"\d{4}-\d{2}-\d{2}")
+    .replace(re.escape(_SLOTS[2]), r".*")
+    .replace(re.escape(_SLOTS[3]), r".*")
+    .replace(re.escape(_SLOTS[4]),
+             r"\d{4}-\d{2}-\d{2} [A-Z]{3} " + re.escape(claims.STATUS_PENDING)
+             + r"(?:\([^|]*\))?"))
+REVIEW_DECLARATION_RE = re.compile(
+    re.escape(DECLARATION_FMT % ((_COUNT_SLOT,) * 4))
+    .replace(re.escape(str(_COUNT_SLOT)), r"\d+"))
 REVIEW_LINE_RES = (
     re.compile(r"\s*"),                                  # 块内空行
-    re.compile(r"- 首次运行,无历史观点可复盘"),
-    re.compile(r"- 上一运行日\(\d{4}-\d{2}-\d{2}\)无未复盘观点"),
+    re.compile(re.escape(FIRST_RUN_LINE)),
+    REVIEW_DECLARATION_RE,
     REVIEW_MATERIAL_RE,
+    REVIEW_PENDING_RE,
+    # ---- 冻结的历史式样 ----
+    # 产出方今后一个字都不会再吐出这两种行,它们按定义永远不变,因此不是会
+    # 漂移的第二份拷贝。留着只为一件事:briefs/2026-08-{07,08,09}-brief.md 的
+    # 材料行是改格式前产出的,**存量产物是既成事实,识别器必须认得历史格式**
+    # (与 PRIOR_PERIOD_SKIPPED_NO_SECTION 认旧格式日报同一条原则)。
+    re.compile(r"- 上一运行日\(\d{4}-\d{2}-\d{2}\)无未复盘观点"),
+    LEGACY_REVIEW_MATERIAL_RE,
 )
+# 周报复盘汇总必须出现的结论词。**唯一事实源是 `scripts/claims.STATUSES`** ——
+# 手抄一份的话,四档改名或增减时这里不会红,而周报会继续只报旧的三档。
+# 「未到期」在这张表里是本轮的要害:不写它,读者就还是只看得到「无法判定」,
+# 病灶原样保留。
+REVIEW_TOKENS = claims.STATUSES
 MAX_THEME_ITEMS = 3
 WEEKLY_SECTIONS = ["本周主线", "各币种", "复盘汇总", "下周关注", "缺漏汇总"]
 COVERAGE_RE = re.compile(r"覆盖日报[::]\s*(\d+)\s*份")
@@ -178,6 +242,17 @@ DISPOSITION_DECISION_TRIGGER = ("处置:先判哪一份是旧的 —— SKILL �
                                 "日志是抄件;改了表没回写就用 "
                                 "`scripts/log_decision.py` 回填日志,"
                                 "不要反过来改表")
+DISPOSITION_DECISION_CLAIM = ("处置:结构化观点里你只做两件事 —— **抄**与**选**。"
+                              "阈值逐字取自速览表那一格已有的那个数(一位小数都"
+                              "不许改),时限片段逐字取自同一格;比较方向与字段名"
+                              "从固定枚举里选。散文里确实没有可机器求值的阈值时,"
+                              "把 legs 写成 null 并在 unstructurable_reason 里"
+                              "说明是哪一句 —— **不得编造阈值**;"
+                              "改用 `scripts/log_decision.py set-claim` 回填")
+DISPOSITION_REVIEW_QUOTE = ("处置:把要点表复盘材料里那条 `复盘句: ` 后面的"
+                            "**整句**原样抄进正文的复盘节(一个字符都不改),"
+                            "再在它后面补一句你自己的说明;结论词只有这一个"
+                            "来源,不得改写、不得只抄大意、也不得自己另写一个")
 DISPOSITION_AMBIGUOUS = ("处置:把重名的小节标题改成互不包含的标题,"
                          "或合并成一节;校验器**不猜**哪一节是正主,"
                          "这一条不改,依赖该节的检查就一直不执行")
@@ -1342,6 +1417,99 @@ def check_decision_trigger(secs, date, entries, notes=None):
     return v
 
 
+def review_sentences_in_brief(brief_text):
+    """要点表复盘材料块里每条**结论行**的复盘句。顺序保留,便于逐条报错。
+
+    只取结论行(`… | 复盘句: … | 结论: …`):顺延登记行按定义没有结论,
+    要求把它抄进复盘节等于要求给未到期的观点写复盘。
+    """
+    out = []
+    _, exempt, _ = split_brief_review_block(brief_text)
+    for line in exempt:
+        m = REVIEW_MATERIAL_RE.fullmatch(line.rstrip())
+        if not m:
+            continue
+        head, _, tail = line.rstrip().partition(" | 复盘句: ")
+        sentence, _, _ = tail.rpartition(" | 结论: ")
+        if sentence:
+            out.append(sentence)
+    return out
+
+
+def check_review_sentence_quoted(secs, brief_text, notes=None):
+    """`REVIEW_SENTENCE_NOT_QUOTED` —— 复盘句必须逐字落在**正文的复盘节**。
+
+    ---- 为什么必须有这一码 ----
+    「结论由脚本给出、报告逐字引用」此前**只是 SKILL 里的散文**:脚本算出的
+    结论走到报告边界就没人看着了,改一个字、漏抄一条、或者自己另写一个结论词,
+    六份产物照样全绿。本仓库为此栽过 13 次同型,教训写在案上 ——
+    prompt 禁令堵不住,要改成不变量。
+
+    ---- 判据 ----
+    整句**逐字包含**,且必须落在复盘节里,不是整份文件里随便哪儿。位置这一半
+    不可省:判定类结论要在正文被读者看见,抄进附录等于没抄。
+    """
+    v = []
+    sentences = review_sentences_in_brief(brief_text)
+    sec = find_section(secs, "复盘")
+    body = sec[1] if sec else ""
+    for sentence in sentences:
+        if sentence not in body:
+            v.append("REVIEW_SENTENCE_NOT_QUOTED: 复盘节没有逐字包含要点表"
+                     "复盘材料给出的这一句:「%s」;%s"
+                     % (sentence, DISPOSITION_REVIEW_QUOTE))
+    if notes is not None:
+        notes.append("REVIEW_SENTENCE_CHECKED: 要点表给出 %d 条复盘句,"
+                     "已逐句比对是否逐字落在复盘节" % len(sentences))
+    return v
+
+
+def check_decision_claim(date, entries, notes=None):
+    """`DECISION_CLAIM_NOT_SOURCED` —— 结构化观点必须逐字溯源到散文 trigger。
+
+    ---- 为什么必须由校验器管 ----
+    `claim` 是**判定入口**:`scripts/claims.resolve_claim` 只读结构化字段,
+    读者却只看得到散文 trigger。两者一旦不同源,同一条观点在"写出来的话"与
+    "拿去判的量"上各说各话,而这种漂移没有任何自然后果会暴露它 —— 判定照常
+    给出四档之一,只是判的不是读者以为的那件事。
+
+    ---- 判据与登记入口共用一份 ----
+    `claims.validate_claim` 同时是 `log_decision.py add / set-claim` 的入口
+    校验。两处各写一遍必然漂移,而漂移的后果是一条路放行、另一条打红,
+    两种都会被当成"另一边的 bug"绕过去。
+
+    date : 当日日期,取自**快照**的 `date` 字段(脚本产出),不从报告正文里
+           抓 —— 让被查对象自己说"我是哪一天"就是把闸门输入交给被查方。
+
+    notes : **出参**。结构化字段之前登记的条目没有 `claim`,判不了也不该判红;
+            但"没查"与"查过且全过"必须可分辨,故带计数声明。
+    """
+    v = []
+    checked, absent = 0, []
+    for c in CURRENCIES:
+        entry = entries.get((date, c))
+        if not isinstance(entry, dict):
+            continue      # 该币种当日无条目,DECISION_LOG_NO_ENTRY 已声明
+        if "claim" not in entry:
+            absent.append(c)
+            continue
+        checked += 1
+        for problem in claims.validate_claim(entry.get("claim"),
+                                             entry.get("trigger")):
+            # 问题串自己已经带上 trigger 原文,这里不再重复一遍 ——
+            # 同一句话在一行违规里出现两次,读者会以为是两处不同的证据。
+            v.append("DECISION_CLAIM_NOT_SOURCED: 决策日志 %s/%s 的结构化观点"
+                     "与散文 trigger 对不上 —— %s;%s"
+                     % (date, c, problem, DISPOSITION_DECISION_CLAIM))
+    if absent and notes is not None:
+        notes.append("DECISION_CLAIM_ABSENT_SKIPPED: 决策日志 %s 有 %d/%d 个"
+                     "币种条目没有结构化观点字段(%s,结构化字段之前登记的),"
+                     "这些条目的阈值溯源未校验(已校验 %d 个)"
+                     % (date, len(absent), len(CURRENCIES),
+                        "、".join(absent), checked))
+    return v
+
+
 # ---- 周报侧判断环的宿主:`## 本周主线` 之下的 `### 主线N` 子节 ----
 # 实测 reports/weekly/2026-W33.md 的结构:五个 `### 主线N:…(影响 …)` 子节,
 # 每个自带 **关键假设 / 替代解释 / 翻转指标** 三件(实测 27 处标签)。
@@ -1680,6 +1848,8 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
             if isinstance(date, str) and date:
                 v.extend(check_decision_trigger(secs, date, decision_entries,
                                                 notes=notes))
+                v.extend(check_decision_claim(date, decision_entries,
+                                              notes=notes))
             elif notes is not None:
                 # 快照没有可用的 date:判不出该查日志的哪一天。猜"今天"就是
                 # 编造(校验器不读时钟,与不读环境同一条理由),所以只声明。
@@ -1687,6 +1857,16 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
                              "(实为 %r),判不出该比对哪一天的决策日志,"
                              "%d 个币种的「%s」同源同字未校验"
                              % (date, len(CURRENCIES), OVERVIEW_COL_TRIGGER))
+    # ---- 复盘句逐字进正文 ----
+    # 放在最后是有意的:它是「要点表 → 报告」这一族的检查,与 strict_brief
+    # 同源;而既有多条用例按**位置**断言 notes[0],插在前面会把它们全打乱,
+    # 那是改测试而不是改行为。
+    if "复盘" not in amb:
+        v.extend(check_review_sentence_quoted(secs, brief_text, notes=notes))
+    elif notes is not None:
+        notes.append("REVIEW_SENTENCE_SKIPPED_AMBIGUOUS: 复盘节标题重名,"
+                     "切不出唯一的复盘节,%d 条复盘句的逐字引用未校验"
+                     % len(review_sentences_in_brief(brief_text)))
     return v
 
 
@@ -2053,7 +2233,7 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
             v.append("CURRENCY_MISSING: 周报未覆盖 %s" % c)
     rs = find_section(secs, "复盘汇总")
     if rs:
-        for tok in ("命中", "未命中", "无法判定"):
+        for tok in REVIEW_TOKENS:
             if tok not in rs[1]:
                 v.append("REVIEW_TOKEN_MISSING: 复盘汇总缺少「%s」" % tok)
     allowed = None

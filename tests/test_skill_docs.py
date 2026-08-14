@@ -14,7 +14,7 @@ import os
 import re
 import unittest
 
-from scripts import review
+from scripts import claims, review
 from tests.test_review import UNCHANGED_REF_CAUSE_WORDS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -846,7 +846,7 @@ if __name__ == "__main__":
 
 
 class UnchangedRefWordingInSkillTest(SkillDocTestCase):
-    """SKILL 让 LLM 写的那一句,必须和 `review.unchanged_ref_note` 一个措辞,
+    """SKILL 让 LLM 写的那一句,必须和 `claims.unchanged_ref_note` 一个措辞,
     而且同样不许断言原因。
 
     这一处**不是可有可无的第二份**:第 2 步的"汇率变动"行由 LLM 手写进要点表
@@ -863,7 +863,7 @@ class UnchangedRefWordingInSkillTest(SkillDocTestCase):
     def test_daily_skill_quotes_the_scripts_wording(self):
         t = flat(DAILY)
         self.assertIn(
-            "".join(review.unchanged_ref_note("<ref_date>").split()), t,
+            "".join(claims.unchanged_ref_note("<ref_date>").split()), t,
             "第 2 步的汇率变动行不再用脚本那句措辞")
 
     def test_daily_skill_asserts_no_cause(self):

@@ -1,13 +1,11 @@
-import ast
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
 import unittest
 
-from scripts import check_report, review, verdicts
+from scripts import check_report, claims, review
 
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "scripts", "review.py")
@@ -17,11 +15,13 @@ def setup_root(tmp, log_entries=None, snapshots=None, brief_date="2026-08-10"):
     for d in ("state", "data", "briefs"):
         os.makedirs(os.path.join(tmp, d), exist_ok=True)
     if log_entries is not None:
-        with open(os.path.join(tmp, "state", "decision-log.jsonl"), "w", encoding="utf-8") as f:
+        with open(os.path.join(tmp, "state", "decision-log.jsonl"), "w",
+                  encoding="utf-8") as f:
             for e in log_entries:
                 f.write(json.dumps(e, ensure_ascii=False) + "\n")
     for date_str, snap in (snapshots or {}).items():
-        with open(os.path.join(tmp, "data", date_str + ".json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(tmp, "data", date_str + ".json"), "w",
+                  encoding="utf-8") as f:
             json.dump(snap, f)
     brief = os.path.join(tmp, "briefs", brief_date + "-brief.md")
     with open(brief, "w", encoding="utf-8") as f:
@@ -34,24 +34,39 @@ def run_review(tmp, date="2026-08-10"):
                           capture_output=True, text=True)
 
 
+# 归因词表:任何**解释原因**的说法都不许进「参考价未更新」那句话。「非工作日」
+# 是原病灶,其余是同型替代 —— 必须被测试杀掉的变异里点名了「换成另一种原因断言」。
+# 放在模块层是因为 tests/test_skill_docs.py 也要用同一份:词表分两份写,脚本与
+# SKILL 两边就会各禁各的。
+# **按名字导入这个元组,不要导入下面的 TestCase 类** —— 把 TestCase 导进另一个
+# 测试模块,unittest discover 会在两个模块里各跑它一遍(实测总数由 824 虚涨到 834)。
+UNCHANGED_REF_CAUSE_WORDS = ("非工作日", "非交易日", "休市", "假日", "节假日",
+                             "周末", "停市", "停牌", "闭市", "不开盘")
+
+
 def opinion(**over):
-    base = {"date": "2026-08-09", "currency": "PHP", "scenario": "s", "trigger": "t",
-            "watch_direction": "up",
-            "review": {"direction_outcome": None, "trigger_judgement": None, "verdict": None}}
+    """默认:观点日 08-09、时限 T+1、比索升破 60.2。"""
+    base = {"date": "2026-08-09", "currency": "PHP", "scenario": "s",
+            "trigger": "比索升破 60.2(T+1)", "watch_direction": "up",
+            "claim": {"horizon": {"kind": "running_days", "n": 1,
+                                  "quote": "T+1"},
+                      "legs": [{"currency": "PHP", "field": "primary",
+                                "op": "gt", "threshold": "60.2"}]},
+            "review": {"status": None, "basis": None}}
     base.update(over)
     return base
 
 
-def snap(php_primary):
-    return {"rates": {"PHP": {"primary": php_primary}}}
+def snap(php_primary, ref_date="2026-08-10"):
+    return {"rates": {"PHP": {"primary": php_primary, "ref_date": ref_date}}}
 
 
-class ReviewTest(unittest.TestCase):
-    def _run(self, entries, snapshots):
+class ReviewRunner(unittest.TestCase):
+    def _run(self, entries, snapshots, date="2026-08-10"):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        brief = setup_root(tmp.name, entries, snapshots)
-        r = run_review(tmp.name)
+        brief = setup_root(tmp.name, entries, snapshots, brief_date=date)
+        r = run_review(tmp.name, date)
         self.assertEqual(r.returncode, 0, r.stderr)
         with open(brief, encoding="utf-8") as f:
             text = f.read()
@@ -62,43 +77,213 @@ class ReviewTest(unittest.TestCase):
                 log = [json.loads(l) for l in f if l.strip()]
         return text, log
 
-    def test_direction_hit(self):
-        text, log = self._run([opinion()],
-                              {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
-        self.assertIn("方向核对: 命中", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "命中")
 
-    def test_direction_miss(self):
-        text, log = self._run([opinion(watch_direction="down")],
-                              {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
-        self.assertIn("方向核对: 未命中", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "未命中")
+class ReviewsByHorizonNotByLatestDateTest(ReviewRunner):
+    """修前 `review.py` 写死 `target = prior_dates[-1]` —— 永远只复盘"上一个
+    记过的日子",而速览表的触发条件写的是 (T+3)。于是一条三个运行日的观点
+    第二天就被拿去判。这个类钉住:复盘的依据是**时限到没到**,不是日期新旧。
+    """
 
-    def test_missing_rate_undecidable(self):
-        text, log = self._run([opinion()],
-                              {"2026-08-09": snap(60.0), "2026-08-10": snap(None)})
-        self.assertIn("无法判定", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
+    def test_two_opinion_dates_can_fall_due_on_the_same_day(self):
+        older = opinion(date="2026-08-08", currency="PHP",
+                        trigger="比索升破 60.2(T+2)",
+                        claim={"horizon": {"kind": "running_days", "n": 2,
+                                           "quote": "T+2"},
+                               "legs": [{"currency": "PHP", "field": "primary",
+                                         "op": "gt", "threshold": "60.2"}]})
+        text, log = self._run(
+            [older, opinion()],
+            {"2026-08-08": snap(60.0, "2026-08-08"),
+             "2026-08-09": snap(60.1, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")})
+        self.assertIn("观点日 2026-08-08", text)
+        self.assertIn("观点日 2026-08-09", text)
+        self.assertEqual([e["review"]["status"] for e in log], ["命中", "命中"])
 
-    def test_no_pending_opinions_yesterday(self):
-        reviewed = opinion()
-        reviewed["review"]["direction_outcome"] = "命中"
-        text, _ = self._run([reviewed],
-                            {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
-        self.assertIn("无未复盘观点", text)
+    def test_an_overdue_entry_is_still_picked_up_later(self):
+        """已过期且尚未定论的条目,今天照样要复盘。"""
+        stale = opinion(date="2026-08-08")
+        text, log = self._run(
+            [stale],
+            {"2026-08-08": snap(60.0, "2026-08-08"),
+             "2026-08-09": snap(60.5, "2026-08-09"),
+             "2026-08-10": snap(60.9, "2026-08-10")})
+        self.assertIn("观点日 2026-08-08", text)
+        self.assertEqual(log[0]["review"]["status"], "命中")
+
+    def test_a_horizon_that_has_not_run_out_is_not_reviewed(self):
+        waiting = opinion(trigger="比索升破 60.2(T+3)",
+                          claim={"horizon": {"kind": "running_days", "n": 3,
+                                             "quote": "T+3"},
+                                 "legs": [{"currency": "PHP",
+                                           "field": "primary", "op": "gt",
+                                           "threshold": "60.2"}]})
+        text, log = self._run(
+            [waiting],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.1, "2026-08-10")})
+        # 不出**结论行** —— 时限没到就不该有结论
+        self.assertNotIn("| 结论: ", text)
+        # 记进日志:日志要能回答"这条现在什么状态",否则 stats 与周报的
+        # 「未到期」栏永远是 0,拆出这一档等于白拆。
+        self.assertEqual(log[0]["review"]["status"], "未到期")
+
+    def test_pending_entries_are_listed_as_a_register_not_a_conclusion(self):
+        """顺延登记行:它让要点表继续持有"还在观察的那几条"的原文。
+
+        没有它,这些观点的情景与触发条件当天就从要点表消失,而报告的
+        「本期相对上期的变化」节仍要引用它们的数 —— 实测 2026-08-13 的
+        0.094 / 4.249 / 9.609 三个数因此被判 NUMBER_UNTRACEABLE。
+        """
+        waiting = opinion(trigger="比索升破 60.2(T+3)",
+                          claim={"horizon": {"kind": "running_days", "n": 3,
+                                             "quote": "T+3"},
+                                 "legs": [{"currency": "PHP",
+                                           "field": "primary", "op": "gt",
+                                           "threshold": "60.2"}]})
+        text, _ = self._run(
+            [waiting],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.1, "2026-08-10")})
+        self.assertIn("- 顺延 | PHP | 观点日 2026-08-09", text)
+        self.assertIn("比索升破 60.2(T+3)", text)
+        self.assertNotIn("| 结论: ", text)
+
+    def test_a_pending_entry_is_re_examined_the_next_day(self):
+        """「未到期」是会变的状态,不是定论 —— 明天时限到了就得重判。"""
+        waiting = opinion(trigger="比索升破 60.2(T+2)",
+                          claim={"horizon": {"kind": "running_days", "n": 2,
+                                             "quote": "T+2"},
+                                 "legs": [{"currency": "PHP",
+                                           "field": "primary", "op": "gt",
+                                           "threshold": "60.2"}]})
+        snapshots = {"2026-08-09": snap(60.0, "2026-08-09"),
+                     "2026-08-10": snap(60.1, "2026-08-10"),
+                     "2026-08-11": snap(60.5, "2026-08-11")}
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        setup_root(tmp.name, [waiting], snapshots, brief_date="2026-08-10")
+        with open(os.path.join(tmp.name, "briefs", "2026-08-11-brief.md"), "w",
+                  encoding="utf-8") as f:
+            f.write("# 要点表 2026-08-11\n")
+        self.assertEqual(run_review(tmp.name, "2026-08-10").returncode, 0)
+        self.assertEqual(run_review(tmp.name, "2026-08-11").returncode, 0)
+        log_path = os.path.join(tmp.name, "state", "decision-log.jsonl")
+        with open(log_path, encoding="utf-8") as f:
+            log = [json.loads(l) for l in f if l.strip()]
+        self.assertEqual(log[0]["review"]["status"], "命中")
+
+    def test_a_concluded_entry_is_not_reviewed_twice(self):
+        done = opinion()
+        done["review"] = {"status": "命中", "basis": "b"}
+        text, log = self._run(
+            [done],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")})
+        self.assertNotIn("复盘句: ", text)
+        self.assertEqual(log[0]["review"], {"status": "命中", "basis": "b"})
+
+
+class ReviewDeclaresItsCountsTest(ReviewRunner):
+    """一条都没有时不得静默输出空节 —— 每处跳过/放行都要带计数的声明。"""
+
+    def test_declaration_is_printed_when_nothing_falls_due(self):
+        waiting = opinion(trigger="比索升破 60.2(T+3)",
+                          claim={"horizon": {"kind": "running_days", "n": 3,
+                                             "quote": "T+3"},
+                                 "legs": [{"currency": "PHP",
+                                           "field": "primary", "op": "gt",
+                                           "threshold": "60.2"}]})
+        text, _ = self._run(
+            [waiting],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.1, "2026-08-10")})
+        self.assertIn("到期复盘 0 条", text)
+        self.assertIn("未到期 1 条顺延", text)
+
+    def test_pending_status_is_not_treated_as_a_conclusion(self):
+        """已定论的条目不再复盘,但「未到期」不算定论 —— 把它算成定论
+        就等于把不利结果养到永远不判。"""
+        waiting = opinion(trigger="比索升破 60.2(T+3)",
+                          claim={"horizon": {"kind": "running_days", "n": 3,
+                                             "quote": "T+3"},
+                                 "legs": [{"currency": "PHP",
+                                           "field": "primary", "op": "gt",
+                                           "threshold": "60.2"}]})
+        waiting["review"] = {"status": "未到期", "basis": "b"}
+        text, _ = self._run(
+            [waiting],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.1, "2026-08-10")})
+        self.assertIn("未到期 1 条顺延", text)
+        self.assertIn("已定论 0 条", text)
+
+    def test_declaration_counts_entries_registered_before_the_schema(self):
+        legacy = {"date": "2026-08-09", "currency": "THB", "scenario": "s",
+                  "trigger": "t", "watch_direction": "up"}
+        text, _ = self._run(
+            [legacy, opinion()],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")})
+        self.assertIn("结构化字段之前的历史观点 1 条", text)
+
+    def test_declaration_is_printed_even_when_something_falls_due(self):
+        text, _ = self._run(
+            [opinion()],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")})
+        self.assertIn("到期复盘 1 条", text)
 
     def test_first_run_no_log(self):
         text, _ = self._run(None, {"2026-08-10": snap(60.5)})
         self.assertIn("首次运行,无历史观点可复盘", text)
 
 
-class ReviewTypeGateTest(unittest.TestCase):
-    """类型门补充用例(仓库约定 1/2: isinstance 门 + 数值比较前排除 bool)。"""
+class ConclusionComesFromResolveClaimTest(ReviewRunner):
+    """结论只能由 `claims.resolve_claim` 给出 —— 报告逐字引用的就是它那一句。"""
 
-    def _root(self, snapshots, raw_log_lines=None):
+    def test_basis_recorded_in_the_log_is_the_resolver_sentence(self):
+        entries = [opinion()]
+        snapshots = {"2026-08-09": snap(60.0, "2026-08-09"),
+                     "2026-08-10": snap(60.5, "2026-08-10")}
+        text, log = self._run(entries, snapshots)
+        expected = claims.resolve_claim(
+            opinion(),
+            [("2026-08-09", snapshots["2026-08-09"]),
+             ("2026-08-10", snapshots["2026-08-10"])])
+        self.assertEqual(log[0]["review"]["basis"], expected.sentence)
+        self.assertIn(expected.sentence, text)
+
+    def test_miss_is_recorded_when_the_window_closes_untriggered(self):
+        _, log = self._run(
+            [opinion()],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.1, "2026-08-10")})
+        self.assertEqual(log[0]["review"]["status"], "未命中")
+
+    def test_undecidable_only_when_the_observation_is_missing(self):
+        _, log = self._run(
+            [opinion()],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.0, "2026-08-09")})
+        self.assertEqual(log[0]["review"]["status"], "无法判定")
+        self.assertIn("只取到 0 次新定盘", log[0]["review"]["basis"])
+
+    def test_no_status_word_is_produced_outside_the_four_buckets(self):
+        _, log = self._run(
+            [opinion()],
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")})
+        self.assertIn(log[0]["review"]["status"], claims.STATUSES)
+
+
+class ReviewRobustnessTest(unittest.TestCase):
+    """类型门与容错路径(仓库约定 1/2: isinstance 门 + 数值比较前排除 bool)。"""
+
+    def _root(self, snapshots, raw_log_lines=None, date="2026-08-10"):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        brief = setup_root(tmp.name, None, snapshots)
+        brief = setup_root(tmp.name, None, snapshots, brief_date=date)
         if raw_log_lines is not None:
             log_path = os.path.join(tmp.name, "state", "decision-log.jsonl")
             with open(log_path, "w", encoding="utf-8") as f:
@@ -106,9 +291,9 @@ class ReviewTypeGateTest(unittest.TestCase):
                     f.write(line + "\n")
         return tmp.name, brief
 
-    def _run_raw(self, snapshots, raw_log_lines):
-        root, brief = self._root(snapshots, raw_log_lines)
-        r = run_review(root)
+    def _run_raw(self, snapshots, raw_log_lines, date="2026-08-10"):
+        root, brief = self._root(snapshots, raw_log_lines, date)
+        r = run_review(root, date)
         self.assertEqual(r.returncode, 0, r.stderr)
         with open(brief, encoding="utf-8") as f:
             text = f.read()
@@ -120,161 +305,103 @@ class ReviewTypeGateTest(unittest.TestCase):
         return text, log
 
     def test_bool_primary_treated_as_missing(self):
-        # 约定 2: primary 为 bool(脏快照)→ rate_of 视为 None → 无法判定
-        text, log = self._run_raw(
-            {"2026-08-09": snap(60.0), "2026-08-10": snap(True)},
+        _, log = self._run_raw(
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(True, "2026-08-10")},
             [json.dumps(opinion(), ensure_ascii=False)])
-        self.assertIn("方向核对: 无法判定", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
+        self.assertEqual(log[0]["review"]["status"], "无法判定")
+
+    def test_nan_primary_undecidable(self):
+        _, log = self._run_raw(
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(float("nan"), "2026-08-10")},
+            [json.dumps(opinion(), ensure_ascii=False)])
+        self.assertEqual(log[0]["review"]["status"], "无法判定")
+
+    def test_infinity_primary_undecidable(self):
+        _, log = self._run_raw(
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(float("inf"), "2026-08-10")},
+            [json.dumps(opinion(), ensure_ascii=False)])
+        self.assertEqual(log[0]["review"]["status"], "无法判定")
 
     def test_malformed_snapshot_shapes_undecidable(self):
-        # snap 非 dict / rates 非 dict / entry 非 dict → rate_of 返回 None
-        text, log = self._run_raw(
+        _, log = self._run_raw(
             {"2026-08-09": [1, 2, 3], "2026-08-10": {"rates": {"PHP": "60.5"}}},
             [json.dumps(opinion(), ensure_ascii=False)])
-        self.assertIn("方向核对: 无法判定", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
+        self.assertEqual(log[0]["review"]["status"], "无法判定")
 
     def test_corrupt_log_lines_skipped(self):
-        # 坏 JSON 行 / 非 dict 行 / 深嵌套 RecursionError 行跳过, 有效观点照常复盘
         deep = "[" * 50000 + "]" * 50000
-        text, log = self._run_raw(
-            {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)},
+        _, log = self._run_raw(
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")},
             ["{bad json", "7", deep, json.dumps(opinion(), ensure_ascii=False)])
-        self.assertIn("方向核对: 命中", text)
         self.assertEqual(len(log), 1)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "命中")
+        self.assertEqual(log[0]["review"]["status"], "命中")
 
     def test_null_review_field_backfilled(self):
-        # review 为 None(外部损坏)→ 视为待复盘, 回填不崩溃
-        broken = opinion(review=None)
-        text, log = self._run_raw(
-            {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)},
-            [json.dumps(broken, ensure_ascii=False)])
-        self.assertIn("方向核对: 命中", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "命中")
+        _, log = self._run_raw(
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")},
+            [json.dumps(opinion(review=None), ensure_ascii=False)])
+        self.assertEqual(log[0]["review"]["status"], "命中")
+
+    def test_broken_claim_falls_into_the_fourth_bucket_without_crashing(self):
+        _, log = self._run_raw(
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")},
+            [json.dumps(opinion(claim={"horizon": 7}), ensure_ascii=False)])
+        self.assertEqual(log[0]["review"]["status"], "无法判定")
 
     def test_entries_without_str_date_ignored(self):
-        # 缺 date / date 非 str 的行在 prior_dates 与 pending 中均被跳过
         no_date = {"currency": "PHP", "watch_direction": "up"}
-        int_date = opinion(date=20260809)
         text, _ = self._run_raw(
             {"2026-08-10": snap(60.5)},
             [json.dumps(no_date, ensure_ascii=False),
-             json.dumps(int_date, ensure_ascii=False)])
+             json.dumps(opinion(date=20260809), ensure_ascii=False)])
         self.assertIn("首次运行,无历史观点可复盘", text)
 
     def test_trigger_newline_flattened_in_brief(self):
-        # 复审反馈3: trigger 含换行须扁平化为单行, 不得在 brief 注入伪列表行
-        entry = opinion(trigger="t\n- 伪列表")
+        e = opinion(trigger="比索升破 60.2(T+1)\n- 伪列表")
         text, _ = self._run_raw(
-            {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)},
-            [json.dumps(entry, ensure_ascii=False)])
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")},
+            [json.dumps(e, ensure_ascii=False)])
         self.assertIn("伪列表", text)
         self.assertNotIn("\n- 伪列表", text)
 
-    def test_nan_primary_undecidable(self):
-        # 复审反馈4: primary=NaN 非有限值 → rate_of None → 无法判定(而非"未命中")
-        text, log = self._run_raw(
-            {"2026-08-09": snap(60.0), "2026-08-10": snap(float("nan"))},
-            [json.dumps(opinion(), ensure_ascii=False)])
-        self.assertIn("方向核对: 无法判定", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
-
-    def test_infinity_primary_undecidable(self):
-        # 复审反馈4: primary=Infinity 非有限值 → 无法判定(而非"命中")
-        text, log = self._run_raw(
-            {"2026-08-09": snap(60.0), "2026-08-10": snap(float("inf"))},
-            [json.dumps(opinion(), ensure_ascii=False)])
-        self.assertIn("方向核对: 无法判定", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
-
-    def test_no_pending_does_not_rewrite_log(self):
-        # 复审反馈5: 无 pending 时不得整文件重写(注入坏行验证其未被清洗)
-        reviewed = opinion()
-        reviewed["review"]["direction_outcome"] = "命中"
-        raw_lines = ["{bad line kept", json.dumps(reviewed, ensure_ascii=False)]
+    def test_nothing_due_does_not_rewrite_log(self):
+        done = opinion()
+        done["review"] = {"status": "命中", "basis": "b"}
+        raw_lines = ["{bad line kept", json.dumps(done, ensure_ascii=False)]
         root, brief = self._root(
-            {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}, raw_lines)
+            {"2026-08-09": snap(60.0, "2026-08-09"),
+             "2026-08-10": snap(60.5, "2026-08-10")}, raw_lines)
         log_path = os.path.join(root, "state", "decision-log.jsonl")
         with open(log_path, encoding="utf-8") as f:
             before = f.read()
         r = run_review(root)
         self.assertEqual(r.returncode, 0, r.stderr)
-        with open(brief, encoding="utf-8") as f:
-            text = f.read()
-        self.assertIn("无未复盘观点", text)
         with open(log_path, encoding="utf-8") as f:
-            after = f.read()
-        self.assertEqual(after, before)
+            self.assertEqual(f.read(), before)
 
     def test_missing_brief_fails(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         setup_root(tmp.name, None, {"2026-08-10": snap(60.5)})
-        r = run_review(tmp.name, date="2026-08-11")  # 该日要点表不存在
+        r = run_review(tmp.name, date="2026-08-11")
         self.assertEqual(r.returncode, 1)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
-def snap_ref(php_primary, ref_date):
-    return {"rates": {"PHP": {"primary": php_primary, "ref_date": ref_date}}}
-
-
-def _reviewed_opinion():
-    """已复盘过的观点 → pending 为空 → review.py 走「无未复盘观点」那一行。"""
-    e = opinion()
-    e["review"]["direction_outcome"] = "命中"
-    return e
-
-
-class RefDateBranchTest(ReviewTest):
-    """参考价定盘日期三分支(delta spec: 参考价未更新 / 参考日期缺失退回旧行为)。"""
-
-    def test_ref_date_unchanged_reports_no_fixing(self):
-        text, log = self._run(
-            [opinion()],
-            {"2026-08-09": snap_ref(60.75, "2026-08-07"),
-             "2026-08-10": snap_ref(60.75, "2026-08-07")})
-        self.assertIn("参考价未更新(仍为 2026-08-07 定盘)", text)
-        # 不得表述为价格持平的市场观察
-        self.assertNotIn("方向核对: 命中", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
-
-    def test_ref_date_changed_uses_normal_comparison(self):
-        text, log = self._run(
-            [opinion()],
-            {"2026-08-09": snap_ref(60.0, "2026-08-07"),
-             "2026-08-10": snap_ref(60.5, "2026-08-10")})
-        self.assertNotIn("参考价未更新", text)
-        self.assertIn("方向核对: 命中", text)
-        self.assertEqual(log[0]["review"]["direction_outcome"], "命中")
-
-    def test_legacy_snapshot_without_ref_date_keeps_old_behaviour(self):
-        text, log = self._run([opinion()],
-                              {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
-        self.assertNotIn("参考价未更新", text)
-        self.assertIn("方向核对: 命中", text)
-
-    def test_one_side_missing_ref_date_keeps_old_behaviour(self):
-        text, _ = self._run(
-            [opinion()],
-            {"2026-08-09": snap(60.75), "2026-08-10": snap_ref(60.75, "2026-08-10")})
-        self.assertNotIn("参考价未更新", text)
-        self.assertIn("方向核对: 无法判定", text)   # 数值相等 → 旧逻辑给无法判定
 
 
 class ReviewOutputIsRecognizedByCheckerTest(unittest.TestCase):
     """review.py 追加进要点表的**每一行**,校验器都必须认得出来。
 
-    `--strict-brief` 会豁免这些行的数字溯源(它们属于观点日,不属于当日快照)。
-    豁免的判据是「块头 + 行式样」,而块头与行式样是 review.py 产出的 ——
-    两处一旦漂移,豁免要么失效(整块变红,就是本次修的那个缺陷复发),要么
-    反过来把手写行也豁免掉。这个类是两处之间**唯一的机械联系**:凭印象写的
-    正则在这里会立刻红。"""
+    「要点表 ⊆ 快照」那一层会豁免这些行的数字溯源(它们属于观点日,不属于
+    当日快照)。豁免的判据是「块头 + 行式样」,而块头与行式样是 review.py
+    产出的 —— 两处一旦漂移,豁免要么失效(整块变红),要么反过来把手写行也
+    豁免掉。这个类是两处之间**唯一的机械联系**:凭印象写的正则在这里立刻红。
+    """
 
     def _appended(self, entries, snapshots, date="2026-08-10"):
         tmp = tempfile.TemporaryDirectory()
@@ -290,16 +417,20 @@ class ReviewOutputIsRecognizedByCheckerTest(unittest.TestCase):
         return after[len(before):].splitlines()
 
     CASES = {
-        "命中": ([opinion()], {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}),
-        "未命中": ([opinion(watch_direction="down")],
-                   {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}),
-        "汇率 None": ([opinion(watch_direction=None)],
-                      {"2026-08-09": snap(None), "2026-08-10": snap(None)}),
-        "参考价未更新": ([opinion()],
-                         {"2026-08-09": snap_ref(60.75, "2026-08-07"),
-                          "2026-08-10": snap_ref(60.75, "2026-08-07")}),
-        "无未复盘观点": ([_reviewed_opinion()],
-                         {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)}),
+        "命中": ([opinion()], {"2026-08-09": snap(60.0, "2026-08-09"),
+                               "2026-08-10": snap(60.5, "2026-08-10")}),
+        "未命中": ([opinion()], {"2026-08-09": snap(60.0, "2026-08-09"),
+                                 "2026-08-10": snap(60.1, "2026-08-10")}),
+        "无法判定": ([opinion()], {"2026-08-09": snap(60.0, "2026-08-09"),
+                                   "2026-08-10": snap(60.0, "2026-08-09")}),
+        "未到期": ([opinion(trigger="比索升破 60.2(T+3)",
+                            claim={"horizon": {"kind": "running_days", "n": 3,
+                                               "quote": "T+3"},
+                                   "legs": [{"currency": "PHP",
+                                             "field": "primary", "op": "gt",
+                                             "threshold": "60.2"}]})],
+                    {"2026-08-09": snap(60.0, "2026-08-09"),
+                     "2026-08-10": snap(60.1, "2026-08-10")}),
         "首次运行": (None, {"2026-08-10": snap(60.5)}),
     }
 
@@ -309,16 +440,6 @@ class ReviewOutputIsRecognizedByCheckerTest(unittest.TestCase):
                 lines = self._appended(entries, snapshots)
                 self.assertIn(check_report.REVIEW_BLOCK_HEADING, lines,
                               "review.py 的块头与校验器常量不一致:%r" % lines)
-
-    def test_direction_sentence_rides_inside_a_recognised_line(self):
-        """方向核对句是**加进既有行**的一个字段,不是新起一行 —— 新起一行会
-        落到豁免式样之外,被 --strict-brief 当成 LLM 手写行照查(实测:那正是
-        本仓库此前 4 条 BRIEF_NUMBER_UNTRACEABLE 的成因)。"""
-        lines = self._appended(*self.CASES["命中"])
-        carriers = [ln for ln in lines if "方向核对句: " in ln]
-        self.assertEqual(len(carriers), 1, lines)
-        self.assertTrue(check_report.is_generated_review_line(carriers[0]),
-                        carriers[0])
 
     def test_every_appended_line_is_exempted_by_the_checker(self):
         for label, (entries, snapshots) in self.CASES.items():
@@ -330,364 +451,92 @@ class ReviewOutputIsRecognizedByCheckerTest(unittest.TestCase):
                         check_report.is_generated_review_line(line),
                         "校验器认不出 review.py 生成的行:%r" % line)
 
+    def test_pending_register_line_is_recognised(self):
+        lines = self._appended(*self.CASES["未到期"])
+        carriers = [ln for ln in lines if ln.startswith("- 顺延 |")]
+        self.assertEqual(len(carriers), 1, lines)
+        self.assertTrue(check_report.is_generated_review_line(carriers[0]),
+                        carriers[0])
 
-class DirectionSentenceTest(unittest.TestCase):
-    """方向核对给出的那一句,必须经 `scripts/verdicts.join_verdict` 拼装。
+    def test_arbitrary_text_in_the_pending_register_is_not_exempted(self):
+        forged = "- 顺延 | PHP | 观点日 2026-08-09 | 情景: s | 触发条件: t | 复盘句: 随便写"
+        self.assertFalse(check_report.is_generated_review_line(forged), forged)
 
-    存在理由(设计 §8 阶段 1 末尾那件"小事"):`direction_outcome` 是脚本机械
-    算出的结论,实测**零个下游消费者** —— 它只以"方向核对: X"三个字躺在要点
-    表里,而流向读者的那个 verdict 是 LLM 自己写的。给它接上第一个消费者:
-    脚本拼出**完整的一句**,报告逐字引用整句。
+    def test_review_sentence_rides_inside_a_recognised_line(self):
+        """复盘句是**加进既有行**的一个字段,不是新起一行 —— 新起一行会落到
+        豁免式样之外,被当成 LLM 手写行照查(实测:那正是本仓库此前 4 条
+        BRIEF_NUMBER_UNTRACEABLE 的成因)。"""
+        lines = self._appended(*self.CASES["命中"])
+        carriers = [ln for ln in lines if "复盘句: " in ln]
+        self.assertEqual(len(carriers), 1, lines)
+        self.assertTrue(check_report.is_generated_review_line(carriers[0]),
+                        carriers[0])
 
-    句子必须**经共享拼装口**产出:自己拼会在分隔符(全角顿号)、括号(ASCII)
-    与"没有 caveat 时不得拼出空括号"三处各漂一次,而这三处正是逐字引用检查
-    的比对对象 —— 漂了以后报告与要点表两处的同一句话不再相等。
-    """
-
-    HEAD_CASE = dict(date="2026-08-09", currency="PHP", outcome="命中",
-                     watch_direction="up", prev_rate=60.0, today_rate=60.5,
-                     unchanged_ref_date=None)
-
-    def test_assembler_is_the_shared_one(self):
-        self.assertIs(review.join_verdict, verdicts.join_verdict)
-
-    def test_sentence_is_verbatim(self):
-        self.assertEqual(
-            review.direction_sentence(**self.HEAD_CASE),
-            "2026-08-09 PHP 方向核对:命中(关注方向 up、观点日读数 60.0、"
-            "当日读数 60.5)")
-
-    def test_sentence_equals_what_the_shared_assembler_would_give(self):
-        """措辞可以改,拼装口不可以绕 —— 这条断言只钉"经过 join_verdict"。"""
-        self.assertEqual(
-            review.direction_sentence(**self.HEAD_CASE),
-            verdicts.join_verdict("2026-08-09 PHP 方向核对:命中",
-                                  ["关注方向 up", "观点日读数 60.0",
-                                   "当日读数 60.5"]))
-
-    def test_bypassing_the_assembler_is_detectable(self):
-        """自己用 % 或 join 拼的实现在这里必红:补丁换掉 join_verdict 之后,
-        句子必须跟着变。"""
-        original = review.join_verdict
-        self.addCleanup(setattr, review, "join_verdict", original)
-        review.join_verdict = lambda head, caveats: "SENTINEL<%s|%s>" % (
-            head, ",".join(caveats))
-        got = review.direction_sentence(**self.HEAD_CASE)
-        self.assertTrue(got.startswith("SENTINEL<"), got)
-        self.assertIn("2026-08-09 PHP 方向核对:命中", got)
-
-    def test_unchanged_ref_date_replaces_the_two_readings(self):
-        case = dict(self.HEAD_CASE, unchanged_ref_date="2026-08-07",
-                    outcome="无法判定", prev_rate=60.75, today_rate=60.75)
-        self.assertEqual(review.direction_sentence(**case),
-                         "2026-08-09 PHP 方向核对:无法判定(关注方向 up、"
-                         "参考价未更新(仍为 2026-08-07 定盘))")
-
-    def test_missing_readings_are_declared_not_printed_as_none(self):
-        case = dict(self.HEAD_CASE, outcome="无法判定", prev_rate=60.0,
-                    today_rate=None)
-        got = review.direction_sentence(**case)
-        self.assertIn("当日无读数", got)
-        self.assertNotIn("None", got)
-
-    def test_unrecorded_watch_direction_is_normalised(self):
-        """`watch_direction` 是 LLM 文本。原样插进句子会把任意字符(含竖线、
-        伪造的字段名)带进这条要被逐字引用的话 —— 只认 up/down 两个值。"""
-        for bad in (None, "", "上", "up | 关注方向: down", 7, True):
-            with self.subTest(bad=bad):
-                got = review.direction_sentence(
-                    **dict(self.HEAD_CASE, watch_direction=bad))
-                self.assertIn("关注方向未记录", got)
-                self.assertEqual(len(got.splitlines()), 1)
-                self.assertNotIn("|", got)
-
-    def test_sentence_carries_no_plumbing_word_and_no_field_name(self):
-        """这句话要被逐字抄进正文复盘节。它自己带管道语汇或快照字段名的话,
-        正文位置闸门会把脚本自己的产出判成违规(自伤形态)。"""
-        got = review.direction_sentence(**self.HEAD_CASE)
-        for word in ("快照", "primary", "derived", "null", "缺漏", "条目",
-                     "采集失败", "不可得", "通道", ".json", "#rates"):
-            self.assertNotIn(word, got, word)
-
-    def test_sentence_reaches_the_brief_verbatim(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        brief = setup_root(tmp.name, [opinion()],
-                           {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
-        r = run_review(tmp.name)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        with open(brief, encoding="utf-8") as f:
-            text = f.read()
-        self.assertIn(review.direction_sentence(**self.HEAD_CASE), text)
-
-    def test_sentence_covers_every_pending_opinion(self):
-        entries = [opinion(currency="PHP"), opinion(currency="THB")]
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        brief = setup_root(tmp.name, entries,
-                           {"2026-08-09": {"rates": {"PHP": {"primary": 60.0},
-                                                     "THB": {"primary": 33.0}}},
-                            "2026-08-10": {"rates": {"PHP": {"primary": 60.5},
-                                                     "THB": {"primary": 33.5}}}})
-        self.assertEqual(run_review(tmp.name).returncode, 0)
-        with open(brief, encoding="utf-8") as f:
-            text = f.read()
-        self.assertEqual(text.count("方向核对句: "), 2, text)
-        for c in ("PHP", "THB"):
-            self.assertIn("2026-08-09 %s 方向核对:命中" % c, text)
-
-    def test_outcome_in_the_sentence_is_the_one_the_script_computed(self):
-        """句子里的结论词与回填进日志的那个必须同源同字,不得各算一次。"""
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        brief = setup_root(tmp.name, [opinion(watch_direction="down")],
-                           {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
-        self.assertEqual(run_review(tmp.name).returncode, 0)
-        with open(brief, encoding="utf-8") as f:
-            text = f.read()
-        with open(os.path.join(tmp.name, "state", "decision-log.jsonl"),
-                  encoding="utf-8") as f:
-            logged = json.loads(f.readline())["review"]["direction_outcome"]
-        self.assertEqual(logged, "未命中")
-        self.assertIn("2026-08-09 PHP 方向核对:未命中", text)
+    def test_arbitrary_text_in_the_sentence_segment_is_not_exempted(self):
+        forged = ("- PHP | 观点日 2026-08-09 | 情景: s | 触发条件: t"
+                  " | 复盘句: 随便写一句 | 结论: 命中")
+        self.assertFalse(check_report.is_generated_review_line(forged), forged)
 
 
-# 归因词表:任何**解释原因**的说法都不许进「参考价未更新」那句话。「非工作日」
-# 是原病灶,其余是同型替代 —— 必须被测试杀掉的变异里点名了「换成另一种原因断言」。
-# 放在模块层是因为 tests/test_skill_docs.py 也要用同一份:词表分两份写,脚本与
-# SKILL 两边就会各禁各的。
-# **按名字导入这个元组,不要导入下面的 TestCase 类** —— 把 TestCase 导进另一个
-# 测试模块,unittest discover 会在两个模块里各跑它一遍(实测总数由 824 虚涨到 834)。
-UNCHANGED_REF_CAUSE_WORDS = ("非工作日", "非交易日", "休市", "假日", "节假日",
-                             "周末", "停市", "停牌", "闭市", "不开盘")
+class ReviewSentenceStaysOutOfPlumbingVocabularyTest(unittest.TestCase):
+    """复盘句要**逐字落进正文**,而正文位置闸门禁的正是管道语汇 ——
+    脚本自己的产出不得触发它(自伤形态)。"""
 
+    BANNED = ("快照", "采集", "字段", "JSON", "无公告", "无数据", "采集失败")
 
-class UnchangedRefNoteStatesFactNotCauseTest(unittest.TestCase):
-    """两日同定盘时的那句话:**只陈述事实,不断言原因**。
+    def _sentences(self):
+        base = {"rates": {"PHP": {"primary": 60.0, "ref_date": "2026-08-09"}}}
+        cases = [
+            [("2026-08-09", base), ("2026-08-10", snap(60.5, "2026-08-10"))],
+            [("2026-08-09", base), ("2026-08-10", snap(60.1, "2026-08-10"))],
+            [("2026-08-09", base), ("2026-08-10", snap(60.0, "2026-08-09"))],
+            [("2026-08-09", base), ("2026-08-10", {"rates": {}})],
+        ]
+        return [claims.resolve_claim(opinion(), c).sentence for c in cases]
 
-    修的缺陷:`review.py` 在两个 ref_date 相同时**无条件**写「参考价未更新
-    (非工作日)」—— 它从不查日历。实测 2026-08-12 是周三、2026-08-14 是周五,
-    四个币种都不休市。这句假归因还经报告复盘节**逐字引用**流回正文
-    (实测 reports/daily/2026-08-12.md 正文含「非工作日」)。
+    def test_no_plumbing_word_in_any_sentence(self):
+        for sentence in self._sentences():
+            for word in self.BANNED:
+                self.assertNotIn(word, sentence, sentence)
 
-    脚本手上只有两个 ref_date,没有任何日历/交易所日程输入,所以它**有资格
-    断言的全部内容**就是「这两天的定盘日期是同一个,而且是哪一个」。原因
-    (休市?数据源没更新?采集时点早于定盘?)一律交给读者自己判断。
-
-    诚实标注:本类查的是**输出串里出没出现某些词**,即存在性检查。它挡得住
-    「换一种原因断言」这类同型复发,挡不住「换一个本表没收录的新词去归因」。
-    """
-
-    CAUSE_WORDS = UNCHANGED_REF_CAUSE_WORDS
-
-    def test_note_names_the_ref_date_and_nothing_else(self):
-        self.assertEqual(review.unchanged_ref_note("2026-08-07"),
+    def test_unchanged_ref_note_names_the_ref_date_and_nothing_else(self):
+        self.assertEqual(claims.unchanged_ref_note("2026-08-07"),
                          "参考价未更新(仍为 2026-08-07 定盘)")
 
-    def test_note_carries_whatever_ref_date_it_is_given(self):
+    def test_unchanged_ref_note_carries_whatever_ref_date_it_is_given(self):
         """带上那个日期是硬要求:读者据此自己判断,脚本不替他判断。"""
         for d in ("2026-08-07", "1999-12-31", "2026-08-12"):
             with self.subTest(ref_date=d):
-                self.assertIn(d, review.unchanged_ref_note(d))
+                self.assertIn(d, claims.unchanged_ref_note(d))
 
-    def test_note_asserts_no_cause(self):
+    def test_unchanged_ref_note_asserts_no_cause(self):
+        """修的缺陷:修前**无条件**写「参考价未更新(非工作日)」,而脚本从不
+        查任何日程表。实测 2026-08-12 是周三、08-14 是周五,四个币种都不休市;
+        这句假归因还经复盘节逐字引用流回了正文。"""
         for d in ("2026-08-07", "2026-08-14"):
-            note = review.unchanged_ref_note(d)
-            for word in self.CAUSE_WORDS:
+            note = claims.unchanged_ref_note(d)
+            for word in UNCHANGED_REF_CAUSE_WORDS:
                 with self.subTest(ref_date=d, word=word):
                     self.assertNotIn(word, note,
-                                     "这句话在断言原因,而脚本从不查日历:%r" % note)
+                                     "这句话在断言原因:%r" % note)
 
-    def test_note_carries_no_plumbing_word(self):
-        """这句话经方向核对句**逐字抄进正文**,所以它自己不得带管道语汇 ——
-        「与前一快照同为 X 定盘」这类写法会让脚本自己的产出撞上正文位置闸门
-        (自伤形态),词表与 DirectionSentenceTest 那条同源。"""
-        for word in ("快照", "primary", "derived", "null", "采集", "通道",
-                     ".json", "字段"):
-            with self.subTest(word=word):
-                self.assertNotIn(word, review.unchanged_ref_note("2026-08-07"))
-
-    def test_direction_sentence_uses_the_shared_note(self):
-        """产出点一:逐字流进报告正文的那一句。"""
-        got = review.direction_sentence(
-            date="2026-08-09", currency="PHP", outcome="无法判定",
-            watch_direction="up", prev_rate=60.75, today_rate=60.75,
-            unchanged_ref_date="2026-08-07")
-        self.assertIn(review.unchanged_ref_note("2026-08-07"), got)
-
-    def test_both_emission_sites_use_the_shared_note(self):
-        """产出点二:材料行的汇率段。
-
-        必须杀掉的变异之一是「只改一处措辞漏掉另一处」—— 材料行的识别正则
-        用 `.*` 吃掉了方向核对句那一段,所以**行式样认得出**并不能证明句内
-        那一处也改了。这里数出现次数:两个产出点各一次。
-        """
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        brief = setup_root(tmp.name, [opinion()],
-                           {"2026-08-09": snap_ref(60.75, "2026-08-07"),
-                            "2026-08-10": snap_ref(60.75, "2026-08-07")})
-        r = run_review(tmp.name)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        with open(brief, encoding="utf-8") as f:
-            text = f.read()
-        self.assertEqual(text.count(review.unchanged_ref_note("2026-08-07")), 2,
-                         "两个产出点没有共用同一句措辞:%r" % text)
-        for word in self.CAUSE_WORDS:
-            with self.subTest(word=word):
-                self.assertNotIn(word, text,
-                                 "要点表里仍有原因断言「%s」" % word)
-
-    def test_checker_recognises_the_note_for_any_ref_date(self):
-        """必须杀掉的变异之一是「改了输出但没改识别正则」—— 那会让复盘材料块
-        的 --strict-brief 豁免整段失效。这里换一个与别处都不同的定盘日跑,
-        顺带钉住「日期是式样、不是写死的那一个」。"""
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        brief = setup_root(tmp.name, [opinion()],
-                           {"2026-08-09": snap_ref(60.75, "1999-12-31"),
-                            "2026-08-10": snap_ref(60.75, "1999-12-31")})
-        with open(brief, encoding="utf-8") as f:
-            before = f.read()
-        r = run_review(tmp.name)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        with open(brief, encoding="utf-8") as f:
-            appended = f.read()[len(before):].splitlines()
-        self.assertTrue(any(review.unchanged_ref_note("1999-12-31") in ln
-                            for ln in appended), appended)
-        for line in appended:
-            self.assertTrue(check_report.is_generated_review_line(line),
-                            "校验器认不出 review.py 生成的行:%r" % line)
-
-    def test_checker_takes_the_wording_from_this_module(self):
-        """措辞的**单一事实源**在 review.py(产出方),与 REVIEW_BLOCK_HEADING
-        同规矩:校验器只许导入,不许自己再写一遍。两处各写一遍必然漂移,而
-        漂移的后果(豁免整块失效)不会有人发现。
-
-        **唯一的例外是冻结的历史字面量**(见 LegacyUnchangedRefNoteTest):
-        它按定义永远不会再变,产出方今后一个字都不会再吐出它,所以它不是
-        「第二份拷贝」、构不成漂移风险。断言写成「含这几个字的字面量**恰好
-        只有那一个冻结值**」,强度与原来的 `== []` 相同 —— 任何别的拷贝
-        (包括把当前措辞塞进来冒充历史值)照样当场红。
-        """
-        self.assertIs(check_report.unchanged_ref_note, review.unchanged_ref_note)
-        # 查**字符串字面量**(AST,注释不算):第二份拷贝要能被代码用上才有害,
-        # 而注释里解释这件事是应该的。手抄一份式样进正则 = 出现一个含这几个字
-        # 的字面量,这条断言当场红。
-        with open(check_report.__file__, encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-        copies = [n.value for n in ast.walk(tree)
-                  if isinstance(n, ast.Constant) and isinstance(n.value, str)
-                  and "参考价未更新" in n.value]
-        self.assertEqual(copies, [check_report.LEGACY_UNCHANGED_REF_NOTE],
-                         "校验器里出现了措辞的第二份拷贝:%r" % copies)
+    def test_checker_takes_the_note_wording_from_the_producer(self):
+        """校验器不得手抄这句话 —— 手抄的正则实测漏过转义,式样反而要求
+        「没有括号」。"""
+        self.assertIs(check_report.unchanged_ref_note,
+                      claims.unchanged_ref_note)
 
 
-def _material_line(rate_segment, currency="BRL"):
-    """一条格式完整的复盘材料行,只有汇率那一段可变 —— 豁免与否全看它。"""
-    return ("- %s | 观点日 2026-08-13 | 情景: 雷亚尔当日走弱 1.493%% | "
-            "触发条件: 雷亚尔参考价升破 5.1811 | 关注方向: up | %s | "
-            "方向核对: 无法判定" % (currency, rate_segment))
+class ReviewModuleSurfaceTest(unittest.TestCase):
+    def test_heading_is_owned_by_the_producer(self):
+        self.assertIs(check_report.REVIEW_BLOCK_HEADING,
+                      review.REVIEW_BLOCK_HEADING)
+
+    def test_llm_written_direction_verdict_entry_points_are_gone(self):
+        """`direction_outcome` 与 LLM 回填的 verdict 都不再是结论来源。"""
+        self.assertFalse(hasattr(review, "direction_outcome"))
+        self.assertFalse(hasattr(review, "direction_sentence"))
 
 
-class LegacyUnchangedRefNoteTest(unittest.TestCase):
-    """**存量要点表用的是旧措辞,识别器必须认得它。**
-
-    修的缺陷(本轮自己引入的回归):`cdec7e4` 把「参考价未更新」那一段的措辞
-    从 `参考价未更新(非工作日)` 改成 `参考价未更新(仍为 YYYY-MM-DD 定盘)`,
-    识别正则由产出方 `review.unchanged_ref_note` 经 `re.escape` 推出 —— 于是
-    只认新措辞。而 `briefs/2026-08-14-brief.md` 的四条材料行是改措辞**之前**
-    产出的,一夜之间落到豁免式样之外,被 `--strict-brief` 当成 LLM 手写行照查,
-    行内 08-13 的日涨跌 `1.493`(不在 08-14 快照里)判成 BRIEF_NUMBER_UNTRACEABLE。
-
-    与 `PRIOR_PERIOD_SKIPPED_NO_SECTION` 对旧格式日报的处理同一条原则:
-    **存量产物是既成事实,识别器必须认得历史格式。**
-
-    修法的两条纪律:
-    ① 新措辞仍由 `review.unchanged_ref_note` 推出,单一事实源规矩不变;
-    ② 旧措辞是**冻结的历史字面量**,单列、只为存量要点表而留。两种措辞
-       **各自精确匹配** —— 不得为了让旧行过关而把那一段放宽成 `.*`,
-       那等于让任意文本混进豁免段(有用例钉住,见本类最后一条)。
-    """
-
-    def test_legacy_wording_line_is_recognised(self):
-        """RED 靶点:改措辞前产出的材料行,识别器认不出来。"""
-        line = _material_line(check_report.LEGACY_UNCHANGED_REF_NOTE)
-        self.assertTrue(check_report.is_generated_review_line(line),
-                        "识别器不认历史格式:%r" % line)
-
-    def test_current_wording_line_is_still_recognised(self):
-        """向后兼容不得以丢掉新措辞为代价。"""
-        line = _material_line(review.unchanged_ref_note("2026-08-13"))
-        self.assertTrue(check_report.is_generated_review_line(line),
-                        "识别器不认当前格式:%r" % line)
-
-    def test_legacy_wording_is_not_producible_by_the_current_producer(self):
-        """冻结值必须**真的是历史**:当前产出方对任何定盘日都吐不出它。
-
-        没有这条,「旧措辞单列一份字面量」这个口子就能被用来把**当前**措辞
-        手抄进校验器(注释写成「历史遗留」即可),漂移风险原样回来。
-        判据用识别正则本身,等价于对所有日期取全称。
-        """
-        self.assertIsNone(
-            re.search(check_report.UNCHANGED_REF_NOTE_PAT,
-                      check_report.LEGACY_UNCHANGED_REF_NOTE),
-            "所谓的历史措辞正是当前措辞:%r"
-            % check_report.LEGACY_UNCHANGED_REF_NOTE)
-
-    def test_real_2026_08_14_brief_review_block_is_fully_exempted(self):
-        """在**真实产物**上钉一次:这才是缺陷现场。
-
-        fixture 过了而真文件不过,是本仓库栽过的形态 —— 材料行的情景/触发条件
-        是 LLM 文本,fixture 写不出真实的花样。
-        """
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, "briefs", "2026-08-14-brief.md"),
-                  encoding="utf-8") as f:
-            traced, exempt, heads = check_report.split_brief_review_block(f.read())
-        self.assertEqual(heads, 1)
-        self.assertEqual([ln for ln in traced if ln.startswith("- BRL | 观点日")],
-                         [], "旧措辞的材料行没被豁免,会被当成 LLM 手写行照查")
-        self.assertEqual(len([ln for ln in exempt if ln.startswith("- ")]), 5,
-                         "五条材料行没有全部落进豁免段:%r" % exempt)
-
-    def test_arbitrary_text_in_the_rate_segment_is_still_not_exempted(self):
-        """**不得为了认旧措辞而放宽整段。** 两种措辞各自精确匹配,别的都不认 ——
-        否则伪造成本从「伪造一整条格式完整的复盘行」跌到「在那一段写任意话」。
-        """
-        for junk in ("参考价未更新(随便什么原因)", "参考价未更新",
-                     "美元指数 1.493 创新高", "参考价未更新(仍为 昨天 定盘)"):
-            with self.subTest(junk=junk):
-                self.assertFalse(
-                    check_report.is_generated_review_line(_material_line(junk)),
-                    "豁免段被放宽,任意文本混了进来:%r" % junk)
-
-
-class UnchangedRefDateOfTest(unittest.TestCase):
-    """`unchanged_ref_date_of` 是「两日同定盘」的**唯一判据**:既给谓词
-    (`is not None`),也给那句话要带的日期。判据只留一个,是为了不让
-    「判定为未更新」与「未更新时说哪一天」两处各算一次而算岔。"""
-
-    def test_same_ref_date_returns_it(self):
-        self.assertEqual(
-            review.unchanged_ref_date_of(snap_ref(60.75, "2026-08-07"),
-                                         snap_ref(60.75, "2026-08-07"), "PHP"),
-            "2026-08-07")
-
-    def test_different_ref_date_returns_none(self):
-        self.assertIsNone(
-            review.unchanged_ref_date_of(snap_ref(60.0, "2026-08-07"),
-                                         snap_ref(60.5, "2026-08-10"), "PHP"))
-
-    def test_missing_ref_date_returns_none(self):
-        self.assertIsNone(
-            review.unchanged_ref_date_of(snap(60.0), snap_ref(60.5, "2026-08-10"),
-                                         "PHP"))
-
-    def test_empty_ref_date_on_both_sides_still_counts_as_unchanged(self):
-        """空串是 str,旧的布尔判据认它为「未更新」。调用点必须按
-        `is not None` 判,按真值判会把这一档静默翻面 —— 那是行为变更,
-        不在本次修复范围内。"""
-        self.assertEqual(
-            review.unchanged_ref_date_of(snap_ref(60.75, ""),
-                                         snap_ref(60.75, ""), "PHP"), "")
+if __name__ == "__main__":
+    unittest.main()
