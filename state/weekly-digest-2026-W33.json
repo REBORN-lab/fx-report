@@ -55,7 +55,7 @@
   "window_to": "2026-08-12",
   "events": {
     "USD": {
-      "articles_verdict": "区间内至少 26 条(3/6 天未采到、2 天顶到当日采集上限(区间内上限随通道不同,不给单值)、1 天源返回的原始样本顶到其上限(99 条),滤除后的条数是下界、1 天主通道抓到共 89 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "articles_verdict": "区间内至少 26 条(3/6 天未采到、2 天顶到当日采集上限(8 条)、1 天源返回的原始样本顶到其上限(99 条),已采到的条数是下界、3 天的不可识别条数不可知(存量快照无此账)、1 天主通道抓到共 89 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
       "official_verdict": "区间内未见公告,但 4/6 天未采到、2 天顶到当日采集上限(3 条)、另有 3 条发布于区间外,有无公告无法判定",
       "fallback_days": 0,
       "articles_sampled": 27,
@@ -71,6 +71,8 @@
       "articles_sample_daily_cap": 99,
       "articles_sample_cap_assumed_days": 0,
       "articles_malformed_dropped": 0,
+      "articles_malformed_unknown_days": 3,
+      "articles_main_failed_days": 0,
       "articles_malformed_items": 0,
       "articles_filtered_days": 1,
       "articles_filtered_items": 89,
@@ -142,7 +144,7 @@
       }
     },
     "EUR": {
-      "articles_verdict": "区间内至少 17 条(3/6 天未采到、2 天顶到当日采集上限(区间内上限随通道不同,不给单值)、1 天主通道抓到共 37 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "articles_verdict": "区间内至少 17 条(3/6 天未采到、2 天顶到当日采集上限(8 条)、3 天的不可识别条数不可知(存量快照无此账)、1 天主通道抓到共 37 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
       "official_verdict": "区间内至少 2 条(4/6 天未采到、2 天顶到当日采集上限(3 条)、另有 1 条发布于区间外)",
       "fallback_days": 1,
       "articles_sampled": 17,
@@ -158,6 +160,8 @@
       "articles_sample_daily_cap": null,
       "articles_sample_cap_assumed_days": 0,
       "articles_malformed_dropped": 0,
+      "articles_malformed_unknown_days": 3,
+      "articles_main_failed_days": 0,
       "articles_malformed_items": 0,
       "articles_filtered_days": 1,
       "articles_filtered_items": 37,
@@ -229,7 +233,7 @@
       }
     },
     "PHP": {
-      "articles_verdict": "区间内至少 20 条(4/6 天未采到、1 天顶到当日采集上限(区间内上限随通道不同,不给单值)、1 天主通道抓到共 21 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "articles_verdict": "区间内至少 20 条(4/6 天未采到、1 天顶到当日采集上限(8 条)、2 天的不可识别条数不可知(存量快照无此账)、1 天主通道抓到共 21 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
       "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
       "fallback_days": 0,
       "articles_sampled": 20,
@@ -245,6 +249,8 @@
       "articles_sample_daily_cap": null,
       "articles_sample_cap_assumed_days": 0,
       "articles_malformed_dropped": 0,
+      "articles_malformed_unknown_days": 2,
+      "articles_main_failed_days": 0,
       "articles_malformed_items": 0,
       "articles_filtered_days": 1,
       "articles_filtered_items": 21,
@@ -316,7 +322,7 @@
       }
     },
     "THB": {
-      "articles_verdict": "区间内至少 7 条(5/6 天未采到、1 天主通道抓到共 22 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "articles_verdict": "区间内至少 7 条(5/6 天未采到、1 天的不可识别条数不可知(存量快照无此账)、1 天主通道抓到共 22 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
       "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
       "fallback_days": 0,
       "articles_sampled": 7,
@@ -332,6 +338,8 @@
       "articles_sample_daily_cap": null,
       "articles_sample_cap_assumed_days": 0,
       "articles_malformed_dropped": 0,
+      "articles_malformed_unknown_days": 1,
+      "articles_main_failed_days": 0,
       "articles_malformed_items": 0,
       "articles_filtered_days": 1,
       "articles_filtered_items": 22,
@@ -403,7 +411,7 @@
       }
     },
     "BRL": {
-      "articles_verdict": "区间内至少 5 条(5/6 天未采到、1 天主通道抓到共 29 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
+      "articles_verdict": "区间内至少 5 条(5/6 天未采到、1 天的不可识别条数不可知(存量快照无此账)、1 天主通道抓到共 29 条次未通过逐层过滤(其中 1 天当日仍有条目可用))",
       "official_verdict": "未接入或全区间采集失败,有无公告无法判定",
       "fallback_days": 0,
       "articles_sampled": 5,
@@ -419,6 +427,8 @@
       "articles_sample_daily_cap": null,
       "articles_sample_cap_assumed_days": 0,
       "articles_malformed_dropped": 0,
+      "articles_malformed_unknown_days": 1,
+      "articles_main_failed_days": 0,
       "articles_malformed_items": 0,
       "articles_filtered_days": 1,
       "articles_filtered_items": 29,
