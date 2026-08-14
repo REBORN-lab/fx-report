@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """报告校验器:结构 + 数字溯源(文本级逐字比对)。
-daily : check_report.py <report.md> <snapshot.json> --brief <brief.md> --mode daily
+daily : check_report.py <report.md> <snapshot.json> --brief <brief.md>
+        --prior <上一份日报.md> --decision-log <日志.jsonl> [--mode daily]
+        (三个溯源入参**必须给**;缺一个即 rc=2 并印出可复制的完整命令行)
+weekly: check_report.py <weekly.md> --mode weekly --digest <digest.json>
+        --daily <当周日报.md> …(`--daily` 可重复;位置参数快照会被拒收)
 退出码 0=合规,1=违规(逐条打印),2=用法错误/输入不可读/快照损坏。"""
 import argparse
+import datetime
 import json
 import re
+import shlex
 import sys
 
 # 复盘材料块的块头:**唯一事实源是产出方 `scripts/review.py`**,这里只导入。
@@ -46,7 +52,7 @@ LIST_ITEM_RE = re.compile(r"\s*(?:[-*]|\d+[.、])\s+\S")
 # 「参考价未更新」那一段的措辞**这里一个字都不重写**:它由产出方
 # `review.unchanged_ref_note` 给出,本文件只把其中的定盘日期换成日期式样。
 # 理由与 REVIEW_BLOCK_HEADING 同规矩 —— 两处各写一遍必然漂移,而漂移的后果
-# (真行一条都认不出、--strict-brief 的豁免整块失效)不会有人发现。实测就
+# (真行一条都认不出、「要点表 ⊆ 快照」那一层的豁免整块失效)不会有人发现。实测就
 # 踩过一脚同型的:review.py 那两处括号是 **ASCII** `()`,手抄的正则没转义,
 # 式样反而要求「没有括号」。从产出方 re.escape 推出来,括号是全角还是 ASCII
 # 都自动对上,这类手抄错误不再可能发生。
@@ -57,7 +63,7 @@ UNCHANGED_REF_NOTE_PAT = re.escape(unchanged_ref_note(_REF_DATE_SLOT)).replace(
 # 上一段说的「措辞一个字都不重写」管的是**当前**措辞,这一条不归它管:产出方
 # 今后一个字都不会再吐出这个串,它按定义永远不变,因此不是会漂移的第二份拷贝。
 # 留它只为一件事:`briefs/2026-08-14-brief.md` 那四条材料行是改措辞前产出的,
-# 存量产物是既成事实。改措辞当天它们就整体落到豁免式样之外,被 --strict-brief
+# 存量产物是既成事实。改措辞当天它们就整体落到豁免式样之外,被「要点表 ⊆ 快照」
 # 当成 LLM 手写行照查,行内 08-13 的日涨跌被判 BRIEF_NUMBER_UNTRACEABLE —— 与
 # PRIOR_PERIOD_SKIPPED_NO_SECTION 认旧格式日报是同一条原则:
 # **存量产物是既成事实,识别器必须认得历史格式。**
@@ -1430,13 +1436,25 @@ def check_weekly_judgement_ring(secs, report, allowed, notes=None):
     return v
 
 
-def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None,
+def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None,
                 prior_text=None, decision_entries=None):
     """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
 
+    strict_brief : 「要点表数字 ⊆ 快照」这一层。**默认 True** —— 强判定是
+            默认,弱化必须是显式动作(CLI 侧唯一入口是 `--no-strict-brief`)。
+            修前默认是 False,于是"忘了传"与"决定不查"在调用点上不可分辨,
+            与 CLI 侧那三条 fail-open 是同一个病、只低一层。
+            传 False 时会往 notes 追加 STRICT_BRIEF_DISABLED(带计数)。
+
     prior_text : 上一份日报正文;`None` 表示**没提供**,跨期逐字重复整条
-            不检查(声明由 CLI 层打印,见 `main`)。空串是"提供了但内容为空"
-            的合法形态,走 check_prior_period 的第三态。
+            不检查,并往 notes 追加 PRIOR_PERIOD_ABSENT_SKIPPED。空串是
+            "提供了但内容为空"的合法形态,走 check_prior_period 的第三态。
+            **CLI 走不到 `None` 这一支**:`--prior` 已是必给,缺席即 rc=2。
+            声明留在这一层而不是 CLI 层,理由是"跳过的那一层负责出声" ——
+            放在 CLI 层时,任何别的调用方传 None 都会静默跳过。
+
+    decision_entries : 决策日志条目;`None` 同上,追加
+            DECISION_LOG_ABSENT_SKIPPED。CLI 侧同样已收成 rc=2。
 
     notes : **出参**。传入的 list 会被追加「非违规的降级声明」
             (VERDICT_SKIPPED_LEGACY / VERDICT_SKIPPED_NO_DERIVED)。
@@ -1627,9 +1645,32 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
         brief_allowed = numbers_in(snapshot_text) | ALLOWED_SMALL
         for n in sorted(numbers_in("\n".join(traced)) - brief_allowed):
             v.append("BRIEF_NUMBER_UNTRACEABLE: 要点表数字 %s 不见于快照" % n)
+    elif notes is not None:
+        # 弱化是**显式动作**(CLI 侧唯一入口 `--no-strict-brief`),但显式不等于
+        # 静默:退出码回到 0 时,"这一层没跑"与"跑了且全过"在 stdout 上必须
+        # 可分辨 —— 与 WEEKLY_DIGEST_ABSENT_SKIPPED / BRIEF_REVIEW_BLOCK_SKIPPED
+        # 同一原则。声明必须带计数,否则读者不知道放过了多大一块。
+        traced, exempt, _ = split_brief_review_block(brief_text)
+        notes.append("STRICT_BRIEF_DISABLED: 显式关闭了「要点表 ⊆ 快照」校验,"
+                     "要点表 %d 个数字未校验是否见于快照"
+                     "(BRIEF_NUMBER_UNTRACEABLE 整层不跑);"
+                     "另有复盘材料块 %d 行本就在豁免内"
+                     % (len(numbers_in("\n".join(traced))), len(exempt)))
     if prior_text is not None:
         v.extend(check_prior_period(report, prior_text, notes=notes,
                                     ambiguous=amb))
+    elif notes is not None:
+        # 「没给上一份日报」在**库这一层**仍是合法形态,不是违规、不改退出码
+        # —— 但它若跑出裸 CHECK PASSED,就与「比对过且没有套话」逐字不可分辨。
+        # CLI 侧已把它收成 rc=2(`--prior` 必给),这条声明守的是别的调用方。
+        notes.append("PRIOR_PERIOD_ABSENT_SKIPPED: 未提供上一份日报,"
+                     "本次未校验「本期相对上期的变化」节的跨期逐字重复")
+    if decision_entries is None and notes is not None:
+        # 与上一条同规矩:CLI 侧 `--decision-log` 已必给(缺席 rc=2),
+        # 这条声明守的是别的调用方,并且必须带计数。
+        notes.append("DECISION_LOG_ABSENT_SKIPPED: 未提供决策日志,"
+                     "%d 个币种的速览「%s」与决策日志 trigger 的同源同字"
+                     "未校验" % (len(CURRENCIES), OVERVIEW_COL_TRIGGER))
     # ---- 速览表那一层:先解析一次,两个用途共用 ----
     # ① 决策日志同源同字(`check_decision_trigger`);
     # ② 「失效条件」列与翻转指标同字的声明(`check_overview_invalidation_column`)。
@@ -1663,6 +1704,97 @@ def _read_file(path, label):
         return None, "无法读取%s %s: %s" % (label, path, e)
 
 
+# ==================== 日报模式:强判定是默认(2026-08-14)====================
+#
+# 本仓第 15 次同型缺陷(「打印通过,但守的不是它声称的东西」)的修法。
+# 修前三个溯源入参都是「不给就自动弱化」:`--prior` 与 `--decision-log` 各打
+# 一条降级声明后 **rc=0**,`--brief` 连声明都没有 —— `BRIEF_NUMBER_UNTRACEABLE`
+# 整层静默蒸发。上一轮给 `--decision-log` 配的强制力是
+# `skills/fx-daily-report/SKILL.md` 里一句「这一条**必须带上**」的散文,
+# 而散文对返回码没有任何作用:忘带参数 = 闸门消失 = rc=0。
+# 现在与 weekly 拒收位置参数那一轮同规格:**缺一个即 rc=2**。
+DAILY_DECISION_LOG_DEFAULT = "state/decision-log.jsonl"
+# (选项, 它守的那道闸门)。**这份清单只有一份**:main() 判缺、消息列项、
+# 补全命令行三处都读它,不许在别处再抄一遍(第二份拷贝必然漂移,本仓已栽过)。
+DAILY_REQUIRED_OPTIONS = (
+    ("--brief",
+     "守「要点表数字 ⊆ 快照」(BRIEF_NUMBER_UNTRACEABLE / "
+     "BRIEF_REVIEW_BLOCK_MALFORMED),并把要点表并入报告数字白名单"),
+    ("--prior",
+     "守「本期相对上期的变化」节不得逐字重复上期(PRIOR_PERIOD_BOILERPLATE)"),
+    ("--decision-log",
+     "守速览「条件方向」格逐字包含决策日志同日同币种的 trigger"
+     "(DECISION_TRIGGER_NOT_SOURCED)"),
+)
+# 只用来从路径里认出日期,**与 DATE_RE 无关**(那一条服务正文里的日期措辞,
+# 本轮一个字符都不动)。
+ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _iso_date_in(path):
+    m = ISO_DATE_RE.search(path or "")
+    return m.group(0) if m else None
+
+
+def daily_default_paths(report, snapshot):
+    """三个必给入参的**可执行默认值**,按仓库标准布局推。
+
+    日期取自报告路径,取不到再取快照路径。`--prior` 落在报告**自己那个
+    目录**下(不写死 `reports/daily/`),所以对着任意目录里的一份日报跑,
+    补出来的上一份也在同一处。
+    两处都认不出日期时给尖括号占位符:猜一个日期出来会让人把命令粘到
+    **别的日子**那份报告上,比看得见的占位符危险得多。
+    """
+    date = _iso_date_in(report) or _iso_date_in(snapshot)
+    if not date:
+        return {"--brief": "briefs/<YYYY-MM-DD>-brief.md",
+                "--prior": "reports/daily/<前一日>.md",
+                "--decision-log": DAILY_DECISION_LOG_DEFAULT}
+    try:
+        prev = (datetime.date.fromisoformat(date)
+                - datetime.timedelta(days=1)).isoformat()
+    except ValueError:                       # 形如 2026-13-45 的假日期
+        prev = "<前一日>"
+    head = report.rsplit("/", 1)[0] + "/" if "/" in (report or "") else ""
+    return {"--brief": "briefs/%s-brief.md" % date,
+            "--prior": "%s%s.md" % (head, prev),
+            "--decision-log": DAILY_DECISION_LOG_DEFAULT}
+
+
+def daily_required_options_error(report, snapshot, brief, prior, decision_log,
+                                 missing):
+    """rc=2 的消息:**必须可执行**,不是「缺少参数」四个字。
+
+    「缺少参数」不可执行 —— 运维得回去翻 SKILL 才知道该写什么、以及少掉的
+    是哪一道闸门。所以这里给三样:缺了谁、每个入参守的是哪条码、以及
+    **一整行能直接复制粘贴的正确命令行**(已给的值原样带回,缺的按仓库
+    标准布局补齐)。测试对这一行的判据不是"提到了缺什么",而是把它切开
+    原样跑一遍必须 rc=0 —— 只断言"提到了"时,印一条跑不通的命令行照样全绿。
+    """
+    given = {"--brief": brief, "--prior": prior,
+             "--decision-log": decision_log}
+    default = daily_default_paths(report, snapshot)
+    argv = [report, snapshot]
+    lines = ["DAILY_REQUIRED_OPTION_MISSING: 日报模式的三个溯源入参必须显式给,"
+             "本次缺少 %s。缺席不再等于「自动弱化」,而是用法错误 rc=2 —— "
+             "此前它们缺席时最多打一条降级声明、退出码仍是 0,"
+             "于是忘带参数与闸门整层不跑在输出上不可分辨。" % "、".join(missing)]
+    for opt, guard in DAILY_REQUIRED_OPTIONS:
+        value = given[opt] or default[opt]
+        lines.append("  [%s] %s %s —— %s"
+                     % ("缺" if opt in missing else "已给", opt, value, guard))
+        argv += [opt, value]
+    lines.append("`--decision-log` 的默认路径就是 %s(全仓只有这一份日志)。"
+                 % DAILY_DECISION_LOG_DEFAULT)
+    lines.append("把下面这一整行复制粘贴执行"
+                 "(已给的值原样保留,缺的按仓库标准布局补齐):")
+    lines.append("python3 scripts/check_report.py "
+                 + " ".join(shlex.quote(a) for a in argv))
+    lines.append("要弱化「要点表 ⊆ 快照」那一层,唯一入口是 `--no-strict-brief`,"
+                 "它会打印带计数的声明;少写一个参数不再是弱化的入口。")
+    return "\n".join(lines)
+
+
 def build_parser():
     """选项的注册处。单独成函数是为了让测试查得到注册表本身:从 `--help` 的
     输出反推开关集合守不住 `help=argparse.SUPPRESS` 的隐藏开关(argparse 根本
@@ -1689,7 +1821,7 @@ def build_parser():
     ①③④ 三条依旧成立,原文保留不删。
     能挡住这四条的是 `tests/test_check_report.py` 里的行为级断言
     (`test_listed_exemption_tokens_cannot_make_verdict_codes_disappear`):
-    在**生产命令行的完整形状**(含 `--brief`/`--strict-brief`/`--daily`)
+    在**生产命令行的完整形状**(含 `--brief`/`--prior`/`--decision-log`/`--daily`)
     及其每个开关的取反组合上枚举豁免味 token,要求基线上出现过的那组码
     一个都不许少。冻结注册表形状只是辅助。
 
@@ -1697,7 +1829,8 @@ def build_parser():
     `EXEMPTION_TOKENS` 词表 × 句法位置 × 开关取反。旧名字写成
     "no argv can …" 时,三条有界缺口逐条被真绕过打穿(T8b 复验):
     base argv 从不带 `--strict-brief` 而生产调用每次都带(于是
-    `if args.strict_brief: 滤掉 VERDICT_*` 这一行只在真实运行时生效);
+    `if args.strict_brief: 滤掉 VERDICT_*` 这一行只在真实运行时生效;
+    该开关 2026-08-14 已删除、强判定成为默认,这条实测作为历史记录保留);
     判据只看"stdout 里还有 VERDICT_"而两份输入的违规恰好全是同一个码;
     以及守卫跑在进程内、`sys.argv` 对它天然不可见。
     第三条现在由 `test_production_shapes_stay_red_in_a_real_subprocess`
@@ -1706,20 +1839,28 @@ def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("report")
     ap.add_argument("snapshot", nargs="?")
-    ap.add_argument("--brief", default=None)
+    ap.add_argument("--brief", default=None,
+                    help="daily:要点表路径,**必给**,缺席即 rc=2")
     ap.add_argument("--mode", choices=["daily", "weekly"], default="daily")
-    ap.add_argument("--strict-brief", action="store_true",
-                    help="daily:同时校验 要点表 ⊆ 快照")
+    # `--strict-brief` 已**删除**,不留成无操作的兼容开关:no-op 开关等于新造
+    # 一个「注册了却没人读」的选项(它会同时进两个 mode 的不读选项表,豁免
+    # 扳机面翻倍),而陈旧调用点会**静默地什么都不做** —— 正是本轮要消灭的
+    # 形态。删掉之后,任何还带着它的调用点在 argparse 层就 rc=2 响亮死掉。
+    ap.add_argument("--no-strict-brief", dest="strict_brief",
+                    action="store_false",
+                    help="daily:关闭「要点表 ⊆ 快照」校验(默认开启);"
+                         "这是**唯一**的弱化入口,且会打印带计数的降级声明")
     ap.add_argument("--digest", default=None,
                     help="weekly:周度聚合文件,启用周报数字溯源")
     ap.add_argument("--daily", action="append", default=[],
                     help="weekly:当周日报路径,可重复;并入数字白名单")
     ap.add_argument("--prior", default=None,
-                    help="daily:上一份日报路径,启用「本期相对上期的变化」节"
-                         "的跨期逐字重复检查")
+                    help="daily:上一份日报路径,**必给**,缺席即 rc=2;"
+                         "启用「本期相对上期的变化」节的跨期逐字重复检查")
     ap.add_argument("--decision-log", default=None,
-                    help="daily:决策日志 jsonl 路径,启用速览「条件方向」与"
-                         "日志 trigger 的同源同字检查")
+                    help="daily:决策日志 jsonl 路径(默认布局 %s),**必给**,"
+                         "缺席即 rc=2;启用速览「条件方向」与日志 trigger 的"
+                         "同源同字检查" % DAILY_DECISION_LOG_DEFAULT)
     return ap
 
 
@@ -1734,6 +1875,20 @@ def main(argv=None):
         if not args.snapshot:
             print("daily 模式需要快照路径", file=sys.stderr)
             return 2
+        # ---- 强判定是默认:三个溯源入参缺一个即 rc=2 ----
+        # 修前这里是三条「不给就自动弱化」的路径。判缺的清单只有
+        # `DAILY_REQUIRED_OPTIONS` 一份,消息与补全命令行读的也是它。
+        # **必须写在 daily 分支体内**:挪到分支外会让这三个 dest 变成
+        # "两个 mode 都读"的,weekly 侧的「不读选项」表随之塌掉一半,
+        # 第六族变异整类失去输入(见 tests 的 unread_option_specs)。
+        given = {"--brief": args.brief, "--prior": args.prior,
+                 "--decision-log": args.decision_log}
+        missing = [opt for opt, _ in DAILY_REQUIRED_OPTIONS if not given[opt]]
+        if missing:
+            print(daily_required_options_error(
+                args.report, args.snapshot, args.brief, args.prior,
+                args.decision_log, missing), file=sys.stderr)
+            return 2
         snapshot_text, err = _read_file(args.snapshot, "快照文件")
         if err:
             print(err, file=sys.stderr)
@@ -1743,46 +1898,25 @@ def main(argv=None):
             for p in problems:
                 print("快照损坏: " + p, file=sys.stderr)
             return 2
-        brief_text = ""
-        if args.brief:
-            brief_text, err = _read_file(args.brief, "要点表文件")
-            if err:
-                print(err, file=sys.stderr)
-                return 2
-        prior_text = None
-        if args.prior:
-            prior_text, err = _read_file(args.prior, "上一份日报")
-            if err:
-                print(err, file=sys.stderr)
-                return 2
-        else:
-            # 「没给上一份日报」是设计内的合法形态(第一份日报、手动重跑),
-            # 不是违规、不改退出码 —— 但它若跑出**裸 CHECK PASSED**,就与
-            # 「比对过且没有套话」逐字不可分辨。「跳过」与「通过」在输出上
-            # 必须可区分,与 VERDICT_SKIPPED_NO_DERIVED /
-            # WEEKLY_DIGEST_ABSENT_SKIPPED / BRIEF_REVIEW_BLOCK_SKIPPED 同一原则。
-            notes.append("PRIOR_PERIOD_ABSENT_SKIPPED: 未提供 --prior,"
-                         "本次未校验「本期相对上期的变化」节的跨期逐字重复")
-        decision_entries = None
-        if args.decision_log:
-            log_text, err = _read_file(args.decision_log, "决策日志")
-            if err:
-                print(err, file=sys.stderr)
-                return 2
-            decision_entries, problems = parse_decision_log(log_text)
-            if problems:
-                # 给了却读不成 = 响亮失败,与 --digest 同规格。**不 fail-open**:
-                # 静默跳过时调用方以为查了、脚本以为没传,两边都不出声。
-                for p in problems:
-                    print("决策日志损坏: " + p, file=sys.stderr)
-                return 2
-        else:
-            # 缺席是合法形态(第一份日报、手动重跑),与 --prior 同规矩:
-            # 不是违规、不改退出码,但必须带计数出声 —— 否则"没查"与
-            # "查过且全过"在 stdout 上逐字不可分辨。
-            notes.append("DECISION_LOG_ABSENT_SKIPPED: 未提供 --decision-log,"
-                         "%d 个币种的速览「%s」与决策日志 trigger 的同源同字"
-                         "未校验" % (len(CURRENCIES), OVERVIEW_COL_TRIGGER))
+        brief_text, err = _read_file(args.brief, "要点表文件")
+        if err:
+            print(err, file=sys.stderr)
+            return 2
+        prior_text, err = _read_file(args.prior, "上一份日报")
+        if err:
+            print(err, file=sys.stderr)
+            return 2
+        log_text, err = _read_file(args.decision_log, "决策日志")
+        if err:
+            print(err, file=sys.stderr)
+            return 2
+        decision_entries, problems = parse_decision_log(log_text)
+        if problems:
+            # 给了却读不成 = 响亮失败,与 --digest 同规格。**不 fail-open**:
+            # 静默跳过时调用方以为查了、脚本以为没传,两边都不出声。
+            for p in problems:
+                print("决策日志损坏: " + p, file=sys.stderr)
+            return 2
         violations = check_daily(report, snapshot_text, brief_text,
                                  strict_brief=args.strict_brief, notes=notes,
                                  prior_text=prior_text,

@@ -421,19 +421,23 @@ watch_direction 语义:USD/该币汇率方向,"up"=该币对美元走弱;USD 自
 ## 第 5 步:校验(脚本,不可跳过)
 
 运行:
-`python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json --brief briefs/DATE-brief.md --mode daily --strict-brief --prior reports/daily/前一日.md --decision-log state/decision-log.jsonl`
+`python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json --brief briefs/DATE-brief.md --prior reports/daily/前一日.md --decision-log state/decision-log.jsonl`
 
-(`--strict-brief` 同时校验"要点表 ⊆ 快照";新流程必须带上——不带的话
-要点表里写错的数字会成为下游报告的合法来源。)
+三个溯源入参是**必给项**,不是叮嘱:日报模式下缺任何一个,校验器**返回 2**
+并打印 `DAILY_REQUIRED_OPTION_MISSING`,连同一整行可直接复制粘贴的正确命令行。
+这一段因此只陈述各自守什么,不再写"请记得带上"——那句话在 2026-08-14 之前
+就写在这里,而实测忘带 `--decision-log` 时 10 条违约全部静默通过、退出码 0。
 
-(`--decision-log` 启用本文件第 185/375 行那条规则的**机器判定**:速览表
-「条件方向」那一格必须逐字包含日志里同日同币种的 `trigger`。不带这个参数时
-该规则退回散文、零强制 —— 校验器会打印 `DECISION_LOG_ABSENT_SKIPPED` 并
-带上未校验的币种数,但退出码仍是 0。这一条**必须带上**:实测在 2026-08-10
-与 2026-08-11 两份日报上,不带它时 10 条违约全部静默通过。
-**决策日志是抄件、速览表是源**;两者不一致时用
-`python3 scripts/log_decision.py amend-trigger --date DATE --currency X --trigger '<速览表那一格原文>'`
-回填日志,不要反过来改表。)
+- `--brief`:校验"要点表 ⊆ 快照",并把要点表并入报告的数字白名单。
+- `--prior`:校验「本期相对上期的变化」节不得逐字重复上一份日报。
+- `--decision-log`:本文件第 185/375 行那条规则的**机器判定** —— 速览表
+  「条件方向」那一格必须逐字包含日志里同日同币种的 `trigger`。默认路径就是
+  `state/decision-log.jsonl`。**决策日志是抄件、速览表是源**;两者不一致时用
+  `python3 scripts/log_decision.py amend-trigger --date DATE --currency X --trigger '<速览表那一格原文>'`
+  回填日志,不要反过来改表。
+
+「要点表 ⊆ 快照」这一层**默认开启**。唯一的弱化入口是 `--no-strict-brief`,
+它会打印 `STRICT_BRIEF_DISABLED` 与未校验的数字个数;正常流程不用它。
 
 - 退出码 0:完成,输出报告路径,结束。
 - 非 0:按输出的违规项修改报告**一次**(仍只准用要点表数字),重跑校验。

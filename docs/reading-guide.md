@@ -166,10 +166,12 @@
 
 ```bash
 python3 scripts/check_report.py reports/daily/<日期>.md data/<日期>.json \
-        --brief briefs/<日期>-brief.md --mode daily --strict-brief
+        --brief briefs/<日期>-brief.md \
+        --prior reports/daily/<前一日>.md \
+        --decision-log state/decision-log.jsonl
 ```
 
-退出码 0 才算通过。**注意周报必须用 `--digest` 传聚合文件、并用 `--daily` 逐个传当周日报**,写成位置参数会被直接拒收(那条命令曾经静默放行过,现在改成响亮失败)。
+退出码 0 才算通过。**日报模式下这三个溯源参数一个都不能省**:少写一个就是退出码 2,校验器会把该补的那一整行命令印出来。以前少写一个只是"少查一层",退出码仍是 0——忘带与关掉在输出上分不出来,那条缝已经堵上。**周报必须用 `--digest` 传聚合文件、并用 `--daily` 逐个传当周日报**,写成位置参数会被直接拒收(那条命令曾经静默放行过,现在改成响亮失败)。
 
 ---
 

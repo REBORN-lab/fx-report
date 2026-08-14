@@ -21,7 +21,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMPTY_REVIEW = {"direction_outcome": None, "trigger_judgement": None, "verdict": None}
 # 复盘材料块的块头。**唯一事实源在这里**(本脚本是产出方),
 # `scripts/check_report.py` 只许导入 —— 它据此把要点表切成「LLM 手写」与
-# 「本脚本生成」两段,后者豁免 `--strict-brief` 的当日快照数字溯源。
+# 「本脚本生成」两段,后者豁免「要点表 ⊆ 当日快照」那一层的数字溯源
+# (该层 2026-08-14 起**默认开启**,弱化入口是 `--no-strict-brief`)。
 # 两处各写一遍必然漂移,而漂移的后果是豁免整段失效或整段过宽,都不会有人发现。
 REVIEW_BLOCK_HEADING = "## 复盘材料(scripts/review.py 生成,勿手改)"
 
@@ -233,8 +234,8 @@ def main(argv=None):
             rate_desc = (unchanged_ref_note(unchanged_ref) if unchanged_ref is not None
                          else "汇率 %s→%s" % (prev_r, today_r))
             # 方向核对句嵌在**既有行内**,不新起一行:块内每一行都必须落在
-            # `check_report.REVIEW_LINE_RES` 的式样里才拿得到 --strict-brief
-            # 的豁免,新起一行会被当成 LLM 手写行照查(实测的 4 条
+            # `check_report.REVIEW_LINE_RES` 的式样里才拿得到「要点表 ⊆ 快照」
+            # 那一层的豁免,新起一行会被当成 LLM 手写行照查(实测的 4 条
             # BRIEF_NUMBER_UNTRACEABLE 就是这么来的)。字段插在"触发条件"与
             # "关注方向"之间:前两段是 `.*`,吃得下这一段;"关注方向"那段是
             # `[^|]*`,插在它后面会把式样撑破。

@@ -124,10 +124,12 @@ BIS 用 `XM` 表示欧元区,采集层映射到仓库内部的 `EA`。
 
     python3 scripts/weekly_digest.py --week 2026-W33
 
-校验(新流程必须带溯源参数):
+校验(日报模式下三个溯源入参是**必给项**,缺一个即退出码 2 并打印可复制的
+正确命令行;「要点表 ⊆ 快照」默认开启,唯一弱化入口是 `--no-strict-brief`,
+它会打印带计数的降级声明):
 
     python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json \
-      --brief briefs/DATE-brief.md --mode daily --strict-brief \
+      --brief briefs/DATE-brief.md \
       --prior reports/daily/<前一日>.md --decision-log state/decision-log.jsonl
     python3 scripts/check_report.py reports/weekly/WEEK.md --mode weekly \
       --digest state/weekly-digest-WEEK.json --daily reports/daily/<每一天>.md

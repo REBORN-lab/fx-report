@@ -5,6 +5,7 @@ import itertools
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -27,8 +28,20 @@ SNAP_TEXT = json.dumps(SNAP, ensure_ascii=False)
 BRIEF = "# 要点表 2026-08-10\n- 汇率变动:primary 60.843,prev 60.9\n- CPI 3.1 前值 3.4\n"
 
 
+# ---- 「本期相对上期的变化」节:2026-08-14 起它是**每份合规日报的必备节** ----
+# `--prior` 从这一天起是必给参数(缺席 rc=2),而 `check_prior_period` 的第二态
+# 规定「当前报告缺该节 = PRIOR_PERIOD_SECTION_MISSING」—— 于是"结构合规的日报"
+# 这个概念本身变了,`make_report()` 必须跟着变,否则库里每一条走 CLI 的断言
+# 都在测一份**不合规**的报告。
+# 两句都不含数字、不含句末标点,理由同 PriorPeriodBoilerplateTest:本仓多处
+# 断言"除某码外零违规",数字会引来 NUMBER_UNTRACEABLE 把失败原因搅浑。
+# 两句**必须互不相同**:当期与上一期用同一句就是 PRIOR_PERIOD_BOILERPLATE。
+PRIOR_LINE_CUR = "- 本期五币种的判断相对上期均有更新,逐条见各币种节。"
+PRIOR_LINE_PREV = "- 上一期相对更早一期未变,没变的原因是当周无数据发布。"
+
+
 def make_report(summary_items=3, missing=None, php_body=None, gap_body="无",
-                extra_number=None):
+                extra_number=None, prior_line=PRIOR_LINE_CUR):
     lines = ["# 外汇日报 2026-08-10", "", "## 执行摘要"]
     lines += ["- 摘要第 %d 条" % (i + 1) for i in range(summary_items)]
     sections = {
@@ -47,9 +60,45 @@ def make_report(summary_items=3, missing=None, php_body=None, gap_body="无",
         lines += ["", "## " + name, body]
     lines += ["", "## 复盘", "- 首次运行,无历史观点可复盘"]
     lines += ["", "## 数据缺漏", gap_body]
+    if prior_line:
+        # `prior_line=None` 给那些**故意**要造"缺该节"形态的测试用
+        # (PriorPeriodBoilerplateTest 自己拼节、以及"上一份是旧格式"那一态)
+        lines += ["", "## 本期相对上期的变化", prior_line]
     if extra_number:
         lines.append("另外汇率大约是 %s。" % extra_number)
     return "\n".join(lines)
+
+
+def daily_files(tmp, report_text=None, snapshot_text=SNAP_TEXT,
+                brief_text=BRIEF, prior_text=None, log_text=None, extra=()):
+    """在 `tmp` 下写齐日报模式的**全部必给输入**,返回 (argv, paths)。
+
+    2026-08-14 起 `--brief` / `--prior` / `--decision-log` 缺一个即 rc=2,
+    测试里因此**再没有"少写一个参数"的合法形态**。所有构造日报 CLI 的地方
+    都走这里:谁想再开一条"不带某个参数也能跑"的宽松路径,得先绕过这个
+    helper,而绕过会进 diff。
+
+    `prior_text` 默认是一份**内容不同的**合规日报 —— 与当期同句会撞
+    PRIOR_PERIOD_BOILERPLATE,那不是这些测试想测的东西。
+    """
+    paths = {}
+    for name, text in (
+            ("r.md", make_report() if report_text is None else report_text),
+            ("s.json", snapshot_text),
+            ("b.md", brief_text),
+            ("prior.md", make_report(prior_line=PRIOR_LINE_PREV)
+             if prior_text is None else prior_text),
+            # DECISION_LOG 定义在本文件靠后(挨着它自己那个测试类),
+            # 这里用哨兵取值而不是把常量搬上来 —— 搬动会让 diff 里出现
+            # 一大块与本轮无关的位移
+            ("log.jsonl", DECISION_LOG if log_text is None else log_text)):
+        paths[name] = os.path.join(tmp, name)
+        with open(paths[name], "w", encoding="utf-8") as f:
+            f.write(text)
+    argv = [paths["r.md"], paths["s.json"], "--brief", paths["b.md"],
+            "--prior", paths["prior.md"],
+            "--decision-log", paths["log.jsonl"]] + list(extra)
+    return argv, paths
 
 
 class CheckDailyTest(unittest.TestCase):
@@ -130,22 +179,12 @@ class CorruptSnapshotLibraryTest(unittest.TestCase):
 
 class MainExitCodeTest(unittest.TestCase):
     def test_exit_codes(self):
-        import os
-        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            bp = os.path.join(tmp, "b.md")
-            with open(sp, "w", encoding="utf-8") as f:
-                f.write(SNAP_TEXT)
-            with open(bp, "w", encoding="utf-8") as f:
-                f.write(BRIEF)
-            with open(rp, "w", encoding="utf-8") as f:
-                f.write(make_report())
-            self.assertEqual(check_report.main([rp, sp, "--brief", bp, "--mode", "daily"]), 0)
-            with open(rp, "w", encoding="utf-8") as f:
+            argv, paths = daily_files(tmp, extra=("--mode", "daily"))
+            self.assertEqual(check_report.main(argv), 0)
+            with open(paths["r.md"], "w", encoding="utf-8") as f:
                 f.write(make_report(missing="THB"))
-            self.assertEqual(check_report.main([rp, sp, "--brief", bp, "--mode", "daily"]), 1)
+            self.assertEqual(check_report.main(argv), 1)
 
 
 class MainLoudFailureTest(unittest.TestCase):
@@ -400,10 +439,27 @@ class StrictBriefTest(unittest.TestCase):
         v = check_report.check_daily("# r\n", self.SNAP, brief, strict_brief=True)
         self.assertFalse([x for x in v if "BRIEF_NUMBER_UNTRACEABLE" in x], v)
 
-    def test_without_flag_behaviour_unchanged(self):
+    def test_explicitly_disabling_it_skips_the_layer_and_declares(self):
+        """**弱化必须是显式动作**。2026-08-14 起 `strict_brief` 的默认值由
+        False 翻成 True(CLI 侧唯一弱化入口是 `--no-strict-brief`),所以这
+        一条测的不再是"不传这个参数",而是"显式传 False" —— 且它必须往
+        notes 里放一条**带计数**的声明,否则"没查"与"查过且全过"不可分辨。
+        """
+        brief = "要点表\n- 自己编的 99.123"
+        notes = []
+        v = check_report.check_daily("# r\n", self.SNAP, brief,
+                                     strict_brief=False, notes=notes)
+        self.assertFalse([x for x in v if "BRIEF_NUMBER_UNTRACEABLE" in x], v)
+        line = "\n".join(n for n in notes if n.startswith("STRICT_BRIEF_DISABLED"))
+        self.assertIn("要点表 1 个数字", line, notes)
+
+    def test_the_layer_is_on_without_passing_any_flag(self):
+        """默认值本身是不变量:默认 False 时,"忘了传"与"决定不查"在调用点
+        上不可分辨 —— 与 CLI 侧那三条 fail-open 是同一个病、只低一层。"""
         brief = "要点表\n- 自己编的 99.123"
         v = check_report.check_daily("# r\n", self.SNAP, brief)
-        self.assertFalse([x for x in v if "BRIEF_NUMBER_UNTRACEABLE" in x], v)
+        self.assertTrue(any("BRIEF_NUMBER_UNTRACEABLE" in x and "99.123" in x
+                            for x in v), v)
 
 
 class BriefReviewBlockExemptionTest(unittest.TestCase):
@@ -511,13 +567,18 @@ class BriefReviewBlockExemptionTest(unittest.TestCase):
         self.assertIn("99.123", self._untraceable(v), v)
         self.assertEqual([n for n in notes if "BRIEF_REVIEW_BLOCK" in n], [], notes)
 
-    def test_without_strict_brief_nothing_changes(self):
+    def test_explicitly_disabled_means_no_brief_codes_but_one_declaration(self):
+        """显式关闭时这一层整块不跑(零 `BRIEF_*` 违规、零豁免声明),但
+        **必须留下一条带计数的降级声明** —— 显式不等于可以静默。"""
         notes = []
         v = check_report.check_daily("# r\n", self.SNAP,
                                      self._brief(head_extra="- 自己编的 99.123"),
-                                     notes=notes)
+                                     strict_brief=False, notes=notes)
         self.assertEqual([x for x in v if x.startswith("BRIEF_")], [], v)
-        self.assertEqual([n for n in notes if "BRIEF_" in n], [], notes)
+        self.assertEqual([n for n in notes if "BRIEF_REVIEW_BLOCK" in n], [],
+                         notes)
+        self.assertTrue([n for n in notes
+                         if n.startswith("STRICT_BRIEF_DISABLED")], notes)
 
     def test_declaration_reaches_stdout_with_rc_zero(self):
         """声明必须真的印出去 —— 只放进 notes 而 main 不打印等于没有。
@@ -527,17 +588,11 @@ class BriefReviewBlockExemptionTest(unittest.TestCase):
         豁免一旦失效,rc 立刻由 0 变 1,这条断言不是走过场。"""
         head = "# 要点表 2026-08-10\n- 当日定盘 60.843\n"
         with tempfile.TemporaryDirectory() as tmp:
-            paths = {}
-            for name, text in (("r.md", make_report()), ("s.json", SNAP_TEXT),
-                               ("b.md", self._brief(head=head))):
-                paths[name] = os.path.join(tmp, name)
-                with open(paths[name], "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(tmp, brief_text=self._brief(head=head),
+                                  extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([paths["r.md"], paths["s.json"],
-                                        "--brief", paths["b.md"],
-                                        "--mode", "daily", "--strict-brief"])
+                rc = check_report.main(argv)
             out = buf.getvalue()
         self.assertEqual(rc, 0, out)
         self.assertIn("BRIEF_REVIEW_BLOCK_SKIPPED", out)
@@ -716,17 +771,12 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
                         self.assertNotIn("CHECK FAILED", out)
 
     def test_daily_mode_still_takes_its_positional_snapshot(self):
-        """daily 模式**一个字不改**:它的位置参数是必需的,且真的被读。"""
+        """daily 模式的位置参数仍是必需的,且真的被读 —— 拒收位置参数是
+        **weekly 一侧**的事,不许顺手把 daily 的也拒了。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            bp = os.path.join(tmp, "b.md")
-            for path, text in ((rp, make_report()), (sp, SNAP_TEXT),
-                               (bp, BRIEF)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
-            rc, out, _ = self._run([rp, sp, "--brief", bp, "--mode", "daily"])
-        self.assertEqual(rc, 0)
+            argv, _ = daily_files(tmp, extra=("--mode", "daily"))
+            rc, out, _ = self._run(argv)
+        self.assertEqual(rc, 0, out)
         self.assertIn("CHECK PASSED", out)
 
     def test_weekly_without_the_positional_is_unaffected(self):
@@ -812,13 +862,9 @@ class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
     def test_daily_mode_never_prints_it(self):
         """daily 模式**一个字不改**。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            for path, text in ((rp, make_report()), (sp, SNAP_TEXT)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
-            rc, out = self._run([rp, sp, "--mode", "daily"])
-        self.assertEqual(rc, 0)
+            argv, _ = daily_files(tmp, extra=("--mode", "daily"))
+            rc, out = self._run(argv)
+        self.assertEqual(rc, 0, out)
         self.assertNotIn("WEEKLY_DIGEST_ABSENT_SKIPPED", out)
 
 
@@ -1362,8 +1408,14 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         # `--decision-log`(决策日志 jsonl,DECISION_TRIGGER_NOT_SOURCED 那条
         # 不变量的入参)是 2026-08-14 **新注册**的选项 —— 与 `--prior` 同规矩,
         # 这里是**加一项**,不是放宽判据。
+        # **`--strict-brief` 已删除,换成 `--no-strict-brief`**(2026-08-14):
+        # 强判定成了默认,弱化改走一个必须显式写出、且会打印带计数声明的开关。
+        # 有意**不**把旧名留成 no-op 兼容开关 —— no-op 开关就是一个"注册了却
+        # 没人读"的选项,它会同时进两个 mode 的不读选项表(第六族的幂集翻倍),
+        # 而陈旧调用点会**静默地什么都不做**。删掉之后,陈旧调用点在 argparse
+        # 层就 rc=2 响亮死掉,这一条断言正是它进 diff 的地方。
         self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
-                                "--strict-brief", "--digest", "--daily",
+                                "--no-strict-brief", "--digest", "--daily",
                                 "--prior", "--decision-log"})
 
     # 「当前 mode 不读的既有选项」的**期望字面量**。它**不驱动任何变体** ——
@@ -1374,13 +1426,18 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     # `--prior` 只在 daily 分支被读,于是它是 **weekly** 侧新的"注册了却不读"
     # 的选项,必须进这张表 —— 不进就意味着 `if args.mode == "weekly" and
     # args.prior:` 这种零成本扳机从来没被第六族试过。daily 侧不变。
+    # `--strict-brief` → `--no-strict-brief`(2026-08-14,dest 仍是
+    # `strict_brief`)。weekly 分支照旧不读它,所以它换个名字继续待在这张表
+    # 里 —— 这一格**不是**新增,是改名;真要少一格才该警觉。
     UNREAD_OPTIONS_EXPECTED = {
         "daily": (("--digest", True), ("--daily", True)),
         # `--decision-log` 与 `--prior` 同形:只在 daily 分支被读,于是它是
         # weekly 侧新的"注册了却不读"的选项,必须进这张表 —— 不进就意味着
         # `if args.mode == "weekly" and args.decision_log:` 这种零成本扳机
-        # 从来没被第六族试过。
-        "weekly": (("--brief", True), ("--strict-brief", False),
+        # 从来没被第六族试过。日报模式把这两个收成"必给"之后,它们在
+        # **weekly 侧仍然不读**,所以这一格一个字不改:任务要求的"周报侧
+        # 不得静默忽略"走的就是这张表 + 第六族幂集,不是新加一条特例。
+        "weekly": (("--brief", True), ("--no-strict-brief", False),
                    ("--prior", True), ("--decision-log", True)),
     }
 
@@ -1661,6 +1718,10 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         wcont["events"] = 7
         files = {
             "d_report": make_report(),
+            # `--prior` 自 2026-08-14 起必给。它必须是**另一份**日报:拿
+            # `d_report` 当自己的上一份会撞 PRIOR_PERIOD_BOILERPLATE,那是
+            # 另一族码,会把本类"基线码集合逐字相等"的断言搅浑。
+            "d_prior": make_report(prior_line=PRIOR_LINE_PREV),
             "brief": BRIEF,
             "d_multi": json.dumps(snap, ensure_ascii=False),
             "d_container": json.dumps(container_bad, ensure_ascii=False),
@@ -1686,11 +1747,17 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
 
     def _production_daily(self):
         """SKILL 第 5 步那一行的**完整形状**,逐字同形(见
-        skills/fx-daily-report/SKILL.md 的 `check_report.py … --strict-brief`)。
-        `--strict-brief` 此前从不出现在任何 base argv 里 —— 那正是 V13。"""
+        skills/fx-daily-report/SKILL.md 的
+        `check_report.py … --brief … --prior … --decision-log …`)。
+
+        V13 的教训是"生产命令行上的开关组合必须进 base"。2026-08-14 之后
+        生产形状里**没有** `--strict-brief` 了 —— 强判定是默认,三个溯源入参
+        是必给项,唯一的开关是 `--no-strict-brief`,它在 `_bases()` 里按取反
+        逐条覆盖。
+        """
         p = self.paths
         return [p["d_report"], p["d_multi"], "--brief", p["brief"],
-                "--mode", "daily", "--strict-brief"]
+                "--prior", p["d_prior"], "--decision-log", p["d_log"]]
 
     def _production_weekly(self):
         """skills/fx-weekly-report/SKILL.md 第 3 步那一行的完整形状。"""
@@ -1724,9 +1791,17 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         """(标签, base argv, 可塞魔法值的位置参数下标, **期望码集合**,
         当前 mode 不读的既有选项)。
 
-        前两组是**生产命令行 × 每个既有开关的取反**:日报三个开关
-        (`--mode` 显式/缺省、`--brief` 有/无、`--strict-brief` 有/无)共 8 条;
-        周报是 `--daily` 出现 2/1/0 次 × 快照位有/无共 6 条。
+        前两组是**生产命令行 × 每个既有开关的取反**:日报两个开关
+        (`--mode` 显式/缺省、`--no-strict-brief` 有/无)共 4 条;
+        周报是 `--daily` 出现 2/1/0 次共 3 条。
+
+        **`--brief` 有/无那一维已随"三个溯源入参必给"一起消失**(2026-08-14):
+        不给 `--brief` 现在是 rc=2,base 自己就跑不出任何码 —— 与 weekly 那
+        一维(往不读的位置参数里塞快照)消失的理由逐字相同。这不是放宽断言,
+        是那条 argv 已经不再是合法输入;它守的东西(「少写一个参数 = 静默
+        弱化」)现在由 `DailyModeRequiresTheStrongFormTest` 承接,并且守得
+        更死:那里对**每一种漏法**都要求 rc=2,还要把校验器印出去的那条
+        命令行原样跑一遍。
         `--digest` 不参与取反:不给它就是"不做结论句校验",那是设计内的
         行为(由 test_without_digest_object_no_verdict_check 单独钉),
         不是豁免。后四条把上面两组触发不到的码补齐。
@@ -1744,18 +1819,14 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         w_unread = self._unread_specs("weekly")
         out = []
         for use_mode in (True, False):
-            for use_brief in (True, False):
-                for use_strict in (True, False):
-                    argv = [p["d_report"], p["d_multi"]]
-                    if use_brief:
-                        argv += ["--brief", p["brief"]]
-                    if use_mode:
-                        argv += ["--mode", "daily"]
-                    if use_strict:
-                        argv += ["--strict-brief"]
-                    out.append(("daily mode=%d brief=%d strict=%d"
-                                % (use_mode, use_brief, use_strict), argv, None,
-                                self.DAILY_BASE_CODES, d_unread))
+            for loose in (True, False):
+                argv = self._production_daily()
+                if use_mode:
+                    argv += ["--mode", "daily"]
+                if loose:
+                    argv += ["--no-strict-brief"]
+                out.append(("daily mode=%d loose=%d" % (use_mode, loose),
+                            argv, None, self.DAILY_BASE_CODES, d_unread))
         # weekly 侧此前还有一维 `snap_slot`(往不读的位置参数里塞一份快照),
         # 并把 `free_positional=1` 喂给「既有位置参数魔法值」那一族。
         # **那一维已随 weekly 拒收位置参数一起消失**:`--mode weekly` 且位置
@@ -1774,21 +1845,23 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
             argv += ["--daily", p["d_report"]] * n_daily
             out.append(("weekly daily=%d" % n_daily, argv, None,
                         self.WEEKLY_BASE_CODES, w_unread))
-        out.append(("daily 容器坏",
-                    [p["d_report"], p["d_container"], "--brief", p["brief"],
-                     "--mode", "daily", "--strict-brief"], None,
+        def daily_with(snapshot):
+            """生产形状,只换快照 —— 三个溯源入参一个都不许少(rc=2)。"""
+            argv = self._production_daily()
+            argv[1] = snapshot
+            return argv
+
+        out.append(("daily 容器坏", daily_with(p["d_container"]), None,
                     frozenset({"VERDICT_CONTAINER_MALFORMED"}), d_unread))
         out.append(("weekly 容器坏",
                     [p["w_report"], "--mode", "weekly", "--digest",
                      p["w_container"], "--daily", p["d_report"]], None,
                     frozenset({"VERDICT_CONTAINER_MALFORMED"}), w_unread))
         out.append(("daily 无 derived(只出降级声明)",
-                    [p["d_report"], p["d_noderived"], "--brief", p["brief"],
-                     "--mode", "daily", "--strict-brief"], None,
+                    daily_with(p["d_noderived"]), None,
                     frozenset({"VERDICT_SKIPPED_NO_DERIVED"}), d_unread))
         out.append(("daily schema 过旧(只出降级声明)",
-                    [p["d_report"], p["d_legacy"], "--brief", p["brief"],
-                     "--mode", "daily", "--strict-brief"], None,
+                    daily_with(p["d_legacy"]), None,
                     frozenset({"VERDICT_SKIPPED_LEGACY"}), d_unread))
         return out
 
@@ -2041,36 +2114,28 @@ class DailySkipNoticeIsPrintedTest(unittest.TestCase):
     """「跳过」与「通过」在输出上必须可区分 —— 这正是本 change 要解决的
     同型问题,所以跳过声明本身必须有测试。"""
 
-    def _write(self, tmp, report_text, snap_text):
-        rp = os.path.join(tmp, "r.md")
-        sp = os.path.join(tmp, "s.json")
-        for path, text in ((rp, report_text), (sp, snap_text)):
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
-        return rp, sp
+    def _run(self, tmp, report_text, snap_text):
+        argv, _ = daily_files(tmp, report_text=report_text,
+                              snapshot_text=snap_text)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = check_report.main(argv)
+        return rc, buf.getvalue()
 
     def test_legacy_notice_printed_alongside_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
-            rp, sp = self._write(tmp, make_report(),
-                                 snap_with_derived(schema_version=1,
-                                                   verdict=None))
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp])
-            out = buf.getvalue()
-        self.assertEqual(rc, 0)
+            rc, out = self._run(tmp, make_report(),
+                                snap_with_derived(schema_version=1,
+                                                  verdict=None))
+        self.assertEqual(rc, 0, out)
         self.assertIn("VERDICT_SKIPPED_LEGACY", out)
         self.assertIn("CHECK PASSED", out)
 
     def test_no_notice_when_schema_is_current(self):
         with tempfile.TemporaryDirectory() as tmp:
-            rp, sp = self._write(tmp, report_quoting(DAILY_VERDICT),
-                                 snap_with_derived())
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp])
-            out = buf.getvalue()
-        self.assertEqual(rc, 0)
+            rc, out = self._run(tmp, report_quoting(DAILY_VERDICT),
+                                snap_with_derived())
+        self.assertEqual(rc, 0, out)
         self.assertNotIn("VERDICT_SKIPPED_LEGACY", out)
 
 
@@ -2233,16 +2298,12 @@ class DailyNoDerivedNoticeTest(unittest.TestCase):
 
     def test_notice_is_printed_by_main(self):
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            for path, text in ((rp, make_report()), (sp, SNAP_TEXT)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(tmp)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp])
+                rc = check_report.main(argv)
             out = buf.getvalue()
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 0, out)
         self.assertIn("VERDICT_SKIPPED_NO_DERIVED", out)
         self.assertIn("CHECK PASSED", out)
 
@@ -2390,16 +2451,12 @@ class CheckerPrintsItsOwnDispositionTest(unittest.TestCase):
         每次都带 `--strict-brief`。
         """
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            bp = os.path.join(tmp, "b.md")
-            for path, text in ((rp, report), (sp, snap_text), (bp, BRIEF)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(tmp, report_text=report,
+                                  snapshot_text=snap_text,
+                                  extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp, "--brief", bp,
-                                        "--mode", "daily", "--strict-brief"])
+                rc = check_report.main(argv)
             return rc, buf.getvalue()
 
     def _weekly_stdout(self, report, digest_text):
@@ -2604,13 +2661,24 @@ class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
         cls.brief = os.path.join(cls.t, "brief.md")
         with open(cls.brief, "w", encoding="utf-8") as f:
             f.write(BRIEF)
+        # `--prior` / `--decision-log` 自 2026-08-14 起必给,daily 那一支的
+        # argv 拼法因此多两对。它们与本类要测的三种扰动正交 —— 上一份日报
+        # 用**另一句**的合规日报(同句会撞 PRIOR_PERIOD_BOILERPLATE)。
+        cls.prior = os.path.join(cls.t, "prior.md")
+        with open(cls.prior, "w", encoding="utf-8") as f:
+            f.write(make_report(prior_line=PRIOR_LINE_PREV))
+        cls.log = os.path.join(cls.t, "log.jsonl")
+        with open(cls.log, "w", encoding="utf-8") as f:
+            f.write(DECISION_LOG)
         # (标签, 报告正文, 附件正文, 附件扩展名, argv 拼法, **期望码集合**)
         # 最后一位是 T8d 补的:基线码集合不许由被测校验器自己算出来,
         # 否则整族少一个码时 `missing = base_codes - codes(out)` 恒空。
         cls.MODES = (
             ("daily", make_report(), json.dumps(snap, ensure_ascii=False),
              ".json", lambda rp, ap, bp: [rp, ap, "--brief", bp,
-                                          "--mode", "daily", "--strict-brief"],
+                                          "--prior", cls.prior,
+                                          "--decision-log", cls.log,
+                                          "--mode", "daily"],
              NoLegacyExemptionSwitchTest.DAILY_BASE_CODES),
             ("weekly", WEEKLY_OK, json.dumps(wobj, ensure_ascii=False),
              ".json", lambda rp, ap, bp: [rp, "--mode", "weekly",
@@ -2828,15 +2896,19 @@ class PriorPeriodBoilerplateTest(unittest.TestCase):
     S_THB_ALT = "- THB:关键假设不变,翻转指标维持原样。"
 
     def _report(self, sentences):
-        """一份**结构合规**的日报,尾部带上「本期相对上期的变化」节。"""
-        return (make_report() + "\n\n" + self.HEADING + "\n"
+        """一份**结构合规**的日报,尾部带上「本期相对上期的变化」节。
+
+        `prior_line=None` 关掉 `make_report()` 自带的那一节 —— 本类要自己
+        控制节内的句子,两节并存会撞 SECTION_AMBIGUOUS(那是另一族码)。
+        """
+        return (make_report(prior_line=None) + "\n\n" + self.HEADING + "\n"
                 + "\n".join(sentences) + "\n")
 
     def _prior_period_codes(self, v):
         return [x for x in v if x.startswith("PRIOR_PERIOD")]
 
     def _check(self, cur_sentences, prior_sentences, notes=None):
-        prior = (make_report() if prior_sentences is None
+        prior = (make_report(prior_line=None) if prior_sentences is None
                  else self._report(prior_sentences))
         return check_report.check_daily(
             self._report(cur_sentences), SNAP_TEXT, BRIEF,
@@ -2845,39 +2917,44 @@ class PriorPeriodBoilerplateTest(unittest.TestCase):
     # ---- 三态之一:上一份日报没给 ----
 
     def _cli(self, cur_text, prior_text=None):
-        """真 CLI(进程内 main),返回 (rc, stdout)。"""
+        """真 CLI(进程内 main),返回 (rc, stdout)。
+
+        `prior_text=None` 在这里的含义是「上一份是改造前的**旧格式**」
+        (没有该节),不是「没给上一份」—— 后者自 2026-08-14 起是 rc=2 的
+        用法错误,由本类下面第一条与 DailyModeRequiresTheStrongFormTest 守。
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            argv = [rp, sp, "--brief"]
-            bp = os.path.join(tmp, "b.md")
-            argv.append(bp)
-            files = [(rp, cur_text), (sp, SNAP_TEXT), (bp, BRIEF)]
-            if prior_text is not None:
-                pp = os.path.join(tmp, "prior.md")
-                files.append((pp, prior_text))
-                argv += ["--prior", pp]
-            for path, text in files:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(
+                tmp, report_text=cur_text,
+                prior_text=(make_report(prior_line=None)
+                            if prior_text is None else prior_text))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = check_report.main(argv)
             return rc, buf.getvalue()
 
-    def test_absent_prior_prints_a_skip_declaration_alongside_pass(self):
+    def test_absent_prior_is_a_usage_error_not_a_skip(self):
         """**变异靶点①:未提供上一份时静默通过。**
 
-        不检查是设计内的合法形态(第一份日报、或手动重跑),但它跑出的若是
-        **裸 CHECK PASSED**,就与"比对过且没有套话"逐字不可分辨 —— 与
-        VERDICT_SKIPPED_NO_DERIVED / WEEKLY_DIGEST_ABSENT_SKIPPED 同一原则。
+        修前这一条测的是"缺席 → 打一条降级声明 + rc=0"。那一形态本身就是
+        fail-open:**忘带参数与「这份确实没有上一期」在命令行上不可分辨**,
+        而 rc=0 让 CI 与运维都看不见区别。2026-08-14 起 `--prior` 必给,
+        缺席即 rc=2 —— 这条测试跟着改判据,**不保留那条无参数的宽松路径**。
         """
-        rc, out = self._cli(self._report([self.S_USD, self.S_EUR]))
-        self.assertEqual(rc, 0, out)
-        self.assertIn("PRIOR_PERIOD_ABSENT_SKIPPED", out)
-        self.assertIn("CHECK PASSED", out)
+        with tempfile.TemporaryDirectory() as tmp:
+            argv, _ = daily_files(
+                tmp, report_text=self._report([self.S_USD, self.S_EUR]))
+            i = argv.index("--prior")
+            del argv[i:i + 2]
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(err):
+                rc = check_report.main(argv)
+        self.assertEqual(rc, 2, out.getvalue() + err.getvalue())
+        self.assertNotIn("CHECK PASSED", out.getvalue())
+        self.assertIn("DAILY_REQUIRED_OPTION_MISSING", err.getvalue())
 
-    def test_giving_prior_removes_the_absent_declaration(self):
+    def test_giving_prior_does_not_print_the_absent_declaration(self):
         """跳过声明不许在**真比对过**的那一次也照打 —— 否则它退化成噪声,
         读者读到它也不知道到底比没比。"""
         cur = self._report([self.S_USD, self.S_PHP])
@@ -2905,7 +2982,7 @@ class PriorPeriodBoilerplateTest(unittest.TestCase):
     def test_prior_without_the_section_still_prints_a_declaration_in_cli(self):
         """声明必须真的打到 stdout —— 只进 notes 而 main 不打印,与静默同效。"""
         rc, out = self._cli(self._report([self.S_USD]),
-                            prior_text=make_report())
+                            prior_text=make_report(prior_line=None))
         self.assertEqual(rc, 0, out)
         self.assertIn("PRIOR_PERIOD_SKIPPED_NO_SECTION", out)
         self.assertIn("CHECK PASSED", out)
@@ -2919,7 +2996,7 @@ class PriorPeriodBoilerplateTest(unittest.TestCase):
         逐句比对天然零重复。所以它必须是违规,而不是第二种跳过。
         """
         v = check_report.check_daily(
-            make_report(), SNAP_TEXT, BRIEF,
+            make_report(prior_line=None), SNAP_TEXT, BRIEF,
             prior_text=self._report([self.S_USD, self.S_EUR]))
         codes = self._prior_period_codes(v)
         self.assertEqual(len(codes), 1, codes)
@@ -3350,15 +3427,11 @@ class JudgementRingSkipDeclarationTest(unittest.TestCase):
 
     def test_cli_prints_the_skip_note_alongside_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            for path, text in ((rp, make_report(php_body=self.RING_LESS)),
-                               (sp, SNAP_TEXT)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(tmp,
+                                  report_text=make_report(php_body=self.RING_LESS))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp])
+                rc = check_report.main(argv)
             out = buf.getvalue()
         self.assertEqual(rc, 0, out)
         self.assertIn("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN", out)
@@ -3367,15 +3440,12 @@ class JudgementRingSkipDeclarationTest(unittest.TestCase):
     def test_cli_turns_an_incomplete_ring_red(self):
         """端到端:进程内全绿而真 CLI 放行,是本仓库栽过的形态。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            for path, text in ((rp, make_report(php_body=self.RING_LESS)),
-                               (sp, ring_snap())):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(
+                tmp, report_text=make_report(php_body=self.RING_LESS),
+                snapshot_text=ring_snap())
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp])
+                rc = check_report.main(argv)
             out = buf.getvalue()
         self.assertEqual(rc, 1, out)
         self.assertIn("JUDGEMENT_RING_INCOMPLETE", out)
@@ -3545,7 +3615,8 @@ MAP_HEADINGS = (("USD", "美元(USD)"), ("EUR", "欧元(EUR)"),
 
 
 def map_report(bodies=None, summary=None, quick="| 币种 | 方向 |\n| --- | --- |",
-               review="- 首次运行,无历史观点可复盘", gaps="无", extra=None):
+               review="- 首次运行,无历史观点可复盘", gaps="无", extra=None,
+               prior_line=PRIOR_LINE_CUR):
     b = dict(MAP_BODIES)
     b.update(bodies or {})
     lines = ["# 外汇日报 2026-08-10", "", "## 执行摘要"]
@@ -3555,6 +3626,10 @@ def map_report(bodies=None, summary=None, quick="| 币种 | 方向 |\n| --- | --
     lines += ["", "## 速览", quick]
     lines += ["", "## 昨日观点复盘", review]
     lines += ["", "## 数据缺漏", gaps]
+    if prior_line:
+        # 与 make_report() 同规矩:`--prior` 必给之后,「本期相对上期的变化」
+        # 是每份合规日报的必备节,少了它走 CLI 的断言测的就是一份不合规报告
+        lines += ["", "## 本期相对上期的变化", prior_line]
     if extra:
         lines += ["", "## 附录 B:出处", extra]
     return "\n".join(lines)
@@ -3728,18 +3803,15 @@ class NumberSectionMappingTest(unittest.TestCase):
     def test_cli_turns_a_wrong_section_number_red(self):
         """端到端:进程内全绿而真 CLI 放行,是本仓库栽过的形态。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            bp = os.path.join(tmp, "b.md")
-            for path, text in (
-                    (rp, map_report({"BRL": MAP_BODIES["BRL"] + "另有 4.25。"})),
-                    (sp, MAP_SNAP_TEXT), (bp, MAP_BRIEF)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(
+                tmp, report_text=map_report({"BRL": MAP_BODIES["BRL"]
+                                             + "另有 4.25。"}),
+                snapshot_text=MAP_SNAP_TEXT, brief_text=MAP_BRIEF,
+                prior_text=map_report(prior_line=PRIOR_LINE_PREV),
+                extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp, "--brief", bp,
-                                        "--mode", "daily", "--strict-brief"])
+                rc = check_report.main(argv)
             out = buf.getvalue()
         self.assertEqual(rc, 1, out)
         self.assertIn("NUMBER_WRONG_SECTION", out)
@@ -3847,18 +3919,14 @@ class SummaryNumbersAreInTheBodyTest(unittest.TestCase):
 
     def test_cli_turns_a_summary_only_number_red(self):
         with tempfile.TemporaryDirectory() as tmp:
-            rp = os.path.join(tmp, "r.md")
-            sp = os.path.join(tmp, "s.json")
-            bp = os.path.join(tmp, "b.md")
-            for path, text in (
-                    (rp, map_report(summary=["- 统一推力候选值 0.4321。"])),
-                    (sp, MAP_SNAP_TEXT), (bp, MAP_BRIEF)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(
+                tmp, report_text=map_report(summary=["- 统一推力候选值 0.4321。"]),
+                snapshot_text=MAP_SNAP_TEXT, brief_text=MAP_BRIEF,
+                prior_text=map_report(prior_line=PRIOR_LINE_PREV),
+                extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp, "--brief", bp,
-                                        "--mode", "daily", "--strict-brief"])
+                rc = check_report.main(argv)
             out = buf.getvalue()
         self.assertEqual(rc, 1, out)
         self.assertIn("SUMMARY_NUMBER_NOT_IN_BODY", out)
@@ -3968,10 +4036,11 @@ AMB_CLEAN_BODIES = {
 }
 
 
-def amb_report(decoy=False):
+def amb_report(decoy=False, prior_line=PRIOR_LINE_CUR):
     bodies = dict(AMB_CLEAN_BODIES)
     bodies["PHP"] = AMB_PHP_BODY
-    rep = map_report(bodies=bodies, summary=list(AMB_SUMMARY))
+    rep = map_report(bodies=bodies, summary=list(AMB_SUMMARY),
+                     prior_line=prior_line)
     if not decoy:
         return rep
     rep = rep.replace("## 执行摘要\n",
@@ -4065,9 +4134,12 @@ class SectionKeyMustResolveUniquelyTest(unittest.TestCase):
 
     def test_an_ambiguous_prior_report_section_is_a_violation_too(self):
         """上一份日报里塞两个同名节 = 关掉今天的跨期重复检查。同样失败关闭。"""
-        prior = amb_report() + "\n\n## 本期相对上期的变化\n- A。\n\n" \
-                               "## 本期相对上期的变化(旧)\n- B。\n"
-        cur = amb_report() + "\n\n## 本期相对上期的变化\n- A。\n"
+        # `prior_line=None` 关掉 map_report 自带的那一节 —— 本条要自己造
+        # "上一份里有两个同名节"的形态,自带的那一节会变成第三个
+        prior = amb_report(prior_line=None) \
+            + "\n\n## 本期相对上期的变化\n- A。\n\n" \
+              "## 本期相对上期的变化(旧)\n- B。\n"
+        cur = amb_report(prior_line=None) + "\n\n## 本期相对上期的变化\n- A。\n"
         v = check_report.check_daily(cur, amb_snap(), MAP_BRIEF,
                                      prior_text=prior)
         line = [x for x in v if x.startswith("SECTION_AMBIGUOUS:")]
@@ -4120,16 +4192,14 @@ class SectionKeyMustResolveUniquelyTest(unittest.TestCase):
     def test_cli_turns_an_ambiguous_report_red(self):
         """端到端:进程内断言全绿而真 CLI 放行,是本仓库栽过的形态。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rp, sp, bp = (os.path.join(tmp, n)
-                          for n in ("r.md", "s.json", "b.md"))
-            for path, text in ((rp, amb_report(decoy=True)),
-                               (sp, amb_snap()), (bp, MAP_BRIEF)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(
+                tmp, report_text=amb_report(decoy=True),
+                snapshot_text=amb_snap(), brief_text=MAP_BRIEF,
+                prior_text=map_report(prior_line=PRIOR_LINE_PREV),
+                extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp, "--brief", bp,
-                                        "--mode", "daily", "--strict-brief"])
+                rc = check_report.main(argv)
             out = buf.getvalue()
         self.assertEqual(rc, 1, out)
         self.assertIn("SECTION_AMBIGUOUS", out)
@@ -4258,17 +4328,16 @@ class NamedPassThroughIsDeclaredTest(unittest.TestCase):
     def test_declaration_is_printed_by_the_cli(self):
         """进程内出声、真 CLI 不出声,是本仓库栽过的形态。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rp, sp, bp = (os.path.join(tmp, n)
-                          for n in ("r.md", "s.json", "b.md"))
             report = map_report(
                 bodies={"BRL": "**驱动**:参考价 5.43;美元一端政策利率 4.25 未变。"})
-            for path, text in ((rp, report), (sp, MAP_SNAP_TEXT),
-                               (bp, MAP_BRIEF)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(
+                tmp, report_text=report, snapshot_text=MAP_SNAP_TEXT,
+                brief_text=MAP_BRIEF,
+                prior_text=map_report(prior_line=PRIOR_LINE_PREV),
+                extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                check_report.main([rp, sp, "--brief", bp, "--mode", "daily"])
+                check_report.main(argv)
             out = buf.getvalue()
         self.assertIn("NUMBER_WRONG_SECTION_NAMED_PASS:", out)
 
@@ -4537,8 +4606,21 @@ NEW_LAYER_NOTE_CODES = frozenset({
     "WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE",
     "WEEKLY_ASSUMPTION_ANCHOR_SKIPPED_NO_DIGEST",
     # 决策日志:未提供路径 / 日志里没有该日期该币种的条目。
+    # `DECISION_LOG_ABSENT_SKIPPED` 与 `PRIOR_PERIOD_ABSENT_SKIPPED`
+    # (在 LEGACY_CODES 里)**都没有被删**,2026-08-14 只是从 CLI 层挪进了
+    # `check_daily` 本体:CLI 侧那两条 fail-open 收成了 rc=2,而"库调用方传
+    # None"仍是可达的合法形态,由谁跳过谁出声。删掉它们才是错的 —— 那等于
+    # 让别的调用方静默跳过。
     "DECISION_LOG_ABSENT_SKIPPED", "DECISION_LOG_NO_ENTRY",
+    # 2026-08-14:「要点表 ⊆ 快照」被显式关掉时的带计数声明。它是
+    # `--no-strict-brief` 存在的全部理由 —— 弱化可以,静默不行。
+    "STRICT_BRIEF_DISABLED",
 })
+# ---- CLI 用法错误码(rc=2,走 stderr,不带处置)----
+# 与违规码/声明码都不同:它在**跑校验之前**就把命令拦下来了,没有"被查对象"
+# 可言,也就没有"改报告还是改脚本"的处置可选 —— 消息本身就是处置(一整行
+# 可复制粘贴的正确命令行),由 DailyModeRequiresTheStrongFormTest 逐条守。
+CLI_USAGE_CODES = frozenset({"DAILY_REQUIRED_OPTION_MISSING"})
 # 这一层**之外**的既有码,写死在这里只为让上面两张表闭合:
 # 「全部码 = 既有 ∪ VERDICT ∪ 本层」,新增任何码都必须显式入某一张表。
 LEGACY_CODES = frozenset({
@@ -4567,10 +4649,12 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         found = _emitted_codes(check_report.__file__)
         want = (set(NEW_LAYER_VIOLATION_DISPOSITION) | set(NEW_LAYER_NOTE_CODES)
                 | set(LEGACY_CODES) | set(VERDICT_VIOLATION_DISPOSITION)
-                | set(VERDICT_NOTE_CODES))
+                | set(VERDICT_NOTE_CODES) | set(CLI_USAGE_CODES))
         self.assertEqual(found, want,
                          "校验器的码清单与冻结表对不上;新增码必须同时入表")
-        self.assertEqual(len(want), 58, len(want))
+        # 58 → 60(2026-08-14):STRICT_BRIEF_DISABLED(声明)与
+        # DAILY_REQUIRED_OPTION_MISSING(CLI 用法错误)。一个码都没删。
+        self.assertEqual(len(want), 60, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4617,36 +4701,56 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
             report = report.replace("- 摘要写了 0.4321 这个数。",
                                     "\n".join(summary))
             with tempfile.TemporaryDirectory() as tmp:
-                rp, sp, bp = (os.path.join(tmp, n)
-                              for n in ("r.md", "s.json", "b.md"))
-                for path, text in ((rp, report), (sp, amb_snap()),
-                                   (bp, MAP_BRIEF)):
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(text)
+                argv, _ = daily_files(
+                    tmp, report_text=report, snapshot_text=amb_snap(),
+                    brief_text=MAP_BRIEF,
+                    prior_text=map_report(prior_line=PRIOR_LINE_PREV),
+                    extra=("--mode", "daily"))
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf):
-                    check_report.main([rp, sp, "--brief", bp,
-                                       "--mode", "daily", "--strict-brief"])
+                    check_report.main(argv)
                 out.append((label, buf.getvalue()))
         # 第三次:决策日志那一条。它的宿主是**速览表**,而上面两份 fixture
         # 的速览表是 `| 币种 | 方向 |` 两列(走 OVERVIEW_TABLE_COLUMN_MISMATCH),
         # 取不到「条件方向」格,所以必须单独喂一份带完整表头的报告 ——
         # 否则 DECISION_TRIGGER_NOT_SOURCED 只有映射、没有任何用例触发。
         with tempfile.TemporaryDirectory() as tmp:
-            rp, sp, bp, lp = (os.path.join(tmp, n)
-                              for n in ("r.md", "s.json", "b.md", "log.jsonl"))
             drifted = DECISION_LOG.replace("若 C 升破 60.9 → 关注丙(T+2)",
                                            "日志里另写了一版触发条件")
-            for path, text in ((rp, OVERVIEW_REPORT), (sp, SNAP_TEXT),
-                               (bp, BRIEF), (lp, drifted)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+            argv, _ = daily_files(tmp, report_text=OVERVIEW_REPORT,
+                                  log_text=drifted, extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                check_report.main([rp, sp, "--brief", bp, "--mode", "daily",
-                                   "--decision-log", lp])
+                check_report.main(argv)
             out.append(("decision-log", buf.getvalue()))
         return out
+
+    def test_every_cli_usage_code_is_reachable_and_carries_no_disposition(self):
+        """CLI 用法错误码也要闭合,并且**与违规码分家**。
+
+        ① 表里列了却打不出来的码 = 死码,与"打印通过但没查"同族;
+        ② 它**不带「处置:」** —— 消息本身就是处置(一整行可执行的命令行)。
+           混进 `NEW_LAYER_VIOLATION_DISPOSITION` 会让"逐码处置对应"那条
+           断言对着一个根本没有处置常量的码空转,而那条断言是本仓最贵的
+           几条之一。
+        """
+        with open(check_report.__file__, encoding="utf-8") as f:
+            src = f.read()
+        for code in CLI_USAGE_CODES:
+            self.assertIn('"%s: ' % code, src, "%s 是死码,没有任何地方打出它"
+                          % code)
+        msg = check_report.daily_required_options_error(
+            "reports/daily/2026-08-14.md", "data/2026-08-14.json",
+            None, None, None, ["--brief", "--prior", "--decision-log"])
+        self.assertNotIn("处置:", msg)
+        # 消息里必须**恰好一行**是可复制的命令行(多一行读者就得猜跑哪条)
+        runnable = [x for x in msg.splitlines()
+                    if x.startswith("python3 scripts/check_report.py")]
+        self.assertEqual(len(runnable), 1, msg)
+        # 三个必给项的值都补齐了,一个尖括号占位符都不许剩(日期认得出时)
+        self.assertNotIn("<", runnable[0], runnable[0])
+        for opt, _ in check_report.DAILY_REQUIRED_OPTIONS:
+            self.assertIn(opt + " ", runnable[0], opt)
 
     def test_every_new_layer_note_code_is_reachable(self):
         """声明码也要闭合:表里列了却没有任何路径打得出来的码 = 死码,
@@ -5036,24 +5140,40 @@ class DecisionTriggerSourcedTest(unittest.TestCase):
         entries, problems = check_report.parse_decision_log("{ 这不是 JSON\n")
         self.assertTrue(problems)
 
-    def test_cli_without_the_flag_declares_with_a_count(self):
-        """`--decision-log` 缺席是合法形态(与 `--prior` 同规矩),但必须
-        出带计数的声明 —— 否则"没查"与"查过且全过"在 stdout 上同形。"""
+    def test_cli_without_the_flag_is_a_usage_error(self):
+        """修前这一条测的是"缺席 → 带计数的声明 + rc=0"。那一形态本身就是
+        fail-open:实测在 2026-08-10 与 2026-08-11 两份日报上,不带这个参数
+        时 10 条违约全部静默通过,而 SKILL 对此的处置只是一句「必须带上」的
+        散文。2026-08-14 起 `--decision-log` 必给,缺席即 rc=2。
+        **不保留那条无参数的宽松路径** —— 判据跟着改,不是给旧路径开后门。
+        """
         with tempfile.TemporaryDirectory() as t:
-            rp, sp, bp = (os.path.join(t, n)
-                          for n in ("r.md", "s.json", "b.md"))
-            for path, text in ((rp, make_report()), (sp, SNAP_TEXT),
-                               (bp, BRIEF)):
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, sp, "--brief", bp,
-                                        "--mode", "daily"])
-            self.assertEqual(rc, 0)
-            out = buf.getvalue()
-            self.assertIn("DECISION_LOG_ABSENT_SKIPPED", out)
-            self.assertRegex(out, r"DECISION_LOG_ABSENT_SKIPPED[^\n]*\d+")
+            argv, _ = daily_files(t, extra=("--mode", "daily"))
+            i = argv.index("--decision-log")
+            del argv[i:i + 2]
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(err):
+                rc = check_report.main(argv)
+        self.assertEqual(rc, 2, out.getvalue() + err.getvalue())
+        self.assertNotIn("CHECK PASSED", out.getvalue())
+        self.assertIn("DAILY_REQUIRED_OPTION_MISSING", err.getvalue())
+        # 消息必须说清它守的是哪一道闸门,以及默认路径在哪
+        self.assertIn("DECISION_TRIGGER_NOT_SOURCED", err.getvalue())
+        self.assertIn("state/decision-log.jsonl", err.getvalue())
+
+    def test_the_library_layer_still_declares_the_skip_with_a_count(self):
+        """CLI 收成 rc=2 之后,`DECISION_LOG_ABSENT_SKIPPED` **没有被删** ——
+        它挪进了 `check_daily` 本体:库调用方传 `decision_entries=None` 仍是
+        可达的合法形态,而"谁跳过谁出声"。删掉它等于让别的调用方静默跳过。
+        """
+        notes = []
+        check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes,
+                                 decision_entries=None)
+        line = "\n".join(n for n in notes
+                         if n.startswith("DECISION_LOG_ABSENT_SKIPPED"))
+        self.assertTrue(line, notes)
+        self.assertRegex(line, r"\d+")
 
     def test_cli_with_a_corrupt_log_exits_2(self):
         """给了却读不成 = 响亮失败,与 `--digest` 同规格 rc=2。
@@ -5105,3 +5225,256 @@ class NumberWrongSectionSentenceDeltaTest(unittest.TestCase):
         line = "\n".join(notes)
         self.assertIn("NUMBER_WRONG_SECTION_NAMED_PASS", line)
         self.assertRegex(line, r"收到句会多炸 1 条")
+
+
+# ============ 日报模式:强判定是默认,弱化必须显式且响亮(2026-08-14)========
+#
+# 本仓第 15 次同型缺陷(「打印通过,但守的不是它声称的东西」)的修法。
+# 上一轮给 `--decision-log` 配的强制力是 skills/fx-daily-report/SKILL.md 里的
+# 一句散文(「这一条**必须带上**」),而实测忘带时 stdout 只多一行
+# `DECISION_LOG_ABSENT_SKIPPED`、**rc 仍是 0**;`--prior` 同形;`--brief` 更糟
+# —— 连声明都没有,`BRIEF_NUMBER_UNTRACEABLE` 整层静默蒸发。
+# 用散文守 fail-open,正是这个仓库反复栽的那件事:忘了带参数 = 闸门消失。
+#
+# 修法与 weekly 拒收位置参数那一轮同规格:**缺席即 rc=2**,并把能直接复制
+# 粘贴的那条命令行印出去。判据不是"消息里提到了缺什么",而是**把它印的那
+# 一行原样跑一遍,必须 rc=0** —— 只断言"提到了"时,印一条跑不通的命令行
+# 照样全绿,而运维拿到的仍是一句空话。
+
+WANT_DAILY_PROGRAM = "python3 scripts/check_report.py"
+# 三个必给选项各自守的那条规则的**码名**:消息里必须逐字出现,否则运维只
+# 知道"少了个参数",不知道少的是哪一道闸门(rc=2 的消息必须可执行)。
+WANT_REQUIRED_OPTION_CODES = {
+    "--brief": "BRIEF_NUMBER_UNTRACEABLE",
+    "--prior": "PRIOR_PERIOD_BOILERPLATE",
+    "--decision-log": "DECISION_TRIGGER_NOT_SOURCED",
+}
+WANT_DECISION_LOG_DEFAULT = "state/decision-log.jsonl"
+
+
+class DailyModeRequiresTheStrongFormTest(unittest.TestCase):
+    """日报模式下三个溯源入参**必须显式给**,缺一个即 rc=2。
+
+    这一类**全部走真子进程 + 真目录布局**(仓库标准布局的最小复刻:
+    `reports/daily/` `data/` `briefs/` `state/`,外加一个指向真 `scripts/`
+    的符号链接)。理由是本轮的核心断言就是"把校验器印出去的那一行原样跑
+    一遍" —— 进程内 `main(argv)` 拿不到 cwd 与相对路径这两件事,而它们
+    正是"能不能复制粘贴"的全部内容。
+    """
+
+    DATE = "2026-08-10"
+    PRIOR_DATE = "2026-08-09"
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        t = cls.root = cls._tmp.name
+        for d in ("reports/daily", "data", "briefs", "state"):
+            os.makedirs(os.path.join(t, *d.split("/")))
+        cls.rel = {
+            "report": "reports/daily/%s.md" % cls.DATE,
+            "snapshot": "data/%s.json" % cls.DATE,
+            "brief": "briefs/%s-brief.md" % cls.DATE,
+            "prior": "reports/daily/%s.md" % cls.PRIOR_DATE,
+            "log": WANT_DECISION_LOG_DEFAULT,
+            # 手写部分写了一个**不在快照里**的数:strict 是不是默认,靠它分辨
+            "loose_brief": "briefs/loose-brief.md",
+        }
+        for key, text in (
+                ("report", make_report()),
+                ("prior", make_report(prior_line=PRIOR_LINE_PREV)),
+                ("snapshot", SNAP_TEXT), ("brief", BRIEF),
+                ("loose_brief", BRIEF + "- 自己编的 99.123\n"),
+                ("log", DECISION_LOG)):
+            with open(os.path.join(t, cls.rel[key]), "w",
+                      encoding="utf-8") as f:
+                f.write(text)
+        os.symlink(os.path.join(cls.ROOT, "scripts"),
+                   os.path.join(t, "scripts"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def _run(self, argv, cwd=None):
+        """真子进程跑 `python3 scripts/check_report.py <argv>`,cwd 默认是
+        那份最小布局的根 —— 相对路径因此与生产命令行逐字同形。"""
+        r = subprocess.run([sys.executable, "scripts/check_report.py"]
+                           + list(argv), cwd=cwd or self.root,
+                           capture_output=True, text=True,
+                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+        return r.returncode, r.stdout, r.stderr
+
+    def _full(self, *extra, drop=()):
+        """完整的生产形状;`drop` 里的选项(连同它的值)整对去掉。"""
+        r = self.rel
+        argv = [r["report"], r["snapshot"], "--brief", r["brief"],
+                "--prior", r["prior"], "--decision-log", r["log"]]
+        for opt in drop:
+            i = argv.index(opt)
+            del argv[i:i + 2]
+        return argv + list(extra)
+
+    # ---- 基线:完整形状必须 rc=0(否则下面每一条都在测噪声)----
+
+    def test_the_complete_production_shape_passes(self):
+        rc, out, err = self._run(self._full())
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("CHECK PASSED", out)
+
+    # ---- 三个必给选项:逐个漏掉都必须 rc=2,不是 rc=0 ----
+
+    def test_dropping_decision_log_exits_2(self):
+        rc, out, err = self._run(self._full(drop=("--decision-log",)))
+        self.assertEqual(rc, 2, out + err)
+        self.assertNotIn("CHECK PASSED", out)
+        self.assertIn("DAILY_REQUIRED_OPTION_MISSING", err)
+        self.assertIn("--decision-log", err)
+
+    def test_dropping_prior_exits_2(self):
+        rc, out, err = self._run(self._full(drop=("--prior",)))
+        self.assertEqual(rc, 2, out + err)
+        self.assertNotIn("CHECK PASSED", out)
+        self.assertIn("DAILY_REQUIRED_OPTION_MISSING", err)
+        self.assertIn("--prior", err)
+
+    def test_dropping_brief_exits_2(self):
+        """`--brief` 是三个里**唯一连声明都没有**的那个:修前漏掉它时
+        stdout 是裸 `CHECK PASSED` rc=0,而 `BRIEF_NUMBER_UNTRACEABLE` 与
+        `BRIEF_REVIEW_BLOCK_MALFORMED` 整层没跑过 —— 比 `--no-strict-brief`
+        更彻底的一条静默弱化路径。它不收成 rc=2,`--no-strict-brief` 就没有
+        意义:绕过它只要少写一个参数。"""
+        rc, out, err = self._run(self._full(drop=("--brief",)))
+        self.assertEqual(rc, 2, out + err)
+        self.assertNotIn("CHECK PASSED", out)
+        self.assertIn("DAILY_REQUIRED_OPTION_MISSING", err)
+        self.assertIn("--brief", err)
+
+    def test_dropping_all_three_lists_all_three(self):
+        """一次只报一个会让运维跑三遍才凑齐 —— 消息必须把缺的全列出来。"""
+        rc, out, err = self._run(
+            self._full(drop=("--brief", "--prior", "--decision-log")))
+        self.assertEqual(rc, 2, out + err)
+        for opt in WANT_REQUIRED_OPTION_CODES:
+            self.assertIn(opt, err, opt)
+
+    # ---- 消息必须**可执行**:把它印的那一行原样跑一遍 ----
+
+    def test_the_printed_command_line_runs_verbatim_and_passes(self):
+        """**本类的靶心。** 判据不是"消息里提到了缺什么"(那样印一条跑不通
+        的命令行照样全绿),而是:从 stderr 里把那一行整句取出来、`shlex`
+        切开、**在同一个 cwd 下原样执行**,必须 rc=0 且 `CHECK PASSED`。
+
+        三个选项各漏一次、以及三个全漏,四种漏法各跑一遍 —— 只测"全漏"
+        时,"把用户给了的那几个值原样带回去"这一半就没人看守。
+        """
+        for drop in (("--decision-log",), ("--prior",), ("--brief",),
+                     ("--brief", "--prior", "--decision-log")):
+            with self.subTest(drop=drop):
+                rc, out, err = self._run(self._full(drop=drop))
+                self.assertEqual(rc, 2, out + err)
+                line = self._command_line(err)
+                self.assertTrue(line.startswith(WANT_DAILY_PROGRAM),
+                                "印出去的命令行不是完整可执行形态:%r" % line)
+                argv = shlex.split(line)
+                rc2 = subprocess.run(
+                    [sys.executable] + argv[1:], cwd=self.root,
+                    capture_output=True, text=True,
+                    env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+                self.assertEqual(rc2.returncode, 0,
+                                 "校验器印的这一行跑不通:\n%s\n%s\n%s"
+                                 % (line, rc2.stdout, rc2.stderr))
+                self.assertIn("CHECK PASSED", rc2.stdout)
+
+    @staticmethod
+    def _command_line(err):
+        lines = [x.strip() for x in err.splitlines()
+                 if x.strip().startswith(WANT_DAILY_PROGRAM)]
+        if len(lines) != 1:
+            raise AssertionError("stderr 里可复制的命令行不是恰好一行:%r"
+                                 % lines)
+        return lines[0]
+
+    def test_the_message_names_the_default_decision_log_path(self):
+        """默认路径写进消息里,运维不必回去翻 SKILL。"""
+        rc, out, err = self._run(self._full(drop=("--decision-log",)))
+        self.assertEqual(rc, 2, out + err)
+        self.assertIn(WANT_DECISION_LOG_DEFAULT, err)
+
+    def test_the_message_names_the_rule_each_missing_option_guards(self):
+        """「缺少参数」不可执行 —— 消息必须说清这个参数守的是哪一道闸门,
+        逐字给出那条码名。"""
+        for opt, code in sorted(WANT_REQUIRED_OPTION_CODES.items()):
+            with self.subTest(opt=opt):
+                rc, out, err = self._run(self._full(drop=(opt,)))
+                self.assertEqual(rc, 2, out + err)
+                self.assertIn(code, err, "%s 的消息没写它守的是什么" % opt)
+
+    # ---- strict 是默认;`--no-strict-brief` 是唯一的弱化入口,且必须出声 ----
+
+    def test_strict_brief_is_the_default_with_no_flag_at_all(self):
+        """修前:不加 `--strict-brief` 就不查「要点表 ⊆ 快照」,于是同一份
+        要点表里写错的数字成为下游报告的合法来源,rc=0。修后:不加任何
+        开关就是严格的。"""
+        rc, out, err = self._run(
+            self._full(drop=("--brief",)) + ["--brief",
+                                             self.rel["loose_brief"]])
+        self.assertEqual(rc, 1, out + err)
+        self.assertIn("BRIEF_NUMBER_UNTRACEABLE", out)
+        self.assertIn("99.123", out)
+
+    def test_no_strict_brief_weakens_and_declares_with_a_count(self):
+        """弱化的唯一入口,且**不是静默豁免**:退出码回到 0,但 stdout 必须
+        出现一条带计数的声明 —— 「没查」与「查过且全过」在输出上必须可分辨,
+        与 WEEKLY_DIGEST_ABSENT_SKIPPED / BRIEF_REVIEW_BLOCK_SKIPPED 同一原则。
+        """
+        rc, out, err = self._run(
+            self._full(drop=("--brief",))
+            + ["--brief", self.rel["loose_brief"], "--no-strict-brief"])
+        self.assertEqual(rc, 0, out + err)
+        # 判据是"没有一条**违规行**是这个码",不是"stdout 里不出现这个串"
+        # —— 降级声明自己就点名了它关掉的是哪一层,那正是要的。
+        self.assertEqual(self._lines_with_code(out, "BRIEF_NUMBER_UNTRACEABLE"),
+                         [], out)
+        self.assertIn("STRICT_BRIEF_DISABLED", out)
+        # 计数是真的:要点表五个数(60.843 / 60.9 / 3.1 / 3.4 / 99.123)
+        self.assertRegex(out, r"STRICT_BRIEF_DISABLED[^\n]*要点表 5 个数字")
+        self.assertIn("CHECK PASSED", out)
+
+    @staticmethod
+    def _lines_with_code(out, code):
+        return [x for x in out.splitlines()
+                if x.lstrip(" -").startswith(code + ":")]
+
+    def test_the_strong_form_does_not_print_the_weakening_declaration(self):
+        """声明不许在**真查过**的那一次也照打 —— 否则它退化成噪声,读者
+        读到它也不知道到底查没查(与 PRIOR_PERIOD_ABSENT_SKIPPED 同规矩)。"""
+        rc, out, err = self._run(self._full())
+        self.assertEqual(rc, 0, out + err)
+        self.assertNotIn("STRICT_BRIEF_DISABLED", out)
+
+    def test_the_old_strict_brief_switch_is_rejected_not_silently_accepted(self):
+        """`--strict-brief` 被**删掉**而不是留成无操作的兼容开关。
+
+        留成 no-op 等于新造一个"注册了却没人读"的选项:它会同时进两个 mode
+        的「不读选项」表(第六族的幂集因此翻倍),而且陈旧调用点会**静默
+        地什么都不做**——正是本轮要消灭的那种形态。删掉之后,任何陈旧调用
+        点在 argparse 层就 rc=2 响亮死掉。
+        """
+        rc, out, err = self._run(self._full("--strict-brief"))
+        self.assertEqual(rc, 2, out + err)
+        self.assertNotIn("CHECK PASSED", out)
+
+    # ---- 周报模式不受本轮影响 ----
+
+    def test_weekly_mode_does_not_require_the_daily_options(self):
+        """`--brief`/`--prior`/`--decision-log` 在周报模式仍不适用;那一侧
+        由「当前 mode 不读的选项」冻结表 + 第六族变异守,不在这里改行为。"""
+        wp = os.path.join(self.root, "reports", "weekly", "2026-W33.md")
+        os.makedirs(os.path.dirname(wp), exist_ok=True)
+        with open(wp, "w", encoding="utf-8") as f:
+            f.write(WEEKLY_OK)
+        rc, out, err = self._run(["reports/weekly/2026-W33.md",
+                                  "--mode", "weekly"])
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("CHECK PASSED", out)
