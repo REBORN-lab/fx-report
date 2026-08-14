@@ -133,6 +133,15 @@ DISPOSITION_SCRIPT_BUG = ("处置:这是脚本缺陷,改报告没用;"
                           "重跑产出这份快照/聚合文件的那一步,仍复现就报 bug")
 DISPOSITION_PRIOR_PERIOD = ("处置:写明本期相对上期究竟哪里变了;"
                             "若确无变化,写明为什么没变")
+DISPOSITION_RING = ("处置:把没写的那件补进该币种节的「分歧与判断」环;"
+                    "三件都是不可压缩项,字数紧张时压缩「驱动」与「是否已反映」"
+                    "腾字数,不得删掉其中任何一件")
+DISPOSITION_FLIP = ("处置:翻转指标写「什么一旦出现就改判」(可观测量带 T+N),"
+                    "失效条件写「什么没发生就作废」;二者语义不同,"
+                    "不得把后者换个说法当前者交差")
+DISPOSITION_ANCHOR = ("处置:在关键假设句里引一个来自快照或要点表的**当前值**;"
+                      "不要写阈值 —— 阈值是尚未发生的前瞻价位、不在快照里,"
+                      "写进去会被 NUMBER_UNTRACEABLE 当场拦下")
 # **两个降级码(VERDICT_SKIPPED_NO_DERIVED / VERDICT_SKIPPED_LEGACY)的处置
 # 仍留在 SKILL,这是有意的**,不是漏改。它们的处置分两支,判别标准是"采集
 # 窗口是否还覆盖 DATE" —— 校验器不知道窗口边界(那在 collect/events.py 的
@@ -157,6 +166,21 @@ PRIOR_PERIOD_SECTION_KEY = "本期相对上期"
 # 而违规信息要把重复的**原文**打出来 —— 切掉标点的那份不是原文,读者拿它去
 # 报告里搜还得自己补一个字。
 SENTENCE_RE = re.compile(r"[^。;!?;!?\n]+[。;!?;!?]*")
+
+
+# ---- 判断环三件的标签。措辞与 skills/fx-daily-report/SKILL.md 的模板同串 ----
+ASSUMPTION_LABEL = "关键假设"
+FLIP_LABEL = "翻转指标"
+RING_LABELS = (ASSUMPTION_LABEL, "替代解释", FLIP_LABEL)
+# 失效条件在币种节里有两种落法:显式的「失效条件」,以及关键假设那一环
+# 按 SKILL 要求写的后半句「不成立时/则……」。两种都要认 —— 只认前者时,
+# 本仓实际产出的报告(逐字见 reports/daily/2026-08-14.md)一条都不匹配,
+# 整个 ② 会变成永不触发的空码。
+INVALIDATION_LABELS = ("失效条件", "不成立时", "不成立则", "不成立")
+# 「去除标点与空白」:`\W` 在 unicode 模式下把中英文标点、括号、`*`、`+`、
+# 小数点一并去掉,CJK 与字母数字是 word 字符,原样保留。两边同样处理,
+# 所以它只影响"标点算不算差异",不影响谁和谁比。
+_RING_STRIP_RE = re.compile(r"[\s\W_]+", re.UNICODE)
 
 
 def split_sentences(text):
@@ -360,6 +384,144 @@ def check_verdicts(report, container, fields, covered, required, label):
     return v, skipped
 
 
+def _ring_payload(sentence, labels):
+    """取**最后一个**标签之后的内容,再去掉标点与空白。
+
+    为什么要剥标签:两句各自带着必然不同的标签(一句写「翻转指标」、另一句
+    写「不成立时」),不剥就永远不可能逐字相同,② 会退化成一条从不触发的
+    码 —— 那正是本轮要消灭的「非检查」形态。剥掉标签后比的是标签**之后**
+    那段话,也就是作弊时被原样搬过去的那一段。
+    取最后一个:替代解释那一句写成「……(其翻转指标:X)」,要的是 X。
+    """
+    cut = -1
+    for lab in labels:
+        p = sentence.rfind(lab)
+        if p >= 0:
+            cut = max(cut, p + len(lab))
+    tail = sentence if cut < 0 else sentence[cut:]
+    return _RING_STRIP_RE.sub("", tail)
+
+
+def check_judgement_ring(secs, derived, covered, allowed, notes=None):
+    """判断环三码。**走 `full` 体裁的币种节**才查,体裁由脚本给,不由 LLM 给。
+
+    背景:判断环(关键假设 / 替代解释 / 翻转指标)此前只写在
+    `skills/fx-daily-report/SKILL.md` 的散文里,`scripts/` 下**零强制** ——
+    实测 `grep -rn "关键假设\\|替代解释\\|翻转指标\\|失效条件" scripts/ --include=*.py`
+    无输出。按调研台账的口径,那样的判断环是「非检查」,与我们批评社区的
+    那 10 行提示词同型。这个函数只把它抬到「有强制」,并且**逐条标明**
+    抬到了哪一层:
+
+    ① `JUDGEMENT_RING_INCOMPLETE` —— **存在性检查**。
+       判定依据:只查三个标签串在不在该币种节的正文里。它保证不了标签后面
+       写的是不是真的假设/解释/指标,更不保证三者互相推得出来。
+       替代解释自带的「其翻转指标」也算数(同一个标签串),这是已知弱点。
+
+    ② `FLIP_INDICATOR_IS_INVALIDATION_RESTATED` —— **质量检查**。
+       判定依据:它比的是同一节内**两句之间的关系**,不是「某物出没出现」。
+       ICD 203 里翻转指标是「什么**出现**就改判」,失效条件是「什么**没发生**
+       就无效」,两者语义不同;而最省事的作弊写法就是把失效条件换个说法当
+       翻转指标交差。去标点空白后逐字相同、或其一是另一句的子串 → 违规。
+       **诚实边界:只做逐字/子串比较,不做语义判断。** 同义改写(「收窄」
+       写成「回落」)绕得过去 —— 它挡的是最省事的那条路,不是语义等价。
+       语义判断做不了,不假装能做。
+
+    ③ `ASSUMPTION_UNANCHORED` —— **存在性检查**。
+       判定依据:只查关键假设句里有没有出现一个落在既有 `NUMBER_UNTRACEABLE`
+       白名单(`allowed`)里的数字 token。它保证不了那个数字和假设有关系。
+       **只要「当前值」类的可溯源数,绝不要求阈值**:阈值按定义是尚未发生的
+       前瞻价位、不在快照里,要求它必然触发 `NUMBER_UNTRACEABLE`
+       (判据见 check_daily 里 `allowed` 的构成)。两条规则会直接互斥,
+       本仓四个月前撞过这一次。
+
+    三条不都是质量检查 —— 把存在性说成质量,就是复现 IMF 那套评分器的病
+    (`without fully evaluating the depth or quality of that discussion`)。
+
+    **真实产物上的实测**(把 data/2026-08-14.json 复制一份、强行给五个币种
+    都填 mode=full,再对 reports/daily/2026-08-14.md 跑一次):
+    ③ 抓到两条真缺陷(USD 与 EUR 的关键假设句里一个可溯源数字都没有),
+    ① 与 ② **零命中**。所以 ② 在真实产物上的拦截力**尚未被实测证实**,
+    目前只有 fixture 与变异测试证明它会响 —— 不得把它说成"已经拦下过"。
+
+    notes : **出参**,同 check_daily。跳过三态各自出声:
+            没有 `derived.body_plan`(存量快照,合法)、某币种 `mode` 判不出
+            (derive 单币种异常)、`minimal` 体裁豁免。不出声就与「全查过且
+            全过」逐字不可分辨。
+    """
+    v = []
+    body_plan = derived.get("body_plan")
+    if not isinstance(body_plan, dict):
+        # 存量快照(阶段 1 之前采的)合法地没有这个键 —— 判不了体裁就不判,
+        # 但必须留下一行。声明里带上 schema_version:读者据它自己分辨
+        # 「旧快照」与「新代码产出却漏写了 body_plan」(后者是脚本缺陷)。
+        if notes is not None:
+            notes.append("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN: 快照无可用的 "
+                         "derived.body_plan(schema_version=%r,实为 %s),"
+                         "本次未校验任何币种节的判断环"
+                         % (derived.get("schema_version"),
+                            type(body_plan).__name__))
+        return v
+    minimal = []
+    for c in sorted(covered):
+        entry = body_plan.get(c)
+        mode = entry.get("mode") if isinstance(entry, dict) else None
+        if mode == "minimal":
+            minimal.append(c)
+            continue
+        if mode != "full":
+            # 猜 full 会对着一行正文假报三条违规,猜 minimal 会把有增量的一天
+            # 整节放过 —— 两种猜法都是编造。只声明,不判。
+            if notes is not None:
+                notes.append("JUDGEMENT_RING_SKIPPED_NO_MODE: %s 的 "
+                             "derived.body_plan 未给出 minimal/full 体裁"
+                             "(实为 %r),该币种节的判断环未校验" % (c, mode))
+            continue
+        v.extend(_check_one_ring(c, find_section(secs, c)[1], allowed))
+    if minimal and notes is not None:
+        notes.append("JUDGEMENT_RING_MINIMAL_EXEMPT: %d/%d 个覆盖币种节走 "
+                     "minimal 体裁(该节只准写一行,本就没有判断环),未校验"
+                     % (len(minimal), len(covered)))
+    return v
+
+
+def _check_one_ring(currency, body, allowed):
+    """单个 full 体裁币种节的三码判定。见 check_judgement_ring 的诚实标注。"""
+    v = []
+    missing = [lab for lab in RING_LABELS if lab not in body]
+    if missing:
+        v.append("JUDGEMENT_RING_INCOMPLETE: %s 节的判断环没写 %s;"
+                 "三件(%s)必须齐全;%s"
+                 % (currency, "、".join(missing), "/".join(RING_LABELS),
+                    DISPOSITION_RING))
+    sents = split_sentences(body)
+    flips = [s for s in sents if FLIP_LABEL in s]
+    invalids = [s for s in sents
+                if any(lab in s for lab in INVALIDATION_LABELS)]
+    for f in flips:
+        fn = _ring_payload(f, (FLIP_LABEL,))
+        if not fn:
+            continue
+        for i in invalids:
+            inv = _ring_payload(i, INVALIDATION_LABELS)
+            # 空载荷不比:`"" in x` 恒真,会把「标签后面什么都没写」误判成
+            # 「改写自失效条件」—— 两件事不同因不同果,不得同判
+            if not inv:
+                continue
+            if fn in inv or inv in fn:
+                v.append("FLIP_INDICATOR_IS_INVALIDATION_RESTATED: "
+                         "%s 节的翻转指标句与失效条件句去掉标点与空白后重复"
+                         "(逐字相同或互为子串);翻转指标原文:「%s」;"
+                         "失效条件原文:「%s」;%s"
+                         % (currency, f, i, DISPOSITION_FLIP))
+    for s in sents:
+        if ASSUMPTION_LABEL not in s:
+            continue
+        if not (numbers_in(s) & allowed):
+            v.append("ASSUMPTION_UNANCHORED: %s 节的关键假设句里没有可溯源"
+                     "数字:「%s」;%s" % (currency, s, DISPOSITION_ANCHOR))
+    return v
+
+
 def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None,
                 prior_text=None):
     """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
@@ -490,6 +652,9 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     allowed = numbers_in(snapshot_text) | numbers_in(brief_text) | ALLOWED_SMALL
     for n in sorted(numbers_in(report) - allowed):
         v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于快照或要点表" % n)
+    # 判断环三码必须在 `allowed` 算完之后:③ 的锚点判据逐字复用同一个白名单,
+    # 它自己不另建一份 —— 另建就等于给报告开了第二条数字来源。
+    v.extend(check_judgement_ring(secs, derived, covered, allowed, notes=notes))
     if strict_brief:
         # 报告 ⊆ 快照∪要点表 一直有校验,但要点表本身 ⊆ 快照 从来没人查——
         # 要点表环节写错的数字会被下游当作合法来源。此开关堵住这条缝。

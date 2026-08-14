@@ -1857,6 +1857,17 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
 DAILY_VERDICT = "当日采到 11 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
 
 
+def verdict_notes(notes):
+    """notes 里属于**结论句那一层**的声明条数。
+
+    同一份 notes 由多层检查共用(结论句 / 判断环 / 跨期重复 …),每层各自
+    出声。按前缀分层计数,才能让「本层恰好一条」这个断言继续承重 —— 用
+    `len(notes)` 会让任何一层新增声明都把别层的测试打红,那种红是噪声,
+    而消噪的最省事做法是把断言改成 `>= 1`,那才是真的放宽。
+    """
+    return len([n for n in notes if n.startswith("VERDICT_")])
+
+
 def snap_with_derived(schema_version=2, verdict=DAILY_VERDICT,
                       currencies=tuple(check_report.CURRENCIES)):
     """在既有 SNAP 上挂一个 derived 节。SNAP 本身不变(浅拷贝后加键)。
@@ -1925,7 +1936,11 @@ class DailyVerdictQuotingTest(unittest.TestCase):
                               currencies=("USD",)),
             BRIEF, notes=notes)
         self.assertFalse([x for x in v if "VERDICT" in x], v)
-        self.assertEqual(len(notes), 1)
+        # 计数按 `VERDICT_` 前缀过滤,**不是放宽**:本条守的是「结论句这一层
+        # 恰好出一条声明,不多不少」,该层多出一条照样红。判断环那一层有它
+        # 自己的声明与自己的计数断言(JudgementRingSkipDeclarationTest),
+        # 两层的声明本来就该同时出现在同一份 notes 里。
+        self.assertEqual(verdict_notes(notes), 1, notes)
         self.assertIn("VERDICT_SKIPPED_LEGACY", notes[0])
         self.assertIn("1/5 个覆盖币种", notes[0])
 
@@ -1961,7 +1976,7 @@ class DailyVerdictQuotingTest(unittest.TestCase):
                                      json.dumps(snap, ensure_ascii=False),
                                      BRIEF, notes=notes)
         self.assertFalse([x for x in v if "VERDICT" in x], v)
-        self.assertEqual(len(notes), 1)
+        self.assertEqual(verdict_notes(notes), 1, notes)   # 见上方计数口径说明
 
     def test_bool_schema_version_is_not_a_number(self):
         """把闸门压到 1 才能让 bool 门真正承重:True >= 1 会误判为新 schema。"""
@@ -1973,7 +1988,7 @@ class DailyVerdictQuotingTest(unittest.TestCase):
                                          json.dumps(snap, ensure_ascii=False),
                                          BRIEF, notes=notes)
         self.assertFalse([x for x in v if "VERDICT" in x], v)
-        self.assertEqual(len(notes), 1)
+        self.assertEqual(verdict_notes(notes), 1, notes)   # 见上方计数口径说明
 
     def test_legacy_snapshot_with_a_sentence_is_still_checked(self):
         """闸门只放行「缺字段」,不放行「字段在但引错了」。"""
@@ -2143,7 +2158,7 @@ class DailyContainerGateTest(unittest.TestCase):
                 v = self._run(bad, ver=1, notes=notes)
                 self.assertFalse([x for x in v if "VERDICT" in x], (bad, v))
                 # 不变红不等于可以不出声 —— 一条都没查必须说出来
-                self.assertEqual(len(notes), 1, (bad, notes))
+                self.assertEqual(verdict_notes(notes), 1, (bad, notes))
                 self.assertIn("VERDICT_SKIPPED_LEGACY", notes[0])
 
     def test_entry_present_but_not_a_dict_is_treated_as_missing(self):
@@ -2170,7 +2185,7 @@ class DailyNoDerivedNoticeTest(unittest.TestCase):
         notes = []
         v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes)
         self.assertEqual(v, [])
-        self.assertEqual(len(notes), 1, notes)
+        self.assertEqual(verdict_notes(notes), 1, notes)   # 见上方计数口径说明
         self.assertIn("VERDICT_SKIPPED_NO_DERIVED", notes[0])
 
     def test_null_derived_emits_the_same_notice(self):
@@ -2971,3 +2986,408 @@ class PriorPeriodBoilerplateTest(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         self.assertIn("PRIOR_PERIOD_BOILERPLATE", out)
         self.assertIn("CHECK FAILED", out)
+
+
+# ==================== 判断环三码(①②③)====================
+#
+# 三码的诚实标注见 scripts/check_report.py 里 check_judgement_ring 的
+# docstring:① 与 ③ 是**存在性检查**,② 是**质量检查**。测试按这个分工写 ——
+# ①③ 只断言"标签/数字出没出现",② 断言"两句之间的关系"。
+
+RING_HEAD = ("**驱动**:CPI 同比 3.1,前值 3.4。\n"
+             "**传导**:通胀回落 → 本地利差收窄 → 套息头寸减仓 → 汇率。\n"
+             "**是否已反映**:参考价 60.843 贴近区间上沿。\n")
+RING_OK = ("关键假设是 3.1 这一读数仍代表当前通胀;"
+           "不成立时利差这条腿失效,该改按估值修复处理。"
+           "替代解释:比索走弱是美元一端在统一定价"
+           "(其翻转指标:同次定盘里泰铢同步升破 35.2)。"
+           "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+
+
+def ring_body(ring=RING_OK):
+    return RING_HEAD + "**分歧与判断**:" + ring
+
+
+_NO_BODY_PLAN = object()
+
+
+def ring_snap(modes=None, body_plan=_NO_BODY_PLAN, schema_version=1):
+    """SNAP + `derived.body_plan`。
+
+    schema_version 取 1(存量结论句档)是**刻意**的:本组测试要隔离判断环这
+    一层,不让 VERDICT_* 那一族的违规混进 `v` 里干扰断言。判断环检查的开关是
+    `derived.body_plan` 在不在,与结论句 schema 闸门互不相干 —— 这一点本身由
+    下面的 skip 组钉住。
+    """
+    snap = dict(SNAP)
+    derived = {"schema_version": schema_version,
+               "rates": {}, "real_rate": {}, "events": {}}
+    if body_plan is not _NO_BODY_PLAN:
+        if body_plan is not None:
+            derived["body_plan"] = body_plan
+    else:
+        m = {c: "minimal" for c in check_report.CURRENCIES}
+        m.update(modes or {"PHP": "full"})
+        derived["body_plan"] = {
+            c: {"mode": mode,
+                "line": None if mode == "full" else "%s:本日无可用增量。" % c}
+            for c, mode in m.items()}
+    snap["derived"] = derived
+    return json.dumps(snap, ensure_ascii=False)
+
+
+def ring_check(ring=RING_OK, snap=None, notes=None, php_body=None):
+    return check_report.check_daily(
+        make_report(php_body=php_body or ring_body(ring)),
+        snap if snap is not None else ring_snap(), BRIEF, notes=notes)
+
+
+def ring_codes(violations, prefix):
+    return [x for x in violations if x.startswith(prefix)]
+
+
+class JudgementRingCompletenessTest(unittest.TestCase):
+    """① `JUDGEMENT_RING_INCOMPLETE` —— **存在性检查**。
+
+    只查三个标签串在不在该币种节里,不查标签后面写的是不是真的假设/解释/
+    指标。这是它能给的全部保证,不得说成"已强制论证质量"。
+    """
+
+    def test_complete_ring_passes(self):
+        self.assertEqual(ring_codes(ring_check(), "JUDGEMENT_RING_INCOMPLETE"), [])
+
+    def test_missing_key_assumption_is_a_violation(self):
+        """**变异靶点:三件缺一仍通过。**"""
+        ring = ("本日方向未定。替代解释:走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        line = ring_codes(ring_check(ring), "JUDGEMENT_RING_INCOMPLETE")
+        self.assertEqual(len(line), 1, line)
+        self.assertIn("关键假设", line[0])
+        self.assertIn("PHP", line[0])
+        self.assertNotIn("替代解释", line[0].split("缺")[-1].split(";")[0])
+
+    def test_missing_alternative_explanation_is_a_violation(self):
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时利差这条腿失效。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        line = ring_codes(ring_check(ring), "JUDGEMENT_RING_INCOMPLETE")
+        self.assertEqual(len(line), 1, line)
+        self.assertIn("替代解释", line[0])
+
+    def test_missing_flip_indicator_is_a_violation(self):
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价。")
+        line = ring_codes(ring_check(ring), "JUDGEMENT_RING_INCOMPLETE")
+        self.assertEqual(len(line), 1, line)
+        self.assertIn("翻转指标", line[0])
+
+    def test_all_three_missing_are_named_in_one_line(self):
+        line = ring_codes(ring_check("本日维持原判。"),
+                          "JUDGEMENT_RING_INCOMPLETE")
+        self.assertEqual(len(line), 1, line)
+        for want in ("关键假设", "替代解释", "翻转指标"):
+            self.assertIn(want, line[0])
+
+    def test_minimal_section_is_exempt(self):
+        """**变异靶点:minimal 节被误判违规。**
+
+        走 minimal 的币种节按 SKILL 只准写一行,那一行里当然没有判断环。
+        体裁由 `derived.body_plan.<币种>.mode` 决定,不由 LLM 决定。
+        """
+        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
+                       snap=ring_snap(modes={"PHP": "minimal"}))
+        self.assertEqual(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), [], v)
+
+    def test_full_mode_is_taken_from_the_snapshot_not_from_the_report(self):
+        """同一份"只有一行"的报告:mode=full 时必须红。体裁的判定权在脚本。"""
+        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
+                       snap=ring_snap(modes={"PHP": "full"}))
+        self.assertTrue(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), v)
+
+    def test_violation_line_carries_the_disposition(self):
+        line = ring_codes(ring_check("本日维持原判。"),
+                          "JUDGEMENT_RING_INCOMPLETE")[0]
+        self.assertTrue(line.endswith(check_report.DISPOSITION_RING), line)
+
+
+class FlipIndicatorIsNotInvalidationRestatedTest(unittest.TestCase):
+    """② `FLIP_INDICATOR_IS_INVALIDATION_RESTATED` —— **质量检查**。
+
+    判据是同一节内**两句之间的关系**(去标点空白后逐字相同,或互为子串),
+    不是"某物出没出现"。ICD 203:翻转指标是"什么出现就改判",失效条件是
+    "什么没发生就作废",最省事的作弊写法是把后者换个说法当前者交差。
+
+    诚实边界:它只做逐字/子串比较,**不做语义判断**。同义改写(把"收窄"
+    写成"回落")绕得过去 —— 它挡的是最省事的那条路,不是语义等价。
+    """
+
+    def test_distinct_flip_and_invalidation_pass(self):
+        v = ring_check()
+        self.assertEqual(ring_codes(v, "FLIP_INDICATOR_IS_INVALIDATION_RESTATED"),
+                         [], v)
+
+    def test_invalidation_restated_as_flip_is_a_violation(self):
+        """失效条件 ⊂ 翻转指标(实测最省事的作弊形态:原句加个 T+N)。
+        **变异靶点:子串方向写反。**"""
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时利差收窄。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:利差收窄(T+3)。")
+        line = ring_codes(ring_check(ring),
+                          "FLIP_INDICATOR_IS_INVALIDATION_RESTATED")
+        self.assertEqual(len(line), 1, line)
+
+    def test_flip_restated_as_invalidation_is_a_violation(self):
+        """反方向同样要红:翻转指标 ⊂ 失效条件。
+        **变异靶点:子串方向写反**(只查一个方向时,本条或上一条必有一条活)。"""
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;"
+                "不成立时利差收窄,并且该判断整条作废。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:利差收窄。")
+        line = ring_codes(ring_check(ring),
+                          "FLIP_INDICATOR_IS_INVALIDATION_RESTATED")
+        self.assertEqual(len(line), 1, line)
+
+    def test_only_punctuation_differs_is_a_violation(self):
+        """"去除标点与空白后逐字相同" —— 换个标点不算改写。"""
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时,利差收窄!"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标: 利差 收窄。")
+        line = ring_codes(ring_check(ring),
+                          "FLIP_INDICATOR_IS_INVALIDATION_RESTATED")
+        self.assertEqual(len(line), 1, line)
+
+    def test_same_first_character_is_not_enough(self):
+        """**变异靶点:只比首字符(或只比前 N 字)。**
+
+        两句都以"利"开头、内容不同 —— 这是**正常**报告的常见形态(同一个
+        可观测量的两种用法)。判为违规会把这条码变成噪声,而噪声码会被整体
+        关掉,等于回到零强制。
+        """
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:利率升破 35.2(T+3)。")
+        v = ring_check(ring)
+        self.assertEqual(ring_codes(v, "FLIP_INDICATOR_IS_INVALIDATION_RESTATED"),
+                         [], v)
+
+    def test_violation_prints_both_sentences_verbatim(self):
+        """"有一句重复"不可操作 —— 两句原文都得打出来,读者才知道改哪句。"""
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时利差收窄。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:利差收窄(T+3)。")
+        line = ring_codes(ring_check(ring),
+                          "FLIP_INDICATOR_IS_INVALIDATION_RESTATED")[0]
+        self.assertIn("不成立时利差收窄。", line)
+        self.assertIn("翻转指标:利差收窄(T+3)。", line)
+        self.assertTrue(line.endswith(check_report.DISPOSITION_FLIP), line)
+
+    def test_disposition_spells_out_the_semantic_difference(self):
+        """处置必须写明二者的语义差别,而不是只说"重复了"。"""
+        d = check_report.DISPOSITION_FLIP
+        self.assertIn("出现", d)
+        self.assertIn("没发生", d)
+
+    def test_minimal_section_is_exempt(self):
+        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
+                       snap=ring_snap(modes={"PHP": "minimal"}))
+        self.assertEqual(ring_codes(v, "FLIP_INDICATOR_IS_INVALIDATION_RESTATED"),
+                         [], v)
+
+
+class AssumptionAnchorTest(unittest.TestCase):
+    """③ `ASSUMPTION_UNANCHORED` —— **存在性检查**。
+
+    只查关键假设句里有没有出现**一个**落在既有 `NUMBER_UNTRACEABLE` 白名单
+    里的数字 token。它保证不了那个数字和假设有关系(那是语义)。
+    """
+
+    def test_anchored_assumption_passes(self):
+        self.assertEqual(ring_codes(ring_check(), "ASSUMPTION_UNANCHORED"), [])
+
+    def test_assumption_without_any_number_is_a_violation(self):
+        ring = ("关键假设是通胀读数仍代表当前水平;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧。")
+        line = ring_codes(ring_check(ring), "ASSUMPTION_UNANCHORED")
+        self.assertEqual(len(line), 1, line)
+        self.assertIn("PHP", line[0])
+        self.assertIn("关键假设是通胀读数仍代表当前水平;", line[0])
+        self.assertTrue(line[0].endswith(check_report.DISPOSITION_ANCHOR), line)
+
+    def test_untraceable_number_does_not_anchor(self):
+        """假设句里那个数必须是**可溯源**的。写一个快照里没有的数,既触发既有
+        NUMBER_UNTRACEABLE,也不算锚 —— 否则"编一个数"就是最省事的过关方式。"""
+        ring = ("关键假设是 99.99 这一读数仍代表当前通胀;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        v = ring_check(ring)
+        self.assertTrue(ring_codes(v, "ASSUMPTION_UNANCHORED"), v)
+        self.assertTrue(ring_codes(v, "NUMBER_UNTRACEABLE"), v)
+
+    def test_anchor_requirement_never_demands_a_threshold(self):
+        """**变异靶点:③ 要求阈值(F1 冲突)。**
+
+        阈值按定义是尚未发生的前瞻价位,不在快照里 —— 要求它必然触发
+        `NUMBER_UNTRACEABLE`(本仓四个月前撞过,判据见 check_report.py 里
+        `allowed` 的构成:快照 ∪ 要点表 ∪ 小整数)。所以本条钉两件事:
+
+        1. 只带**当前值**、不带任何前瞻价位的关键假设,必须**同时**过
+           ASSUMPTION_UNANCHORED 与 NUMBER_UNTRACEABLE;
+        2. 反过来,把前瞻价位写进去必然触发 NUMBER_UNTRACEABLE ——
+           即"要求阈值"是自相矛盾的,不是风格偏好。
+        """
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        v = ring_check(ring)
+        self.assertEqual(ring_codes(v, "ASSUMPTION_UNANCHORED"), [], v)
+        self.assertEqual(ring_codes(v, "NUMBER_UNTRACEABLE"), [], v)
+
+        threshold = ring.replace("3.1 这一读数", "61.5 这一前瞻价位")
+        v2 = ring_check(threshold)
+        self.assertTrue(ring_codes(v2, "NUMBER_UNTRACEABLE"), v2)
+
+    def test_small_integer_counts_as_anchor(self):
+        """判据逐字照 `allowed`(含 ALLOWED_SMALL)。这是本码的**已知弱点**,
+        写成测试是为了让它可见、可改,而不是让它藏在实现里。"""
+        ring = ("关键假设是这 3 条依据仍成立;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        self.assertEqual(ring_codes(ring_check(ring), "ASSUMPTION_UNANCHORED"), [])
+
+    def test_minimal_section_is_exempt(self):
+        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
+                       snap=ring_snap(modes={"PHP": "minimal"}))
+        self.assertEqual(ring_codes(v, "ASSUMPTION_UNANCHORED"), [], v)
+
+
+class JudgementRingSkipDeclarationTest(unittest.TestCase):
+    """跳过必须出声。三态各一条:无 body_plan / mode 不可判 / minimal 豁免。
+
+    「跳过」与「通过」在输出上不可分辨,正是这一族检查要消灭的形态
+    (同 VERDICT_SKIPPED_NO_DERIVED / BRIEF_REVIEW_BLOCK_SKIPPED)。
+    """
+
+    RING_LESS = "**驱动**:无。**分歧与判断**:维持原判。"
+
+    def test_legacy_snapshot_without_derived_skips_and_declares(self):
+        """**变异靶点:跳过时不打印声明。**
+
+        data/2026-08-10.json 这类存量快照连 derived 节都没有 —— 判不了体裁,
+        不判违规,但必须留下一行说明本次没查。
+        """
+        notes = []
+        v = check_report.check_daily(make_report(php_body=self.RING_LESS),
+                                     SNAP_TEXT, BRIEF, notes=notes)
+        self.assertEqual(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), [], v)
+        self.assertTrue([n for n in notes
+                         if n.startswith("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN")],
+                        notes)
+
+    def test_derived_without_body_plan_skips_and_declares_the_schema(self):
+        notes = []
+        check_report.check_daily(make_report(php_body=self.RING_LESS),
+                                 ring_snap(body_plan=None), BRIEF, notes=notes)
+        line = [n for n in notes
+                if n.startswith("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("schema_version=1", line[0])
+
+    def test_unknown_mode_skips_that_currency_and_declares_it(self):
+        """derive 单币种异常时 `mode` 为 null —— 猜 full 会假报违规,猜 minimal
+        会白放,两种猜法都是编造。只声明、不判。"""
+        notes = []
+        v = check_report.check_daily(
+            make_report(php_body=self.RING_LESS),
+            ring_snap(modes={"PHP": None}), BRIEF, notes=notes)
+        self.assertEqual(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), [], v)
+        line = [n for n in notes
+                if n.startswith("JUDGEMENT_RING_SKIPPED_NO_MODE")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("PHP", line[0])
+
+    def test_minimal_exemption_is_declared(self):
+        """全员 minimal 时本层一条都没查 —— 不出声就与"全查过且全过"同形。"""
+        notes = []
+        check_report.check_daily(
+            make_report(), ring_snap(modes={c: "minimal"
+                                            for c in check_report.CURRENCIES}),
+            BRIEF, notes=notes)
+        line = [n for n in notes
+                if n.startswith("JUDGEMENT_RING_MINIMAL_EXEMPT")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("5", line[0])
+
+    def test_no_skip_note_when_every_full_section_was_checked(self):
+        """反面:该查的都查了就不许再喊跳过,否则声明本身变成噪声。"""
+        notes = []
+        check_report.check_daily(
+            make_report(php_body=ring_body()),
+            ring_snap(modes={c: "full" if c == "PHP" else "minimal"
+                             for c in check_report.CURRENCIES}),
+            BRIEF, notes=notes)
+        self.assertEqual([n for n in notes
+                          if n.startswith("JUDGEMENT_RING_SKIPPED")], [], notes)
+
+    def test_cli_prints_the_skip_note_alongside_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            for path, text in ((rp, make_report(php_body=self.RING_LESS)),
+                               (sp, SNAP_TEXT)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN", out)
+        self.assertIn("CHECK PASSED", out)
+
+    def test_cli_turns_an_incomplete_ring_red(self):
+        """端到端:进程内全绿而真 CLI 放行,是本仓库栽过的形态。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            for path, text in ((rp, make_report(php_body=self.RING_LESS)),
+                               (sp, ring_snap())):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp])
+            out = buf.getvalue()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("JUDGEMENT_RING_INCOMPLETE", out)
+
+
+class JudgementRingHonestyLabelTest(unittest.TestCase):
+    """诚实标注不是散文承诺 —— 三个码各自的性质必须写在源码里,且不得三条
+    都写成"质量检查"。调研实测:IMF 评分器停在存在性那一层,我们刚照出自己
+    也停在那一层;把存在性说成质量,就是复现同一个病。
+    """
+
+    def setUp(self):
+        self.doc = check_report.check_judgement_ring.__doc__ or ""
+
+    def test_each_code_is_labelled_in_the_docstring(self):
+        for code in ("JUDGEMENT_RING_INCOMPLETE",
+                     "FLIP_INDICATOR_IS_INVALIDATION_RESTATED",
+                     "ASSUMPTION_UNANCHORED"):
+            self.assertIn(code, self.doc, code)
+        self.assertIn("存在性检查", self.doc)
+        self.assertIn("质量检查", self.doc)
+
+    def test_not_all_three_are_claimed_to_be_quality_checks(self):
+        """至少两条必须自称存在性 —— 三条全写"质量检查"就是那个病本身。"""
+        self.assertGreaterEqual(self.doc.count("存在性检查"), 2, self.doc)
