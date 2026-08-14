@@ -12,7 +12,13 @@ from . import util
 
 # 2:derived.events.<币种> 起带 events_verdict 结论句。校验器按这个数分流
 # 存量快照 —— 判据是"这份快照本该有",不是"这个键在不在"。
-SCHEMA_VERSION = 2
+# 3:再加 derived.body_plan.<币种>(币种节写 minimal 还是四环,由脚本判)。
+#   版本号必须跟着升:校验器要能分辨"阶段 1 之前采的快照"(合法地没有
+#   body_plan,声明跳过)与"新代码产出却漏写了 body_plan"(脚本缺陷,必须
+#   响亮)。按"这个键在不在"判会让这两者完全同形 —— 与 events_verdict 那次
+#   同一条理由。既有闸门 DERIVED_VERDICT_SCHEMA 是 `>= 2`,3 照样过,
+#   2 的含义(本该有结论句)对 3 继续成立。
+SCHEMA_VERSION = 3
 RANGE_DAYS = 5
 # 历史窗口要比 RANGE_DAYS 宽:周末与假日让相邻快照共享同一次定盘,
 # 只读 5 份会让 range_5d 永远凑不满 5 个不同定盘日。
@@ -37,8 +43,19 @@ EMPTY_EVENTS_DERIVED = {"count": None, "count_prev": None, "count_delta": None,
                         # 校验器会据此报 VERDICT_ABSENT —— 那正是想要的,
                         # 该形态是脚本缺陷,必须响亮,不该与存量快照同形
                         "events_verdict": None}
+EMPTY_BODY_PLAN = {"mode": None, "line": None}
 # 以上 EMPTY_* 的值必须保持不可变标量:异常分支用 dict() 浅拷贝隔离,
 # 一旦塞入嵌套结构(list/dict),浅拷贝就不够,会让两次异常共享同一对象。
+
+BODY_MODE_MINIMAL = "minimal"
+BODY_MODE_FULL = "full"
+# minimal 档那一行的**唯一事实源**。它会被逐字写进正文,故行内不得出现管道
+# 语汇(设计 §5.2 的 P2 词表)与任何数字 —— 否则脚本自己的产出会被正文位置
+# 闸门判成违规,是自伤形态。指路只写"附录 A / 附录 C",不复述缺了什么。
+MINIMAL_BODY_LINE = "%s:本日无可用增量,不更新判断;详见附录 A 与附录 C。"
+# 币种 → 本地经济体。判据②要求"本地",而不是"当天有任何经济体出数据":
+# 后者会让一条美国 CPI 把五个币种节一起顶成四环体裁。
+ECONOMY_OF = {"USD": "US", "EUR": "EA", "PHP": "PH", "THB": "TH", "BRL": "BR"}
 
 
 def _entry_of(snap, currency):
@@ -343,6 +360,80 @@ def _events_derived(payload, history, gaps):
     return out
 
 
+def _has_new_fixing(entry):
+    """该币种今天有没有一次**新定盘**。判据与 _chg_pct_1d 同源:两侧定盘日
+    已知时只看日期是否推进(同日 = 非工作日,不是"价格持平");定盘日不可知
+    (存量快照)时退回按值比较 —— 价格动了就是动了,不得因为"日期不可知"
+    把真实变动读成"本日无增量",那会把有增量的一天钉成一行。
+
+    条目不存在(基准货币不在 rates 容器里)→ False:它从来就没有定盘,
+    这一条对它恒成立,不是缺陷。
+    """
+    if not isinstance(entry, dict):
+        return False
+    ref, prev_ref = entry.get("ref_date"), entry.get("prev_ref_date")
+    if isinstance(ref, str) and isinstance(prev_ref, str):
+        return ref != prev_ref
+    today, prev = _num(entry.get("primary")), _num(entry.get("prev_primary"))
+    if today is None or prev is None:
+        return False
+    return today != prev
+
+
+def _has_local_new_release(macro, currency):
+    """该币种**本地**经济体今天有没有新发布的宏观条目。
+
+    is_new_release 只认显式 True:缺该字段(存量快照)是"不知道",不是
+    "有新发布" —— 判成有会让每一天都变成 full,判据形同虚设。
+    """
+    economy = ECONOMY_OF.get(currency)
+    if economy is None or not isinstance(macro, list):
+        return False
+    for item in macro:
+        if not isinstance(item, dict):
+            continue
+        if item.get("economy") == economy and item.get("is_new_release") is True:
+            return True
+    return False
+
+
+def _body_plan(payload, events_derived, gaps):
+    """币种节的体裁:minimal(只准写一行,行文由这里给)还是 full(四环)。
+
+    **这一档由脚本判,报告只准执行。** 判据是三条的合取:
+      ① 当日事件 count 为 null 或 0(采集失败与确实 0 篇都算"无事件增量");
+      ② 无 is_new_release=true 的本地宏观条目;
+      ③ 无新定盘。
+    三条缺一条,"我们没采到"就能被写成三段分析(2026-08-10 实测四个币种全是
+    这个形态)。判据只读**当日快照的事实**,绝不读入参里任何"模式"提示 ——
+    读了就等于把这一档交回给 LLM,整条不变量归零。
+
+    异常分支写 mode=null 而不是兜底成某一档:猜 full 会放任四环体裁,猜
+    minimal 会把有增量的一天钉成一行,两种猜法都是编造。
+    """
+    out = {}
+    rates = payload.get("rates")
+    macro = payload.get("macro")
+    for currency in events_derived:
+        try:
+            entry = events_derived.get(currency)
+            count = entry.get("count") if isinstance(entry, dict) else None
+            no_events = count is None or count == 0
+            minimal = (no_events
+                       and not _has_local_new_release(macro, currency)
+                       and not _has_new_fixing(
+                           rates.get(currency) if isinstance(rates, dict) else None))
+            out[currency] = {
+                "mode": BODY_MODE_MINIMAL if minimal else BODY_MODE_FULL,
+                "line": (MINIMAL_BODY_LINE % currency) if minimal else None,
+            }
+        except Exception as e:   # 单币种失败不牵连其余(采集层硬契约)
+            out[currency] = dict(EMPTY_BODY_PLAN)
+            gaps.append(util.make_gap("derive", currency,
+                                      "%s: %s" % (type(e).__name__, e)))
+    return out
+
+
 def _real_rate(payload, gaps):
     """政策利率 − CPI 同比。双期号原文强制携带:期错配是编造风险最大处,
     让引用方无法隐藏"用一年前的 CPI 配今天的利率"。"""
@@ -390,9 +481,13 @@ def derive(payload, history):
     if not isinstance(payload, dict):
         payload = {}
     history = [s for s in history if isinstance(s, dict)] if isinstance(history, list) else []
+    events_derived = _events_derived(payload, history, gaps)
     return {
         "schema_version": SCHEMA_VERSION,
         "rates": _rates_derived(payload, history, gaps),
-        "events": _events_derived(payload, history, gaps),
+        "events": events_derived,
+        # 体裁档只读当日事实,故建在 events 之后、复用它已经算好的 count:
+        # 两处各数一遍条数就会出现"字段说 0 条、体裁说有增量"的自相矛盾
+        "body_plan": _body_plan(payload, events_derived, gaps),
         "real_rate": _real_rate(payload, gaps),
     }, gaps

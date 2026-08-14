@@ -174,9 +174,15 @@ class DerivedSectionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
             snap = self._run(tmp, srv)
         self.assertIn("derived", snap)
-        self.assertEqual(snap["derived"]["schema_version"], 2)
+        # 3 = 这份快照本该带 body_plan(见 derive.SCHEMA_VERSION 的注释)。
+        # 端到端断言不可省:私有函数全绿而落盘时漏写这一节,校验器会把它
+        # 当成"阶段 1 之前采的存量快照"静默跳过。
+        self.assertEqual(snap["derived"]["schema_version"], 3)
         self.assertIn("PHP", snap["derived"]["rates"])
         self.assertIn("PHP", snap["derived"]["events"])
+        self.assertIn("PHP", snap["derived"]["body_plan"])
+        self.assertIn(snap["derived"]["body_plan"]["PHP"]["mode"],
+                      ("minimal", "full"))
 
     def test_derived_uses_multi_day_history(self):
         hist = {"2026-08-%02d" % d: {

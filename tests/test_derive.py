@@ -1,4 +1,6 @@
 """派生指标(delta spec: 派生指标落盘 / 参考价未更新时不计涨跌 / 实际利率携带双期号)。"""
+import json
+import os
 import unittest
 
 from scripts.collect import derive
@@ -245,7 +247,7 @@ class RobustnessTest(unittest.TestCase):
 
     def test_schema_version_present(self):
         d, _ = derive.derive(payload(), [])
-        self.assertEqual(d["schema_version"], 2)
+        self.assertEqual(d["schema_version"], 3)
 class EventCappingTest(unittest.TestCase):
     """两天都顶到 GDELT 每日上限时 count_delta 恒为 0,"与前值持平"就成了上限
     造成的假象,而不是事件面平稳。报告必须能看见这一点。"""
@@ -721,12 +723,18 @@ class EventsVerdictTest(unittest.TestCase):
         self.assertIn("events_verdict", derive.EMPTY_EVENTS_DERIVED)
         self.assertIsNone(derive.EMPTY_EVENTS_DERIVED["events_verdict"])
 
-    def test_schema_version_is_two(self):
-        """校验器按 derived.schema_version >= 2 分流存量快照 —— 这个数不是
-        装饰,改了它就等于宣布"这份快照本该有结论句"。"""
-        self.assertEqual(derive.SCHEMA_VERSION, 2)
+    def test_schema_version_is_three(self):
+        """校验器按 derived.schema_version 分流存量快照 —— 这个数不是装饰,
+        改了它就等于宣布"这份快照本该有某个字段"。
+
+        2 的含义(本该有 events_verdict)**继续有效**:闸门是 `>= 2`,
+        3 照样过。3 的新含义是"本该有 body_plan" —— 判据必须是版本号而不是
+        "这个键在不在":后者会让**新代码产出却漏写 body_plan**的缺陷与阶段 1
+        之前采的存量快照完全同形,静默通过(与 DERIVED_VERDICT_SCHEMA 的
+        docstring 同一条理由)。"""
+        self.assertEqual(derive.SCHEMA_VERSION, 3)
         d, _ = derive.derive(payload(), [])
-        self.assertEqual(d["schema_version"], 2)
+        self.assertEqual(d["schema_version"], 3)
 
     def test_rates_and_real_rate_get_no_verdict(self):
         """非目标:日报结论句只做 events 一类。"""
@@ -737,6 +745,219 @@ class EventsVerdictTest(unittest.TestCase):
         self.assertFalse([k for k in d["rates"]["PHP"] if "verdict" in k])
         self.assertFalse([k for k in derive.EMPTY_RATE_DERIVED if "verdict" in k])
         self.assertFalse([k for k in derive.EMPTY_REAL_RATE if "verdict" in k])
+
+
+class BodyPlanTest(unittest.TestCase):
+    """币种节写 minimal 还是四环,**由脚本决定,不由 LLM 决定**。
+
+    2026-08-10 那份快照四个币种双缺,当天的报告用三个粗体标题承诺分析、
+    三段交付"我们没采到"。判据落进快照后,那种写法从"程度问题"变成结构上
+    不可能:minimal 档的节正文必须逐字等于这里生成的那一行。
+
+    判据是**三条的合取**,少看一条就退化:
+      ① 该币种 events.count 为 null 或 0;
+      ② 无 is_new_release=true 的**本地**宏观条目;
+      ③ 无新定盘。
+    每一条各有一组用例把"只看另外两条"的实现打红。
+    """
+
+    def _plan(self, rates=None, macro=None, events=None, history=None):
+        d, gaps = derive.derive(payload(rates, macro, events), history or [])
+        return d["body_plan"], d, gaps
+
+    # ---- 三条判据的合取 ----
+
+    def test_minimal_when_all_three_conditions_hold(self):
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                     prev_primary=60.75, prev_ref_date="2026-08-11")},
+            macro=[{"economy": "PH", "indicator": "CPI 同比", "value": 6.3,
+                    "period": "2026-06", "is_new_release": False}])
+        self.assertEqual(plan["PHP"]["mode"], "minimal")
+
+    def test_zero_events_is_minimal_too(self):
+        """count 0(确实 0 篇)与 null(采集失败)都算"当日无事件增量"。"""
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                     prev_primary=60.75, prev_ref_date="2026-08-11")},
+            events={"PHP": {"articles": []}})
+        self.assertEqual(plan["PHP"]["mode"], "minimal")
+
+    def test_events_alone_lift_it_to_full(self):
+        """判据①:有当日事件 → full,哪怕无新发布、无新定盘。"""
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                     prev_primary=60.75, prev_ref_date="2026-08-11")},
+            events={"PHP": {"articles": [{"title": "t"}]}})
+        self.assertEqual(plan["PHP"]["mode"], "full")
+
+    def test_local_new_release_alone_lifts_it_to_full(self):
+        """判据②:本地宏观有新发布 → full,哪怕零事件、无新定盘。
+        只看判据①的实现在这里必红。"""
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                     prev_primary=60.75, prev_ref_date="2026-08-11")},
+            macro=[{"economy": "PH", "indicator": "CPI 同比", "value": 6.3,
+                    "period": "2026-06", "is_new_release": True}],
+            events={"PHP": {"articles": []}})
+        self.assertEqual(plan["PHP"]["mode"], "full")
+
+    def test_new_release_of_another_economy_does_not_lift_this_currency(self):
+        """"本地"是字面要求:美国出数据不能把比索节顶成 full,否则一天里
+        五个币种会被同一条美国数据一起顶起来。"""
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                     prev_primary=60.75, prev_ref_date="2026-08-11")},
+            macro=[{"economy": "US", "indicator": "CPI 同比", "value": 3.365,
+                    "period": "2026-07", "is_new_release": True}],
+            events={"PHP": {"articles": []}, "USD": {"articles": []}})
+        self.assertEqual(plan["PHP"]["mode"], "minimal")
+        self.assertEqual(plan["USD"]["mode"], "full")
+
+    def test_new_fixing_alone_lifts_it_to_full(self):
+        """判据③:定盘日推进 → full,哪怕零事件、无新发布。
+        只看判据①②的实现在这里必红。"""
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                     prev_primary=60.5, prev_ref_date="2026-08-10")},
+            events={"PHP": {"articles": []}})
+        self.assertEqual(plan["PHP"]["mode"], "full")
+
+    def test_same_ref_date_is_not_a_new_fixing(self):
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                     prev_primary=60.75, prev_ref_date="2026-08-11")},
+            events={"PHP": {"articles": []}})
+        self.assertEqual(plan["PHP"]["mode"], "minimal")
+
+    def test_value_moved_without_ref_dates_counts_as_a_new_fixing(self):
+        """存量快照无定盘日:价格动了就是动了,不得因为"日期不可知"把它
+        当成没有增量 —— 那会把真实价格变动写成"本日无可用增量"。"""
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date=None, prev_primary=60.5,
+                                     prev_ref_date=None)},
+            events={"PHP": {"articles": []}})
+        self.assertEqual(plan["PHP"]["mode"], "full")
+
+    def test_equal_values_without_ref_dates_is_not_a_new_fixing(self):
+        plan, _, _ = self._plan(
+            rates={"PHP": rate_entry(60.75, ref_date=None, prev_primary=60.75,
+                                     prev_ref_date=None)},
+            events={"PHP": {"articles": []}})
+        self.assertEqual(plan["PHP"]["mode"], "minimal")
+
+    def test_base_currency_without_rates_entry_can_be_minimal(self):
+        """USD 不在 rates 容器里,"无新定盘"对它恒成立 —— 不得因为取不到
+        条目就崩,也不得因此判成 full。"""
+        plan, _, _ = self._plan(events={"USD": {"articles": []}})
+        self.assertEqual(plan["USD"]["mode"], "minimal")
+
+    # ---- 生成行 ----
+
+    def test_minimal_line_is_exactly_the_generated_sentence(self):
+        plan, _, _ = self._plan(events={"PHP": {"articles": []}})
+        self.assertEqual(plan["PHP"]["line"],
+                         "PHP:本日无可用增量,不更新判断;详见附录 A 与附录 C。")
+        self.assertEqual(len(plan["PHP"]["line"].splitlines()), 1)
+
+    def test_full_mode_carries_null_line_not_empty_string(self):
+        plan, _, _ = self._plan(events={"PHP": {"articles": [{"title": "t"}]}})
+        self.assertIsNone(plan["PHP"]["line"])
+
+    def test_minimal_line_names_its_own_currency(self):
+        plan, _, _ = self._plan(events={"PHP": {"articles": []},
+                                        "THB": {"articles": []}})
+        self.assertTrue(plan["PHP"]["line"].startswith("PHP:"))
+        self.assertTrue(plan["THB"]["line"].startswith("THB:"))
+
+    def test_minimal_line_carries_no_digit_and_no_plumbing_word(self):
+        """这一行会被逐字写进正文。它自己带管道语汇的话,正文位置闸门
+        (设计 §5.2 的 P2 词表,由下一阶段的校验器持有)会把脚本自己的产出
+        判成违规 —— 那是自伤形态,必须在产出端就避免。
+        这里只列与本行有关的那几个词,词表本身的冻结断言归校验器那一侧。"""
+        plan, _, _ = self._plan(events={"PHP": {"articles": []}})
+        line = plan["PHP"]["line"]
+        for word in ("缺漏", "快照", "通道", "条目", "采集失败", "不可得",
+                     "采集上限", "原始样本", "口径不可比", "下界", "无公告"):
+            self.assertNotIn(word, line, word)
+        self.assertFalse([ch for ch in line if ch.isdigit()], line)
+
+    # ---- 判据来自脚本,不来自被判对象 ----
+
+    def test_llm_supplied_hint_in_the_payload_cannot_flip_the_mode(self):
+        """"由脚本决定"的执行点:快照里(或 LLM 手塞的)任何 mode 提示都
+        不得被采信。退化成"读入参里的 mode"在这里必红。"""
+        p = payload({"PHP": rate_entry(60.75, ref_date="2026-08-11",
+                                       prev_primary=60.75,
+                                       prev_ref_date="2026-08-11")},
+                    None, {"PHP": {"articles": [], "body_mode": "full",
+                                   "body_plan": {"mode": "full", "line": "随便写的"}}})
+        p["body_plan"] = {"PHP": {"mode": "full", "line": "LLM 塞的"}}
+        p["derived"] = {"body_plan": {"PHP": {"mode": "full", "line": "LLM 塞的"}}}
+        d, _ = derive.derive(p, [])
+        self.assertEqual(d["body_plan"]["PHP"]["mode"], "minimal")
+        self.assertEqual(d["body_plan"]["PHP"]["line"],
+                         "PHP:本日无可用增量,不更新判断;详见附录 A 与附录 C。")
+
+    # ---- 结构 ----
+
+    def test_every_event_currency_has_a_plan(self):
+        plan, d, _ = self._plan(
+            rates={"PHP": rate_entry(60.75), "EUR": rate_entry(0.867)},
+            events={"PHP": {"articles": []}})
+        self.assertEqual(set(plan), set(d["events"]))
+        for c, entry in plan.items():
+            self.assertEqual(set(entry), {"mode", "line"}, c)
+            self.assertIn(entry["mode"], ("minimal", "full"), c)
+
+    def test_broken_rates_entry_writes_null_mode_and_a_gap(self):
+        """异常分支写 null 而不是兜底成某一档:猜 full 会放任四环体裁,
+        猜 minimal 会把有增量的一天钉成一行,两种猜法都在编造。"""
+        class Exploding(dict):
+            def get(self, *a, **k):
+                raise RuntimeError("boom")
+
+        d, gaps = derive.derive(payload({"PHP": Exploding()}, None,
+                                        {"PHP": {"articles": []}}), [])
+        self.assertIsNone(d["body_plan"]["PHP"]["mode"])
+        self.assertIsNone(d["body_plan"]["PHP"]["line"])
+        self.assertTrue([g for g in gaps if g.get("scope") == "PHP"], gaps)
+
+    def test_empty_body_plan_constant_carries_both_keys(self):
+        self.assertEqual(set(derive.EMPTY_BODY_PLAN), {"mode", "line"})
+        self.assertIsNone(derive.EMPTY_BODY_PLAN["mode"])
+        self.assertIsNone(derive.EMPTY_BODY_PLAN["line"])
+
+    def test_malformed_payload_shapes_do_not_raise(self):
+        for bad in ({"rates": "x", "events": "x", "macro": "x"},
+                    {"macro": [None, 7, "x"]}, {}):
+            with self.subTest(bad=bad):
+                d, _ = derive.derive(bad, [])
+                self.assertIsInstance(d["body_plan"], dict)
+
+
+class BodyPlanOnRealSnapshotsTest(unittest.TestCase):
+    """M15 的靶子用真数据:2026-08-10 是四币种双缺那一天,2026-08-14 五币种
+    都有当日事件。判据一旦退化,这两份的分档立刻对不上。"""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _modes(self, date_str):
+        with open(os.path.join(self.ROOT, "data", date_str + ".json"),
+                  encoding="utf-8") as f:
+            snap = json.load(f)
+        d, _ = derive.derive(snap, [])
+        return {c: p["mode"] for c, p in d["body_plan"].items()}
+
+    def test_2026_08_10_is_minimal_for_four_currencies(self):
+        self.assertEqual(self._modes("2026-08-10"),
+                         {"USD": "minimal", "EUR": "full", "PHP": "minimal",
+                          "THB": "minimal", "BRL": "minimal"})
+
+    def test_2026_08_14_is_full_for_all_five(self):
+        self.assertEqual(self._modes("2026-08-14"),
+                         {"USD": "full", "EUR": "full", "PHP": "full",
+                          "THB": "full", "BRL": "full"})
 
 
 if __name__ == "__main__":

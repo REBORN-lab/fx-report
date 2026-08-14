@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 
-from scripts import check_report
+from scripts import check_report, review, verdicts
 
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "scripts", "review.py")
@@ -308,6 +308,16 @@ class ReviewOutputIsRecognizedByCheckerTest(unittest.TestCase):
                 self.assertIn(check_report.REVIEW_BLOCK_HEADING, lines,
                               "review.py 的块头与校验器常量不一致:%r" % lines)
 
+    def test_direction_sentence_rides_inside_a_recognised_line(self):
+        """方向核对句是**加进既有行**的一个字段,不是新起一行 —— 新起一行会
+        落到豁免式样之外,被 --strict-brief 当成 LLM 手写行照查(实测:那正是
+        本仓库此前 4 条 BRIEF_NUMBER_UNTRACEABLE 的成因)。"""
+        lines = self._appended(*self.CASES["命中"])
+        carriers = [ln for ln in lines if "方向核对句: " in ln]
+        self.assertEqual(len(carriers), 1, lines)
+        self.assertTrue(check_report.is_generated_review_line(carriers[0]),
+                        carriers[0])
+
     def test_every_appended_line_is_exempted_by_the_checker(self):
         for label, (entries, snapshots) in self.CASES.items():
             with self.subTest(case=label):
@@ -317,3 +327,124 @@ class ReviewOutputIsRecognizedByCheckerTest(unittest.TestCase):
                     self.assertTrue(
                         check_report.is_generated_review_line(line),
                         "校验器认不出 review.py 生成的行:%r" % line)
+
+
+class DirectionSentenceTest(unittest.TestCase):
+    """方向核对给出的那一句,必须经 `scripts/verdicts.join_verdict` 拼装。
+
+    存在理由(设计 §8 阶段 1 末尾那件"小事"):`direction_outcome` 是脚本机械
+    算出的结论,实测**零个下游消费者** —— 它只以"方向核对: X"三个字躺在要点
+    表里,而流向读者的那个 verdict 是 LLM 自己写的。给它接上第一个消费者:
+    脚本拼出**完整的一句**,报告逐字引用整句。
+
+    句子必须**经共享拼装口**产出:自己拼会在分隔符(全角顿号)、括号(ASCII)
+    与"没有 caveat 时不得拼出空括号"三处各漂一次,而这三处正是逐字引用检查
+    的比对对象 —— 漂了以后报告与要点表两处的同一句话不再相等。
+    """
+
+    HEAD_CASE = dict(date="2026-08-09", currency="PHP", outcome="命中",
+                     watch_direction="up", prev_rate=60.0, today_rate=60.5,
+                     fixing_unchanged=False)
+
+    def test_assembler_is_the_shared_one(self):
+        self.assertIs(review.join_verdict, verdicts.join_verdict)
+
+    def test_sentence_is_verbatim(self):
+        self.assertEqual(
+            review.direction_sentence(**self.HEAD_CASE),
+            "2026-08-09 PHP 方向核对:命中(关注方向 up、观点日读数 60.0、"
+            "当日读数 60.5)")
+
+    def test_sentence_equals_what_the_shared_assembler_would_give(self):
+        """措辞可以改,拼装口不可以绕 —— 这条断言只钉"经过 join_verdict"。"""
+        self.assertEqual(
+            review.direction_sentence(**self.HEAD_CASE),
+            verdicts.join_verdict("2026-08-09 PHP 方向核对:命中",
+                                  ["关注方向 up", "观点日读数 60.0",
+                                   "当日读数 60.5"]))
+
+    def test_bypassing_the_assembler_is_detectable(self):
+        """自己用 % 或 join 拼的实现在这里必红:补丁换掉 join_verdict 之后,
+        句子必须跟着变。"""
+        original = review.join_verdict
+        self.addCleanup(setattr, review, "join_verdict", original)
+        review.join_verdict = lambda head, caveats: "SENTINEL<%s|%s>" % (
+            head, ",".join(caveats))
+        got = review.direction_sentence(**self.HEAD_CASE)
+        self.assertTrue(got.startswith("SENTINEL<"), got)
+        self.assertIn("2026-08-09 PHP 方向核对:命中", got)
+
+    def test_fixing_unchanged_replaces_the_two_readings(self):
+        case = dict(self.HEAD_CASE, fixing_unchanged=True, outcome="无法判定",
+                    prev_rate=60.75, today_rate=60.75)
+        self.assertEqual(review.direction_sentence(**case),
+                         "2026-08-09 PHP 方向核对:无法判定(关注方向 up、"
+                         "参考价未更新(非工作日))")
+
+    def test_missing_readings_are_declared_not_printed_as_none(self):
+        case = dict(self.HEAD_CASE, outcome="无法判定", prev_rate=60.0,
+                    today_rate=None)
+        got = review.direction_sentence(**case)
+        self.assertIn("当日无读数", got)
+        self.assertNotIn("None", got)
+
+    def test_unrecorded_watch_direction_is_normalised(self):
+        """`watch_direction` 是 LLM 文本。原样插进句子会把任意字符(含竖线、
+        伪造的字段名)带进这条要被逐字引用的话 —— 只认 up/down 两个值。"""
+        for bad in (None, "", "上", "up | 关注方向: down", 7, True):
+            with self.subTest(bad=bad):
+                got = review.direction_sentence(
+                    **dict(self.HEAD_CASE, watch_direction=bad))
+                self.assertIn("关注方向未记录", got)
+                self.assertEqual(len(got.splitlines()), 1)
+                self.assertNotIn("|", got)
+
+    def test_sentence_carries_no_plumbing_word_and_no_field_name(self):
+        """这句话要被逐字抄进正文复盘节。它自己带管道语汇或快照字段名的话,
+        正文位置闸门会把脚本自己的产出判成违规(自伤形态)。"""
+        got = review.direction_sentence(**self.HEAD_CASE)
+        for word in ("快照", "primary", "derived", "null", "缺漏", "条目",
+                     "采集失败", "不可得", "通道", ".json", "#rates"):
+            self.assertNotIn(word, got, word)
+
+    def test_sentence_reaches_the_brief_verbatim(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        brief = setup_root(tmp.name, [opinion()],
+                           {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
+        r = run_review(tmp.name)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(brief, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn(review.direction_sentence(**self.HEAD_CASE), text)
+
+    def test_sentence_covers_every_pending_opinion(self):
+        entries = [opinion(currency="PHP"), opinion(currency="THB")]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        brief = setup_root(tmp.name, entries,
+                           {"2026-08-09": {"rates": {"PHP": {"primary": 60.0},
+                                                     "THB": {"primary": 33.0}}},
+                            "2026-08-10": {"rates": {"PHP": {"primary": 60.5},
+                                                     "THB": {"primary": 33.5}}}})
+        self.assertEqual(run_review(tmp.name).returncode, 0)
+        with open(brief, encoding="utf-8") as f:
+            text = f.read()
+        self.assertEqual(text.count("方向核对句: "), 2, text)
+        for c in ("PHP", "THB"):
+            self.assertIn("2026-08-09 %s 方向核对:命中" % c, text)
+
+    def test_outcome_in_the_sentence_is_the_one_the_script_computed(self):
+        """句子里的结论词与回填进日志的那个必须同源同字,不得各算一次。"""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        brief = setup_root(tmp.name, [opinion(watch_direction="down")],
+                           {"2026-08-09": snap(60.0), "2026-08-10": snap(60.5)})
+        self.assertEqual(run_review(tmp.name).returncode, 0)
+        with open(brief, encoding="utf-8") as f:
+            text = f.read()
+        with open(os.path.join(tmp.name, "state", "decision-log.jsonl"),
+                  encoding="utf-8") as f:
+            logged = json.loads(f.readline())["review"]["direction_outcome"]
+        self.assertEqual(logged, "未命中")
+        self.assertIn("2026-08-09 PHP 方向核对:未命中", text)

@@ -7,6 +7,16 @@ import math
 import os
 import sys
 
+# 结论句的拼装口只有一个(head 与 caveat 列表怎么连,只有 verdicts 说了算)。
+# 自己用 % / join 拼会在分隔符(全角顿号)、括号(ASCII)与"没有 caveat 时
+# 不得拼出空括号"三处各漂一次,而这三处正是逐字引用检查的比对对象。
+# 两条分支对应两种运行形态:包内导入(测试、`python3 -m`)与
+# `python3 scripts/review.py` 直跑(此时 sys.path[0] 就是 scripts/)。
+try:
+    from scripts.verdicts import join_verdict
+except ImportError:                                  # pragma: no cover - 直跑分支
+    from verdicts import join_verdict
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMPTY_REVIEW = {"direction_outcome": None, "trigger_judgement": None, "verdict": None}
 # 复盘材料块的块头。**唯一事实源在这里**(本脚本是产出方),
@@ -104,6 +114,35 @@ def direction_outcome(prev_rate, today_rate, watch_direction):
     return "命中" if actual == watch_direction else "未命中"
 
 
+def direction_sentence(date, currency, outcome, watch_direction,
+                       prev_rate, today_rate, fixing_unchanged):
+    """方向核对的**完整一句**,供报告复盘节逐字引用。
+
+    存在理由:`direction_outcome` 由脚本机械算出,却实测**零个下游消费者** ——
+    它只以"方向核对: X"三个字躺在要点表里,而流向读者的 verdict 是 LLM 自己
+    写的。这一句是它的第一个消费者:脚本给整句,报告只准整句照抄。
+
+    三条纪律:
+    ① 经 `verdicts.join_verdict` 拼装,与 events_verdict 走同一条通道;
+    ② `watch_direction` 是 LLM 文本,只认 up/down 两个值 —— 原样插进来会把
+       任意字符(竖线、伪造的字段名、换行)带进这条要被逐字引用的话;
+    ③ 句内不出现快照字段名/文件路径/管道语汇:这句要落进**正文**,而正文
+       位置闸门禁的正是那些词,脚本自己的产出不得触发它(自伤形态)。
+    """
+    head = "%s %s 方向核对:%s" % (date, currency, outcome)
+    caveats = ["关注方向 %s" % watch_direction
+               if watch_direction in ("up", "down") else "关注方向未记录"]
+    if fixing_unchanged:
+        # 两值相等是"没有新定盘"而非"市场持平",这一条替代两个读数
+        caveats.append("参考价未更新(非工作日)")
+    else:
+        caveats.append("观点日读数 %s" % prev_rate if prev_rate is not None
+                       else "观点日无读数")
+        caveats.append("当日读数 %s" % today_rate if today_rate is not None
+                       else "当日无读数")
+    return join_verdict(head, caveats)
+
+
 def review_of(e):
     """e['review'] 的 isinstance 门: 非 dict(缺失/外部损坏为 None)返回 None。"""
     rev = e.get("review")
@@ -160,15 +199,24 @@ def main(argv=None):
             rev["direction_outcome"] = oc
             # 参考价未更新时,两值相等是"没有新定盘"而非"市场持平"——必须区分,
             # 否则 LLM 会把休市日写成价格观察(诊断实测:12/12 汇率对连平全属此类)
-            rate_desc = ("参考价未更新(非工作日)"
-                         if fixing_unchanged(prev_snap, today_snap, currency)
+            unchanged = fixing_unchanged(prev_snap, today_snap, currency)
+            rate_desc = ("参考价未更新(非工作日)" if unchanged
                          else "汇率 %s→%s" % (prev_r, today_r))
+            # 方向核对句嵌在**既有行内**,不新起一行:块内每一行都必须落在
+            # `check_report.REVIEW_LINE_RES` 的式样里才拿得到 --strict-brief
+            # 的豁免,新起一行会被当成 LLM 手写行照查(实测的 4 条
+            # BRIEF_NUMBER_UNTRACEABLE 就是这么来的)。字段插在"触发条件"与
+            # "关注方向"之间:前两段是 `.*`,吃得下这一段;"关注方向"那段是
+            # `[^|]*`,插在它后面会把式样撑破。
             lines.append(
-                "- %s | 观点日 %s | 情景: %s | 触发条件: %s | 关注方向: %s"
-                " | %s | 方向核对: %s"
+                "- %s | 观点日 %s | 情景: %s | 触发条件: %s | 方向核对句: %s"
+                " | 关注方向: %s | %s | 方向核对: %s"
                 % (flat(currency), target, flat(e.get("scenario")),
-                   flat(e.get("trigger")), flat(e.get("watch_direction")),
-                   rate_desc, oc))
+                   flat(e.get("trigger")),
+                   direction_sentence(target, flat(currency), oc,
+                                      e.get("watch_direction"), prev_r,
+                                      today_r, unchanged),
+                   flat(e.get("watch_direction")), rate_desc, oc))
         if pending:
             # 无回填发生时不重写文件: 避免丢弃坏行、放大并发窗口
             save_log(log_path, entries)
