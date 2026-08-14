@@ -89,7 +89,9 @@ def _fixing_key(ref, value):
 
 
 def _chg_pct_1d(entry):
-    # 参考价未更新 → 两值必然相等,但那不是价格变动(非工作日),不得算 0%
+    # 参考价未更新(两侧同一个定盘日)→ 两值必然相等,但那不是价格变动,
+    # 不得算 0%。**为什么没出新定盘,这里不知道也不猜**:本模块没有任何
+    # 日历输入,同型的假归因刚在 review.py 的措辞上修过一次
     ref, prev_ref = entry.get("ref_date"), entry.get("prev_ref_date")
     if isinstance(ref, str) and ref == prev_ref:
         return None
@@ -362,7 +364,8 @@ def _events_derived(payload, history, gaps):
 
 def _has_new_fixing(entry):
     """该币种今天有没有一次**新定盘**。判据与 _chg_pct_1d 同源:两侧定盘日
-    已知时只看日期是否推进(同日 = 非工作日,不是"价格持平");定盘日不可知
+    已知时只看日期是否推进(同日 = 没有新定盘,不是"价格持平";至于为什么
+    没有,本模块无从判断,也不写进任何产出);定盘日不可知
     (存量快照)时退回按值比较 —— 价格动了就是动了,不得因为"日期不可知"
     把真实变动读成"本日无增量",那会把有增量的一天钉成一行。
 

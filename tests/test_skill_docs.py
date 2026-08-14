@@ -14,6 +14,9 @@ import os
 import re
 import unittest
 
+from scripts import review
+from tests.test_review import UNCHANGED_REF_CAUSE_WORDS
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DAILY = os.path.join(ROOT, "skills", "fx-daily-report", "SKILL.md")
 WEEKLY = os.path.join(ROOT, "skills", "fx-weekly-report", "SKILL.md")
@@ -840,3 +843,32 @@ class VerdictCodesAreDocumentedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnchangedRefWordingInSkillTest(SkillDocTestCase):
+    """SKILL 让 LLM 写的那一句,必须和 `review.unchanged_ref_note` 一个措辞,
+    而且同样不许断言原因。
+
+    这一处**不是可有可无的第二份**:第 2 步的"汇率变动"行由 LLM 手写进要点表
+    (脚本只管复盘材料块),SKILL 是它唯一的措辞来源。改了脚本不改这里,同一
+    件事在报告里会有两种说法,而"哪一份算数"无处可判 —— 正是本文件开头那段
+    说的"第二处判定"。
+
+    诚实标注:这里查的是**SKILL 正文里出没出现哪些串**,即存在性检查;它保证
+    不了 LLM 真照着写(那由 check_report 的溯源与逐字引用检查兜)。
+    """
+
+    CAUSE_WORDS = UNCHANGED_REF_CAUSE_WORDS   # 与脚本侧同一份词表
+
+    def test_daily_skill_quotes_the_scripts_wording(self):
+        t = flat(DAILY)
+        self.assertIn(
+            "".join(review.unchanged_ref_note("<ref_date>").split()), t,
+            "第 2 步的汇率变动行不再用脚本那句措辞")
+
+    def test_daily_skill_asserts_no_cause(self):
+        t = raw(DAILY)
+        for word in self.CAUSE_WORDS:
+            with self.subTest(word=word):
+                self.assertNotIn(word, t,
+                                 "SKILL 仍在教 LLM 断言原因:「%s」" % word)

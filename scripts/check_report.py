@@ -16,9 +16,9 @@ import sys
 # **这里不引入 `os`** —— 校验器不读环境变量是不变量,由
 # VerdictGateIsOrthogonalToTheCheckedObjectTest 的 AST 断言钉住。
 try:
-    from scripts.review import REVIEW_BLOCK_HEADING
+    from scripts.review import REVIEW_BLOCK_HEADING, unchanged_ref_note
 except ImportError:                                  # pragma: no cover - 直跑分支
-    from review import REVIEW_BLOCK_HEADING
+    from review import REVIEW_BLOCK_HEADING, unchanged_ref_note
 
 CURRENCIES = ["USD", "EUR", "PHP", "THB", "BRL"]
 MAX_SUMMARY_ITEMS = 6
@@ -37,17 +37,26 @@ LIST_ITEM_RE = re.compile(r"\s*(?:[-*]|\d+[.、])\s+\S")
 #   `- 上一运行日(2026-08-10)无未复盘观点`
 #   `- PHP | 观点日 2026-08-12 | 情景: … | 触发条件: … | 关注方向: down`
 #   ` | 汇率 61.178→61.325 | 方向核对: 未命中`
-#   第六段另有一种形态:`| 参考价未更新(非工作日) |`(两侧定盘日期相同)
+#   第六段另有一种形态:两侧定盘日期相同时,写 `review.unchanged_ref_note`
+#     给出的那一句(带定盘日期)
 # 情景/触发条件是 LLM 文本,可能含 `|`(review.flat 只扁平化换行、不转义竖线),
 # 故这两段用 `.*` 靠尾部固定串回溯定位;其余每一段都钉死。
 # **不匹配 = 照查**(失败关闭):式样收紧只会多查,不会漏查。
-# review.py 的这两处括号是 **ASCII** `()`(不是全角),正则里必须转义 ——
-# 不转义就成了捕获组,式样反而要求「没有括号」,于是真行一条都认不出、
-# 豁免整块失效。实测就踩了这一脚,由 test_review 的端到端用例当场抓到。
+#
+# 「参考价未更新」那一段的措辞**这里一个字都不重写**:它由产出方
+# `review.unchanged_ref_note` 给出,本文件只把其中的定盘日期换成日期式样。
+# 理由与 REVIEW_BLOCK_HEADING 同规矩 —— 两处各写一遍必然漂移,而漂移的后果
+# (真行一条都认不出、--strict-brief 的豁免整块失效)不会有人发现。实测就
+# 踩过一脚同型的:review.py 那两处括号是 **ASCII** `()`,手抄的正则没转义,
+# 式样反而要求「没有括号」。从产出方 re.escape 推出来,括号是全角还是 ASCII
+# 都自动对上,这类手抄错误不再可能发生。
+_REF_DATE_SLOT = "0000-00-00"                        # re.escape 后再换成日期式样
+UNCHANGED_REF_NOTE_PAT = re.escape(unchanged_ref_note(_REF_DATE_SLOT)).replace(
+    re.escape(_REF_DATE_SLOT), r"\d{4}-\d{2}-\d{2}")
 REVIEW_MATERIAL_RE = re.compile(
     r"- [A-Z]{3} \| 观点日 \d{4}-\d{2}-\d{2} \| 情景: .* \| 触发条件: .*"
     r" \| 关注方向: [^|]* \| (?:汇率 (?:None|[-+0-9.eE]+)→(?:None|[-+0-9.eE]+)"
-    r"|参考价未更新\(非工作日\)) \| 方向核对: (?:命中|未命中|无法判定)")
+    r"|" + UNCHANGED_REF_NOTE_PAT + r") \| 方向核对: (?:命中|未命中|无法判定)")
 REVIEW_LINE_RES = (
     re.compile(r"\s*"),                                  # 块内空行
     re.compile(r"- 首次运行,无历史观点可复盘"),

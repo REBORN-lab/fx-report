@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import subprocess
@@ -237,7 +238,7 @@ class RefDateBranchTest(ReviewTest):
             [opinion()],
             {"2026-08-09": snap_ref(60.75, "2026-08-07"),
              "2026-08-10": snap_ref(60.75, "2026-08-07")})
-        self.assertIn("参考价未更新(非工作日)", text)
+        self.assertIn("参考价未更新(仍为 2026-08-07 定盘)", text)
         # 不得表述为价格持平的市场观察
         self.assertNotIn("方向核对: 命中", text)
         self.assertEqual(log[0]["review"]["direction_outcome"], "无法判定")
@@ -344,7 +345,7 @@ class DirectionSentenceTest(unittest.TestCase):
 
     HEAD_CASE = dict(date="2026-08-09", currency="PHP", outcome="命中",
                      watch_direction="up", prev_rate=60.0, today_rate=60.5,
-                     fixing_unchanged=False)
+                     unchanged_ref_date=None)
 
     def test_assembler_is_the_shared_one(self):
         self.assertIs(review.join_verdict, verdicts.join_verdict)
@@ -374,12 +375,12 @@ class DirectionSentenceTest(unittest.TestCase):
         self.assertTrue(got.startswith("SENTINEL<"), got)
         self.assertIn("2026-08-09 PHP 方向核对:命中", got)
 
-    def test_fixing_unchanged_replaces_the_two_readings(self):
-        case = dict(self.HEAD_CASE, fixing_unchanged=True, outcome="无法判定",
-                    prev_rate=60.75, today_rate=60.75)
+    def test_unchanged_ref_date_replaces_the_two_readings(self):
+        case = dict(self.HEAD_CASE, unchanged_ref_date="2026-08-07",
+                    outcome="无法判定", prev_rate=60.75, today_rate=60.75)
         self.assertEqual(review.direction_sentence(**case),
                          "2026-08-09 PHP 方向核对:无法判定(关注方向 up、"
-                         "参考价未更新(非工作日))")
+                         "参考价未更新(仍为 2026-08-07 定盘))")
 
     def test_missing_readings_are_declared_not_printed_as_none(self):
         case = dict(self.HEAD_CASE, outcome="无法判定", prev_rate=60.0,
@@ -448,3 +449,157 @@ class DirectionSentenceTest(unittest.TestCase):
             logged = json.loads(f.readline())["review"]["direction_outcome"]
         self.assertEqual(logged, "未命中")
         self.assertIn("2026-08-09 PHP 方向核对:未命中", text)
+
+
+# 归因词表:任何**解释原因**的说法都不许进「参考价未更新」那句话。「非工作日」
+# 是原病灶,其余是同型替代 —— 必须被测试杀掉的变异里点名了「换成另一种原因断言」。
+# 放在模块层是因为 tests/test_skill_docs.py 也要用同一份:词表分两份写,脚本与
+# SKILL 两边就会各禁各的。
+# **按名字导入这个元组,不要导入下面的 TestCase 类** —— 把 TestCase 导进另一个
+# 测试模块,unittest discover 会在两个模块里各跑它一遍(实测总数由 824 虚涨到 834)。
+UNCHANGED_REF_CAUSE_WORDS = ("非工作日", "非交易日", "休市", "假日", "节假日",
+                             "周末", "停市", "停牌", "闭市", "不开盘")
+
+
+class UnchangedRefNoteStatesFactNotCauseTest(unittest.TestCase):
+    """两日同定盘时的那句话:**只陈述事实,不断言原因**。
+
+    修的缺陷:`review.py` 在两个 ref_date 相同时**无条件**写「参考价未更新
+    (非工作日)」—— 它从不查日历。实测 2026-08-12 是周三、2026-08-14 是周五,
+    四个币种都不休市。这句假归因还经报告复盘节**逐字引用**流回正文
+    (实测 reports/daily/2026-08-12.md 正文含「非工作日」)。
+
+    脚本手上只有两个 ref_date,没有任何日历/交易所日程输入,所以它**有资格
+    断言的全部内容**就是「这两天的定盘日期是同一个,而且是哪一个」。原因
+    (休市?数据源没更新?采集时点早于定盘?)一律交给读者自己判断。
+
+    诚实标注:本类查的是**输出串里出没出现某些词**,即存在性检查。它挡得住
+    「换一种原因断言」这类同型复发,挡不住「换一个本表没收录的新词去归因」。
+    """
+
+    CAUSE_WORDS = UNCHANGED_REF_CAUSE_WORDS
+
+    def test_note_names_the_ref_date_and_nothing_else(self):
+        self.assertEqual(review.unchanged_ref_note("2026-08-07"),
+                         "参考价未更新(仍为 2026-08-07 定盘)")
+
+    def test_note_carries_whatever_ref_date_it_is_given(self):
+        """带上那个日期是硬要求:读者据此自己判断,脚本不替他判断。"""
+        for d in ("2026-08-07", "1999-12-31", "2026-08-12"):
+            with self.subTest(ref_date=d):
+                self.assertIn(d, review.unchanged_ref_note(d))
+
+    def test_note_asserts_no_cause(self):
+        for d in ("2026-08-07", "2026-08-14"):
+            note = review.unchanged_ref_note(d)
+            for word in self.CAUSE_WORDS:
+                with self.subTest(ref_date=d, word=word):
+                    self.assertNotIn(word, note,
+                                     "这句话在断言原因,而脚本从不查日历:%r" % note)
+
+    def test_note_carries_no_plumbing_word(self):
+        """这句话经方向核对句**逐字抄进正文**,所以它自己不得带管道语汇 ——
+        「与前一快照同为 X 定盘」这类写法会让脚本自己的产出撞上正文位置闸门
+        (自伤形态),词表与 DirectionSentenceTest 那条同源。"""
+        for word in ("快照", "primary", "derived", "null", "采集", "通道",
+                     ".json", "字段"):
+            with self.subTest(word=word):
+                self.assertNotIn(word, review.unchanged_ref_note("2026-08-07"))
+
+    def test_direction_sentence_uses_the_shared_note(self):
+        """产出点一:逐字流进报告正文的那一句。"""
+        got = review.direction_sentence(
+            date="2026-08-09", currency="PHP", outcome="无法判定",
+            watch_direction="up", prev_rate=60.75, today_rate=60.75,
+            unchanged_ref_date="2026-08-07")
+        self.assertIn(review.unchanged_ref_note("2026-08-07"), got)
+
+    def test_both_emission_sites_use_the_shared_note(self):
+        """产出点二:材料行的汇率段。
+
+        必须杀掉的变异之一是「只改一处措辞漏掉另一处」—— 材料行的识别正则
+        用 `.*` 吃掉了方向核对句那一段,所以**行式样认得出**并不能证明句内
+        那一处也改了。这里数出现次数:两个产出点各一次。
+        """
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        brief = setup_root(tmp.name, [opinion()],
+                           {"2026-08-09": snap_ref(60.75, "2026-08-07"),
+                            "2026-08-10": snap_ref(60.75, "2026-08-07")})
+        r = run_review(tmp.name)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(brief, encoding="utf-8") as f:
+            text = f.read()
+        self.assertEqual(text.count(review.unchanged_ref_note("2026-08-07")), 2,
+                         "两个产出点没有共用同一句措辞:%r" % text)
+        for word in self.CAUSE_WORDS:
+            with self.subTest(word=word):
+                self.assertNotIn(word, text,
+                                 "要点表里仍有原因断言「%s」" % word)
+
+    def test_checker_recognises_the_note_for_any_ref_date(self):
+        """必须杀掉的变异之一是「改了输出但没改识别正则」—— 那会让复盘材料块
+        的 --strict-brief 豁免整段失效。这里换一个与别处都不同的定盘日跑,
+        顺带钉住「日期是式样、不是写死的那一个」。"""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        brief = setup_root(tmp.name, [opinion()],
+                           {"2026-08-09": snap_ref(60.75, "1999-12-31"),
+                            "2026-08-10": snap_ref(60.75, "1999-12-31")})
+        with open(brief, encoding="utf-8") as f:
+            before = f.read()
+        r = run_review(tmp.name)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(brief, encoding="utf-8") as f:
+            appended = f.read()[len(before):].splitlines()
+        self.assertTrue(any(review.unchanged_ref_note("1999-12-31") in ln
+                            for ln in appended), appended)
+        for line in appended:
+            self.assertTrue(check_report.is_generated_review_line(line),
+                            "校验器认不出 review.py 生成的行:%r" % line)
+
+    def test_checker_takes_the_wording_from_this_module(self):
+        """措辞的**单一事实源**在 review.py(产出方),与 REVIEW_BLOCK_HEADING
+        同规矩:校验器只许导入,不许自己再写一遍。两处各写一遍必然漂移,而
+        漂移的后果(豁免整块失效)不会有人发现。"""
+        self.assertIs(check_report.unchanged_ref_note, review.unchanged_ref_note)
+        # 查**字符串字面量**(AST,注释不算):第二份拷贝要能被代码用上才有害,
+        # 而注释里解释这件事是应该的。手抄一份式样进正则 = 出现一个含这几个字
+        # 的字面量,这条断言当场红。
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        copies = [n.value for n in ast.walk(tree)
+                  if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                  and "参考价未更新" in n.value]
+        self.assertEqual(copies, [],
+                         "校验器里出现了措辞的第二份拷贝:%r" % copies)
+
+
+class UnchangedRefDateOfTest(unittest.TestCase):
+    """`unchanged_ref_date_of` 是「两日同定盘」的**唯一判据**:既给谓词
+    (`is not None`),也给那句话要带的日期。判据只留一个,是为了不让
+    「判定为未更新」与「未更新时说哪一天」两处各算一次而算岔。"""
+
+    def test_same_ref_date_returns_it(self):
+        self.assertEqual(
+            review.unchanged_ref_date_of(snap_ref(60.75, "2026-08-07"),
+                                         snap_ref(60.75, "2026-08-07"), "PHP"),
+            "2026-08-07")
+
+    def test_different_ref_date_returns_none(self):
+        self.assertIsNone(
+            review.unchanged_ref_date_of(snap_ref(60.0, "2026-08-07"),
+                                         snap_ref(60.5, "2026-08-10"), "PHP"))
+
+    def test_missing_ref_date_returns_none(self):
+        self.assertIsNone(
+            review.unchanged_ref_date_of(snap(60.0), snap_ref(60.5, "2026-08-10"),
+                                         "PHP"))
+
+    def test_empty_ref_date_on_both_sides_still_counts_as_unchanged(self):
+        """空串是 str,旧的布尔判据认它为「未更新」。调用点必须按
+        `is not None` 判,按真值判会把这一档静默翻面 —— 那是行为变更,
+        不在本次修复范围内。"""
+        self.assertEqual(
+            review.unchanged_ref_date_of(snap_ref(60.75, ""),
+                                         snap_ref(60.75, ""), "PHP"), "")

@@ -97,12 +97,37 @@ def ref_date_of(snap, currency):
     return ref if isinstance(ref, str) else None
 
 
-def fixing_unchanged(prev_snap, today_snap, currency):
-    """两侧参考价定盘日期都在且相同 → 参考价未更新(非工作日),不是价格持平。
-    任一侧缺失(存量快照)→ False,退回按数值比较的旧行为。"""
+def unchanged_ref_date_of(prev_snap, today_snap, currency):
+    """两侧参考价定盘日期都在且相同 → 返回那个日期(参考价未更新,不是价格
+    持平);任一侧缺失(存量快照)或不同 → None,退回按数值比较的旧行为。
+
+    **谓词与日期只留这一个判据**:调用点按 `is not None` 判,不按真值判 ——
+    ref_date 为空串时旧的布尔判据认它为「未更新」,按真值判会把这一档静默
+    翻面。返回日期而不只返回布尔,是因为那句话必须带上它(见
+    `unchanged_ref_note`);两处各算一次必然算岔。
+    """
     prev_ref = ref_date_of(prev_snap, currency)
     today_ref = ref_date_of(today_snap, currency)
-    return prev_ref is not None and prev_ref == today_ref
+    return prev_ref if prev_ref is not None and prev_ref == today_ref else None
+
+
+def unchanged_ref_note(ref_date):
+    """两日同定盘时的那句话。**唯一事实源在这里**:两个产出点
+    (`direction_sentence` 的 caveat 与材料行的汇率段)共用它,
+    `scripts/check_report.py` 的行式样也由它推出、不许自己再写一遍
+    —— 与 `REVIEW_BLOCK_HEADING` 同规矩。
+
+    **只陈述事实,不断言原因。** 修前这里写的是「参考价未更新(非工作日)」,
+    而本脚本**从不查日历**:它手上只有两个 ref_date,没有任何交易所日程输入。
+    实测 2026-08-12 是周三、2026-08-14 是周五,四个币种都不休市,这句假归因
+    还经报告复盘节逐字引用流回了正文。脚本有资格说的全部内容,就是「两天的
+    定盘日期是同一个,而且是哪一个」;至于为什么没更新(休市?源未刷新?
+    采集时点早于定盘?),交给读者据这个日期自己判断。
+
+    措辞里不得出现管道语汇(「快照」等):这句话要落进**正文**,而正文位置
+    闸门禁的正是那些词,脚本自己的产出不得触发它(自伤形态)。
+    """
+    return "参考价未更新(仍为 %s 定盘)" % ref_date
 
 
 def direction_outcome(prev_rate, today_rate, watch_direction):
@@ -115,7 +140,7 @@ def direction_outcome(prev_rate, today_rate, watch_direction):
 
 
 def direction_sentence(date, currency, outcome, watch_direction,
-                       prev_rate, today_rate, fixing_unchanged):
+                       prev_rate, today_rate, unchanged_ref_date):
     """方向核对的**完整一句**,供报告复盘节逐字引用。
 
     存在理由:`direction_outcome` 由脚本机械算出,却实测**零个下游消费者** ——
@@ -127,14 +152,18 @@ def direction_sentence(date, currency, outcome, watch_direction,
     ② `watch_direction` 是 LLM 文本,只认 up/down 两个值 —— 原样插进来会把
        任意字符(竖线、伪造的字段名、换行)带进这条要被逐字引用的话;
     ③ 句内不出现快照字段名/文件路径/管道语汇:这句要落进**正文**,而正文
-       位置闸门禁的正是那些词,脚本自己的产出不得触发它(自伤形态)。
+       位置闸门禁的正是那些词,脚本自己的产出不得触发它(自伤形态);
+    ④ 句内**只给事实,不给原因** —— 脚本手上只有读数与定盘日期,任何"为什么"
+       都是它无从判断的(修前那句「非工作日」就是这么进的正文,见
+       `unchanged_ref_note`)。
     """
     head = "%s %s 方向核对:%s" % (date, currency, outcome)
     caveats = ["关注方向 %s" % watch_direction
                if watch_direction in ("up", "down") else "关注方向未记录"]
-    if fixing_unchanged:
-        # 两值相等是"没有新定盘"而非"市场持平",这一条替代两个读数
-        caveats.append("参考价未更新(非工作日)")
+    if unchanged_ref_date is not None:
+        # 两值相等是"没有新定盘"而非"市场持平",这一条替代两个读数。
+        # 措辞只从 unchanged_ref_note 取:句内不得自己拼(见该函数的说明)
+        caveats.append(unchanged_ref_note(unchanged_ref_date))
     else:
         caveats.append("观点日读数 %s" % prev_rate if prev_rate is not None
                        else "观点日无读数")
@@ -198,9 +227,10 @@ def main(argv=None):
                 e["review"] = rev
             rev["direction_outcome"] = oc
             # 参考价未更新时,两值相等是"没有新定盘"而非"市场持平"——必须区分,
-            # 否则 LLM 会把休市日写成价格观察(诊断实测:12/12 汇率对连平全属此类)
-            unchanged = fixing_unchanged(prev_snap, today_snap, currency)
-            rate_desc = ("参考价未更新(非工作日)" if unchanged
+            # 否则 LLM 会把没有新定盘的一天写成价格观察(诊断实测:12/12 汇率对
+            # 连平全属此类)。**为什么没更新,脚本不知道**,故只报同定盘日这个事实。
+            unchanged_ref = unchanged_ref_date_of(prev_snap, today_snap, currency)
+            rate_desc = (unchanged_ref_note(unchanged_ref) if unchanged_ref is not None
                          else "汇率 %s→%s" % (prev_r, today_r))
             # 方向核对句嵌在**既有行内**,不新起一行:块内每一行都必须落在
             # `check_report.REVIEW_LINE_RES` 的式样里才拿得到 --strict-brief
@@ -215,7 +245,7 @@ def main(argv=None):
                    flat(e.get("trigger")),
                    direction_sentence(target, flat(currency), oc,
                                       e.get("watch_direction"), prev_r,
-                                      today_r, unchanged),
+                                      today_r, unchanged_ref),
                    flat(e.get("watch_direction")), rate_desc, oc))
         if pending:
             # 无回填发生时不重写文件: 避免丢弃坏行、放大并发窗口
