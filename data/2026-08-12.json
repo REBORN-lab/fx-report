@@ -580,7 +580,7 @@
   }
  },
  "derived": {
-  "schema_version": 3,
+  "schema_version": 4,
   "rates": {
    "PHP": {
     "chg_pct_1d": null,
@@ -671,28 +671,6 @@
     "dropped_malformed": null,
     "main_sample_capped": true,
     "events_verdict": "当日采到 11 条(源返回的原始样本顶到其上限,滤后条数是下界、前一日取自 gdelt 通道,口径不可比,不给变化量)"
-   }
-  },
-  "body_plan": {
-   "PHP": {
-    "mode": "full",
-    "line": null
-   },
-   "THB": {
-    "mode": "full",
-    "line": null
-   },
-   "BRL": {
-    "mode": "full",
-    "line": null
-   },
-   "EUR": {
-    "mode": "full",
-    "line": null
-   },
-   "USD": {
-    "mode": "full",
-    "line": null
    }
   },
   "real_rate": {

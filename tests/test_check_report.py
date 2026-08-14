@@ -40,19 +40,52 @@ PRIOR_LINE_CUR = "- 本期五币种的判断相对上期均有更新,逐条见�
 PRIOR_LINE_PREV = "- 上一期相对更早一期未变,没变的原因是当周无数据发布。"
 
 
+# ---- 判断环:2026-08-14 起**每个币种节都必须有**,没有任何豁免路径 ----
+# 在此之前 `make_report()` 的五个币种节只有 PHP 在判断环用例里被单独换成四环,
+# 其余四节一件都不写 —— 而那时快照默认没有 `derived.body_plan`,整层直接跳过,
+# 于是"这份 fixture 是不是一份合规日报"这个问题从来没被问过。豁免删掉之后
+# 它必须被问:五节各自带完整三件,否则库里每一条"除某码外零违规"的断言都在
+# 测一份**不合规**的报告。
+# 三件的措辞刻意各节不同(替代解释与翻转指标都换词):同句会撞 ②
+# FLIP_INDICATOR_IS_INVALIDATION_RESTATED,那不是这些测试想测的东西。
+# 数字只取 SNAP/BRIEF 里有的(60.843/60.9/3.1/35.2/5.43/0.921)与 ALLOWED_SMALL,
+# 否则会引来 NUMBER_UNTRACEABLE 把失败原因搅浑。
+def ring_clause(assumption, alternative, flip):
+    """一节的「分歧与判断」三件。关键假设按 SKILL 要求带"不成立时"后半句 ——
+    ② 要比的失效条件句就是它,缺了它 ② 在该节整条不执行。"""
+    return ("**分歧与判断**:关键假设是%s,不成立时该档的位次读法作废。"
+            "替代解释:%s(其翻转指标:同次定盘里另三盘同步跟随)。"
+            "翻转指标:%s(T+3)。" % (assumption, alternative, flip))
+
+
 def make_report(summary_items=3, missing=None, php_body=None, gap_body="无",
                 extra_number=None, prior_line=PRIOR_LINE_CUR):
     lines = ["# 外汇日报 2026-08-10", "", "## 执行摘要"]
     lines += ["- 摘要第 %d 条" % (i + 1) for i in range(summary_items)]
     sections = {
         "美元(USD)": "**昨日发生**:无明确驱动。**定价含义**:观望。"
-                      "**情景与触发条件**:若有 FOMC 信号,则关注美元流动性。",
-        "欧元(EUR)": "**昨日发生**:无明确驱动。**情景与触发条件**:若 ECB 表态,则关注 0.921 附近波动。",
+                      "**情景与触发条件**:若有 FOMC 信号,则关注美元流动性。"
+                      + ring_clause("这 4 笔移动由同一批账户推出",
+                                    "四个本地因子撞在同一天",
+                                    "四盘出现反向分化"),
+        "欧元(EUR)": "**昨日发生**:无明确驱动。**情景与触发条件**:若 ECB 表态,则关注 0.921 附近波动。"
+                      + ring_clause("0.921 这一档仍由利差主导",
+                                    "欧元这一档是美元一端在统一定价",
+                                    "欧元脱离 0.921 一侧"),
         "菲律宾比索(PHP)": php_body or (
             "**昨日发生**:CPI 同比 3.1,前值 3.4。**定价含义**:通胀回落。"
-            "**情景与触发条件**:若 BSP 释放降息信号,则关注 60.843 上方压力。"),
-        "泰铢(THB)": "**昨日发生**:无明确驱动。**情景与触发条件**:若出口数据走弱,则关注 35.2 附近。",
-        "巴西雷亚尔(BRL)": "**昨日发生**:无明确驱动。**情景与触发条件**:若 COPOM 表态,则关注 5.43。",
+            "**情景与触发条件**:若 BSP 释放降息信号,则关注 60.843 上方压力。"
+            + ring_clause("3.1 这一读数仍代表当前通胀",
+                          "比索走弱是美元一端在统一定价",
+                          "参考价回落至 60.9 一侧")),
+        "泰铢(THB)": "**昨日发生**:无明确驱动。**情景与触发条件**:若出口数据走弱,则关注 35.2 附近。"
+                      + ring_clause("35.2 这一档仍由出口链主导",
+                                    "泰铢这一档跟随区域资金流",
+                                    "泰铢升破 35.2 一侧"),
+        "巴西雷亚尔(BRL)": "**昨日发生**:无明确驱动。**情景与触发条件**:若 COPOM 表态,则关注 5.43。"
+                            + ring_clause("5.43 这一档仍由套息厚度主导",
+                                          "雷亚尔这一档在要价风险补偿",
+                                          "雷亚尔回落至 5.43 一侧"),
     }
     for name, body in sections.items():
         if missing and missing in name:
@@ -1774,7 +1807,7 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
     # 实测(T8d,acdd7de 工作树):在 main() 的 `for note in notes:` 前插一行
     # `if args.strict_brief: violations = [x for x in violations
     #  if not x.startswith("VERDICT_NOT_QUOTED")]`(注册表零改动)——
-    # 全量 `Ran 686 tests / OK / rc=0`,而 skills/fx-daily-report/SKILL.md:222
+    # 全量 `Ran 686 tests / OK / rc=0`,而 skills/fx-daily-report/SKILL.md:437
     # 与 README.md:129 那条**一字未改**的生产日报命令行由 `CHECK FAILED (5)`
     # rc=1 变 `CHECK PASSED` rc=0。`VERDICT_NOT_QUOTED` 是整个 change 的主码。
     # **这与电池「登记 m = len(M)」是同一个病:期望值由被检对象自己提供。**
@@ -2441,7 +2474,7 @@ class CheckerPrintsItsOwnDispositionTest(unittest.TestCase):
     """
 
     def _daily_stdout(self, report, snap_text):
-        """**生产形状 argv**(T8d):skills/fx-daily-report/SKILL.md:222 与
+        """**生产形状 argv**(T8d):skills/fx-daily-report/SKILL.md:437 与
         README.md:129 那条命令行逐字同形,含 `--brief` / `--mode daily` /
         `--strict-brief`。
 
@@ -3095,30 +3128,22 @@ def ring_body(ring=RING_OK):
     return RING_HEAD + "**分歧与判断**:" + ring
 
 
-_NO_BODY_PLAN = object()
-
-
-def ring_snap(modes=None, body_plan=_NO_BODY_PLAN, schema_version=1):
-    """SNAP + `derived.body_plan`。
+def ring_snap(modes=None, schema_version=1):
+    """SNAP + 一份 `derived`。
 
     schema_version 取 1(存量结论句档)是**刻意**的:本组测试要隔离判断环这
-    一层,不让 VERDICT_* 那一族的违规混进 `v` 里干扰断言。判断环检查的开关是
-    `derived.body_plan` 在不在,与结论句 schema 闸门互不相干 —— 这一点本身由
-    下面的 skip 组钉住。
+    一层,不让 VERDICT_* 那一族的违规混进 `v` 里干扰断言。
+
+    `modes` 往 `derived` 里塞一个 **body_plan 形状的 blob**。2026-08-14 之后
+    校验器**不再读它** —— 这个入参因此不是开关,而是**反向靶点**:
+    `JudgementRingHasNoExemptionPathTest` 拿它证明"快照里塞 mode=minimal 也
+    豁免不了"。谁把体裁闸门改回来,那条用例立刻红。
     """
     snap = dict(SNAP)
     derived = {"schema_version": schema_version,
                "rates": {}, "real_rate": {}, "events": {}}
-    if body_plan is not _NO_BODY_PLAN:
-        if body_plan is not None:
-            derived["body_plan"] = body_plan
-    else:
-        m = {c: "minimal" for c in check_report.CURRENCIES}
-        m.update(modes or {"PHP": "full"})
-        derived["body_plan"] = {
-            c: {"mode": mode,
-                "line": None if mode == "full" else "%s:本日无可用增量。" % c}
-            for c, mode in m.items()}
+    if modes:
+        derived["body_plan"] = {c: {"mode": mode} for c, mode in modes.items()}
     snap["derived"] = derived
     return json.dumps(snap, ensure_ascii=False)
 
@@ -3175,21 +3200,18 @@ class JudgementRingCompletenessTest(unittest.TestCase):
         for want in ("关键假设", "替代解释", "翻转指标"):
             self.assertIn(want, line[0])
 
-    def test_minimal_section_is_exempt(self):
-        """**变异靶点:minimal 节被误判违规。**
+    def test_a_one_line_section_is_a_violation(self):
+        """"只有一行"的币种节必红 —— 2026-08-14 起没有体裁豁免。
 
-        走 minimal 的币种节按 SKILL 只准写一行,那一行里当然没有判断环。
-        体裁由 `derived.body_plan.<币种>.mode` 决定,不由 LLM 决定。
+        (此处此前有一条 `test_minimal_section_is_exempt`,断言同一份一行
+        正文在 `mode=minimal` 时**不**违规。那条豁免的依据"该节只准写一行"
+        在真实产物上当场为假,已随豁免一起删除;反向靶点移到
+        `JudgementRingHasNoExemptionPathTest`。)
         """
-        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
-                       snap=ring_snap(modes={"PHP": "minimal"}))
-        self.assertEqual(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), [], v)
-
-    def test_full_mode_is_taken_from_the_snapshot_not_from_the_report(self):
-        """同一份"只有一行"的报告:mode=full 时必须红。体裁的判定权在脚本。"""
-        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
-                       snap=ring_snap(modes={"PHP": "full"}))
-        self.assertTrue(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), v)
+        v = ring_check(php_body="PHP:本日只写了一行,判断环一件都没写。")
+        line = ring_codes(v, "JUDGEMENT_RING_INCOMPLETE")
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("PHP", line[0])
 
     def test_violation_line_carries_the_disposition(self):
         line = ring_codes(ring_check("本日维持原判。"),
@@ -3279,11 +3301,18 @@ class FlipIndicatorIsNotInvalidationRestatedTest(unittest.TestCase):
         self.assertIn("出现", d)
         self.assertIn("没发生", d)
 
-    def test_minimal_section_is_exempt(self):
-        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
-                       snap=ring_snap(modes={"PHP": "minimal"}))
-        self.assertEqual(ring_codes(v, "FLIP_INDICATOR_IS_INVALIDATION_RESTATED"),
-                         [], v)
+    def test_a_snapshot_body_plan_blob_cannot_switch_it_off(self):
+        """此前这里是 `test_minimal_section_is_exempt`,拿一份**没有任何判断环
+        标签**的一行正文断言 ② 不响 —— 而两侧都判不出载荷时 ② 本就不会响,
+        那条用例对豁免有没有生效**零分辨力**。改成正向靶点:同一节写着
+        改写自失效条件的翻转指标,快照里塞 `mode=minimal`,② 必须照样红。"""
+        ring = ("关键假设是 3.1 这一读数仍代表当前通胀;不成立时利差收窄。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:利差收窄(T+3)。")
+        v = ring_check(ring, snap=ring_snap(modes={"PHP": "minimal"}))
+        self.assertTrue(
+            ring_codes(v, "FLIP_INDICATOR_IS_INVALIDATION_RESTATED"), v)
 
 
 class AssumptionAnchorTest(unittest.TestCase):
@@ -3351,91 +3380,82 @@ class AssumptionAnchorTest(unittest.TestCase):
                 "翻转指标:参考价回落至 60.9 一侧(T+3)。")
         self.assertEqual(ring_codes(ring_check(ring), "ASSUMPTION_UNANCHORED"), [])
 
-    def test_minimal_section_is_exempt(self):
-        v = ring_check(php_body="PHP:本日无可用增量,不更新判断;详见附录 A。",
-                       snap=ring_snap(modes={"PHP": "minimal"}))
-        self.assertEqual(ring_codes(v, "ASSUMPTION_UNANCHORED"), [], v)
+    def test_a_snapshot_body_plan_blob_cannot_switch_it_off(self):
+        """理由同 ② 那一条:旧的 `test_minimal_section_is_exempt` 用一行没有
+        「关键假设」标签的正文断言 ③ 不响,对豁免零分辨力。改成正向靶点。"""
+        ring = ("关键假设是通胀读数仍代表当前水平;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧。")
+        v = ring_check(ring, snap=ring_snap(modes={"PHP": "minimal"}))
+        self.assertTrue(ring_codes(v, "ASSUMPTION_UNANCHORED"), v)
 
 
-class JudgementRingSkipDeclarationTest(unittest.TestCase):
-    """跳过必须出声。三态各一条:无 body_plan / mode 不可判 / minimal 豁免。
+class JudgementRingReceiptTest(unittest.TestCase):
+    """回执必须出声,且必须与"覆盖到的节数"相等。
 
-    「跳过」与「通过」在输出上不可分辨,正是这一族检查要消灭的形态
-    (同 VERDICT_SKIPPED_NO_DERIVED / BRIEF_REVIEW_BLOCK_SKIPPED)。
+    ---- 这个类此前是 `JudgementRingSkipDeclarationTest` ----
+    它守的是三条跳过声明各自出声(无 body_plan / mode 不可判 / minimal 豁免)。
+    三条跳过路径在 2026-08-14 一并删除:`MINIMAL_EXEMPT` 的依据"该节只准写
+    一行"在真实产物上当场为假(reports/daily/2026-08-10.md 那四节各写着
+    270–322 中文字的完整四环),另外两条只是同一道体裁闸门的另外两态。
+    「跳过与通过在输出上不可分辨」这条原则**没有放弃**,而是换了实现:
+    既然不再有跳过态,就用一条**正向回执**把"覆盖 N 节、查了 N 节"打出来。
     """
 
     RING_LESS = "**驱动**:无。**分歧与判断**:维持原判。"
 
-    def test_legacy_snapshot_without_derived_skips_and_declares(self):
-        """**变异靶点:跳过时不打印声明。**
+    def test_a_legacy_snapshot_without_derived_is_checked_not_skipped(self):
+        """**变异靶点:体裁闸门以"存量快照"的名义复活。**
 
-        data/2026-08-10.json 这类存量快照连 derived 节都没有 —— 判不了体裁,
-        不判违规,但必须留下一行说明本次没查。
+        存量快照连 derived 节都没有 —— 而判断环 ①② 一个快照字段都不读,
+        没有任何理由因此不查。
         """
         notes = []
         v = check_report.check_daily(make_report(php_body=self.RING_LESS),
                                      SNAP_TEXT, BRIEF, notes=notes)
-        self.assertEqual(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), [], v)
+        self.assertTrue(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), v)
         self.assertTrue([n for n in notes
-                         if n.startswith("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN")],
-                        notes)
+                         if n.startswith("JUDGEMENT_RING_CHECKED")], notes)
 
-    def test_derived_without_body_plan_skips_and_declares_the_schema(self):
+    def test_the_receipt_is_printed_exactly_once(self):
         notes = []
-        check_report.check_daily(make_report(php_body=self.RING_LESS),
-                                 ring_snap(body_plan=None), BRIEF, notes=notes)
-        line = [n for n in notes
-                if n.startswith("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN")]
+        check_report.check_daily(make_report(php_body=ring_body()),
+                                 ring_snap(), BRIEF, notes=notes)
+        line = [n for n in notes if n.startswith("JUDGEMENT_RING_CHECKED")]
         self.assertEqual(len(line), 1, notes)
-        self.assertIn("schema_version=1", line[0])
 
-    def test_unknown_mode_skips_that_currency_and_declares_it(self):
-        """derive 单币种异常时 `mode` 为 null —— 猜 full 会假报违规,猜 minimal
-        会白放,两种猜法都是编造。只声明、不判。"""
+    def test_no_skip_note_survives_in_the_notes(self):
+        """反面:本层不许再出现任何 `JUDGEMENT_RING_SKIPPED*` 声明。"""
         notes = []
-        v = check_report.check_daily(
-            make_report(php_body=self.RING_LESS),
-            ring_snap(modes={"PHP": None}), BRIEF, notes=notes)
-        self.assertEqual(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), [], v)
-        line = [n for n in notes
-                if n.startswith("JUDGEMENT_RING_SKIPPED_NO_MODE")]
-        self.assertEqual(len(line), 1, notes)
-        self.assertIn("PHP", line[0])
-
-    def test_minimal_exemption_is_declared(self):
-        """全员 minimal 时本层一条都没查 —— 不出声就与"全查过且全过"同形。"""
-        notes = []
-        check_report.check_daily(
-            make_report(), ring_snap(modes={c: "minimal"
-                                            for c in check_report.CURRENCIES}),
-            BRIEF, notes=notes)
-        line = [n for n in notes
-                if n.startswith("JUDGEMENT_RING_MINIMAL_EXEMPT")]
-        self.assertEqual(len(line), 1, notes)
-        self.assertIn("5", line[0])
-
-    def test_no_skip_note_when_every_full_section_was_checked(self):
-        """反面:该查的都查了就不许再喊跳过,否则声明本身变成噪声。"""
-        notes = []
-        check_report.check_daily(
-            make_report(php_body=ring_body()),
-            ring_snap(modes={c: "full" if c == "PHP" else "minimal"
-                             for c in check_report.CURRENCIES}),
-            BRIEF, notes=notes)
+        check_report.check_daily(make_report(php_body=ring_body()),
+                                 ring_snap(), BRIEF, notes=notes)
         self.assertEqual([n for n in notes
                           if n.startswith("JUDGEMENT_RING_SKIPPED")], [], notes)
 
-    def test_cli_prints_the_skip_note_alongside_pass(self):
+    def test_cli_prints_the_receipt_alongside_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
-            argv, _ = daily_files(tmp,
-                                  report_text=make_report(php_body=self.RING_LESS))
+            argv, _ = daily_files(tmp)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = check_report.main(argv)
             out = buf.getvalue()
         self.assertEqual(rc, 0, out)
-        self.assertIn("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN", out)
+        self.assertIn("JUDGEMENT_RING_CHECKED: 5/5", out)
         self.assertIn("CHECK PASSED", out)
+
+    def test_cli_turns_a_one_line_section_red_on_a_legacy_snapshot(self):
+        """端到端:进程内全绿而真 CLI 放行,是本仓库栽过的形态。
+        快照用默认的 `SNAP_TEXT`(无 derived)—— 正是此前整份跳过的那一态。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            argv, _ = daily_files(
+                tmp, report_text=make_report(php_body=self.RING_LESS))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main(argv)
+            out = buf.getvalue()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("JUDGEMENT_RING_INCOMPLETE", out)
 
     def test_cli_turns_an_incomplete_ring_red(self):
         """端到端:进程内全绿而真 CLI 放行,是本仓库栽过的形态。"""
@@ -3473,78 +3493,122 @@ class JudgementRingHonestyLabelTest(unittest.TestCase):
         self.assertGreaterEqual(self.doc.count("存在性检查"), 2, self.doc)
 
 
-class RealSnapshotsInTheEnforcementChannelCarryBodyPlanTest(unittest.TestCase):
-    """**已进入强制通道的真实快照必须带 `derived.body_plan`,否则判断环空转。**
+# ==================== 判断环没有任何豁免路径(2026-08-14)==================
+#
+# 修的缺陷:`JUDGEMENT_RING_MINIMAL_EXEMPT` 这条豁免**声称的依据是假的**。
+# 它打印「该节只准写一行,本就没有判断环」,而 reports/daily/2026-08-10.md 的
+# USD/PHP/THB/BRL 四节实测各写着 270–322 中文字的完整四环 —— 依据当场不成立,
+# 而校验器从不核对它。豁免于是只是「这四节不查」的另一种说法。
+# 处置不是"把豁免执行起来"(执行它等于把 `derived.body_plan.<币种>.line` 那句
+# 「本日无可用增量」写进正文,违反正文禁词那条更高的规则),而是**删掉豁免
+# 本身**:每个被报告覆盖的币种节都必须有完整判断环,快照里没有任何东西能免它。
 
-    修的缺陷:判断环三码落地后,`data/` 下五份快照**每一份**都打印
-    `JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN` —— 三条检查在所有真实产物上一次
-    都没执行过。根因不是码有问题,是这几份快照采于 `derive._body_plan`
-    之前。`derive` 对既有快照是**确定性纯函数**,重新派生即可,不是重新采集。
 
-    判据取「`derived.schema_version >= DERIVED_VERDICT_SCHEMA`」,即校验器
-    已认定为「现代通道、其日报必须逐字引用 events_verdict」的那些快照:
-    既然它们已经在强制通道里,判断环就不该对它们静默不判。低于该门槛的
-    (2026-08-10 无 derived 节、08-11/08-12 是 schema 1)是**冻结的存量**,
-    显式排除 —— 与 `VERDICT_SKIPPED_LEGACY` 同一条口径。这是范围决策:
-    把它们升上来会连带要求其日报引用结论句,而那三份报告写于闸门之前。
+class JudgementRingHasNoExemptionPathTest(unittest.TestCase):
+    """**变异靶点:快照里的某个字段又一次成了判断环的豁免闸门。**
 
-    诚实标注:本类查的是**这个键在不在**,即存在性检查。它保证不了 body_plan
-    里的体裁判得对,那由 tests/test_derive.py 管。
+    三条已删的码(`MINIMAL_EXEMPT` / `SKIPPED_NO_MODE` / `SKIPPED_NO_BODY_PLAN`)
+    全部以「快照说这一节不用查」为形态。这一类只要还剩一条,判断环就仍然
+    可以对着一份写满四环的报告一节都不查,而 stdout 上只有一行看不出真假的
+    声明。**判据因此是"覆盖到的节 = 查过的节",没有第三态。**
+    """
+
+    ONE_LINE = "PHP:本日无可用增量,不更新判断;详见附录 A。"
+
+    def test_a_one_line_section_is_a_violation_whatever_the_snapshot_says(self):
+        """快照里塞 `body_plan.PHP.mode = minimal` 也豁免不了 —— 这正是被删的
+        那条路径的形状,留一条用例把它钉死在"再也不生效"上。"""
+        v = ring_check(php_body=self.ONE_LINE,
+                       snap=ring_snap(modes={"PHP": "minimal"}))
+        line = ring_codes(v, "JUDGEMENT_RING_INCOMPLETE")
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("PHP", line[0])
+
+    def test_a_legacy_snapshot_without_derived_is_still_checked(self):
+        """判断环是**报告结构**的要求,与快照新旧无关:①② 一个快照字段都
+        不读,③ 读的是 `allowed`(存量快照照样建得起来)。"""
+        v = check_report.check_daily(make_report(php_body=self.ONE_LINE),
+                                     SNAP_TEXT, BRIEF)
+        self.assertTrue(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), v)
+
+    def test_the_three_exemption_codes_are_no_longer_emitted(self):
+        """判据取 `_emitted_codes`(AST 里**被打印出去的**码),不是"源码里
+        出现过这个词":后者会连带禁止在注释里说明"这条为什么被删",而删除
+        理由正是最该留在源码里的东西。"""
+        emitted = _emitted_codes(check_report.__file__)
+        for code in ("JUDGEMENT_RING_MINIMAL_EXEMPT",
+                     "JUDGEMENT_RING_SKIPPED_NO_MODE",
+                     "JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN"):
+            self.assertNotIn(code, emitted, code)
+
+    def test_the_checker_declares_how_many_sections_it_checked(self):
+        """删掉三条跳过声明之后,「这一层跑没跑」在 stdout 上就没有痕迹了。
+        补一条**正向回执**:它不是豁免,是"覆盖 N 节、查了 N 节"的计数,
+        本轮的关键指标(五份日报 21 → 25)直接从它数出来。"""
+        notes = []
+        check_report.check_daily(make_report(php_body=ring_body()),
+                                 SNAP_TEXT, BRIEF, notes=notes)
+        line = [n for n in notes if n.startswith("JUDGEMENT_RING_CHECKED")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("5/5", line[0])
+
+    def test_the_receipt_counts_only_the_covered_sections(self):
+        """回执的分母是**覆盖到的**币种,不是 CURRENCIES 常量 —— 写死 5
+        会在缺节那一天谎报"全查过"。"""
+        notes = []
+        check_report.check_daily(make_report(missing="泰铢",
+                                             php_body=ring_body()),
+                                 SNAP_TEXT, BRIEF, notes=notes)
+        line = [n for n in notes if n.startswith("JUDGEMENT_RING_CHECKED")][0]
+        self.assertIn("4/4", line)
+
+
+class RealDailyReportsGetEveryCoveredSectionCheckedTest(unittest.TestCase):
+    """真实产物上的关键指标,先跑后抄:五份日报 × 5 个币种节 = 25 节全查。
+
+    此前实测 21 —— reports/daily/2026-08-10.md 的四节被 `MINIMAL_EXEMPT`
+    整节跳过。这一类走 `check_daily` 这个**生产入口**,不自己拼
+    `check_judgement_ring` 的入参。
     """
 
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    DATES = ("2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13",
+             "2026-08-14")
 
-    def _modern_snapshots(self):
-        out = []
-        data_dir = os.path.join(self.ROOT, "data")
-        for name in sorted(os.listdir(data_dir)):
-            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", name):
-                continue
-            with open(os.path.join(data_dir, name), encoding="utf-8") as f:
-                snap = json.load(f)
-            derived = snap.get("derived")
-            if not isinstance(derived, dict):
-                continue
-            if (derived.get("schema_version") or 0) >= check_report.DERIVED_VERDICT_SCHEMA:
-                out.append((name, snap, derived))
-        return out
-
-    def test_the_channel_is_not_empty(self):
-        """空集合会让下面两条真空通过 —— 先钉住确实有快照在强制通道里。"""
-        self.assertTrue(self._modern_snapshots(), "data/ 下没有现代通道的快照")
-
-    def test_every_modern_snapshot_has_a_body_plan(self):
-        for name, _snap, derived in self._modern_snapshots():
-            with self.subTest(snapshot=name):
-                self.assertIsInstance(
-                    derived.get("body_plan"), dict,
-                    "%s 缺 derived.body_plan,判断环对它整份空转" % name)
-
-    def test_judgement_ring_does_not_skip_on_any_modern_snapshot(self):
-        """直接钉住可观察后果:真实产物上不得再出现 NO_BODY_PLAN 声明。
-
-        走 `check_daily` 这个**生产入口**,不自己拼 `check_judgement_ring` 的
-        入参:`covered` 在生产里是「`find_section` 找得到的币种」,自己拼会拼出
-        生产到不了的组合(实测第一版传了 `secs=[]` 却给了非空 covered,
-        `find_section` 返回 None 当场 TypeError —— 那是测试的错,不是码的错)。
-        """
-        for name, _snap, _derived in self._modern_snapshots():
-            with self.subTest(snapshot=name):
-                date_str = name[:-len(".json")]
-                notes = []
-                check_report.check_daily(
-                    self._read("reports", "daily", date_str + ".md"),
-                    self._read("data", name),
-                    self._read("briefs", date_str + "-brief.md"),
-                    notes=notes)
-                self.assertEqual(
-                    [n for n in notes
-                     if n.startswith("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN")],
-                    [], "%s 上判断环整份跳过" % name)
+    def _notes(self, date_str):
+        notes = []
+        check_report.check_daily(
+            self._read("reports", "daily", date_str + ".md"),
+            self._read("data", date_str + ".json"),
+            self._read("briefs", date_str + "-brief.md"),
+            notes=notes)
+        return notes
 
     def _read(self, *parts):
         with open(os.path.join(self.ROOT, *parts), encoding="utf-8") as f:
             return f.read()
+
+    def test_twenty_five_sections_are_checked_across_the_five_reports(self):
+        total = 0
+        for date_str in self.DATES:
+            with self.subTest(date=date_str):
+                line = [n for n in self._notes(date_str)
+                        if n.startswith("JUDGEMENT_RING_CHECKED")]
+                self.assertEqual(len(line), 1, date_str)
+                self.assertIn("5/5", line[0])
+                total += 5
+        self.assertEqual(total, 25)
+
+    def test_no_exemption_and_no_unreachable_declaration_survives(self):
+        """`FLIP_INDICATOR_CHECK_UNREACHABLE` 一并钉住:② 判不出失效条件句
+        时整条不执行,而那与"比过了、没重复"在 rc 上不可分辨。"""
+        for date_str in self.DATES:
+            with self.subTest(date=date_str):
+                for n in self._notes(date_str):
+                    self.assertFalse(
+                        n.startswith("JUDGEMENT_RING_MINIMAL_EXEMPT")
+                        or n.startswith("FLIP_INDICATOR_CHECK_UNREACHABLE"),
+                        "%s:%s" % (date_str, n))
 
 
 # ==================== 数字的**归属**:两条映射级检查 ====================
@@ -4360,7 +4424,10 @@ class FlipCheckUnreachableIsDeclaredTest(unittest.TestCase):
         line = [n for n in notes
                 if n.startswith("FLIP_INDICATOR_CHECK_UNREACHABLE:")]
         self.assertEqual(len(line), 1, notes)
-        self.assertIn("1/1", line[0])
+        # 分母由 1(此前只有 PHP 走 full 体裁)变成 5:体裁闸门删掉之后
+        # 五个覆盖币种节全查,分母就是"查过的节数"。分子仍是 1 —— 只有 PHP
+        # 那一节写了翻转指标却判不出失效条件句。
+        self.assertIn("1/5", line[0])
         self.assertIn("PHP", line[0])
 
     def test_a_reachable_section_declares_nothing(self):
@@ -4579,15 +4646,22 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     "SUMMARY_NUMBER_NOT_IN_BODY": "DISPOSITION_SUMMARY_BODY",
     "SUMMARY_NUMBER_WRONG_CURRENCY": "DISPOSITION_SUMMARY_CURRENCY",
     # 2026-08-14 新增:速览「条件方向」格与决策日志 trigger 的同源同字。
-    # SKILL 第 185/375 行写了这条规则,而校验器此前对它零提及
+    # SKILL 第 180/388 行写了这条规则,而校验器此前对它零提及
     # (`grep -n "decision\|决策日志" scripts/check_report.py` 无输出),
     # 实测 25 条里 10 条当前就是违反的、六份产物却全绿。
     "DECISION_TRIGGER_NOT_SOURCED": "DISPOSITION_DECISION_TRIGGER",
 }
 # 同一层的**声明码**(走 notes,不改退出码,因此不带处置)。
 NEW_LAYER_NOTE_CODES = frozenset({
-    "JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN", "JUDGEMENT_RING_SKIPPED_NO_MODE",
-    "JUDGEMENT_RING_MINIMAL_EXEMPT", "FLIP_INDICATOR_CHECK_UNREACHABLE",
+    # ---- 2026-08-14:判断环的三条跳过声明整族删除,换成一条正向回执 ----
+    # 删掉的是 JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN / …_SKIPPED_NO_MODE /
+    # …_MINIMAL_EXEMPT。三条都是同一道体裁闸门(`derived.body_plan.<币种>
+    # .mode`)的三态,而 MINIMAL_EXEMPT 声称的依据「该节只准写一行」在真实
+    # 产物上当场为假 —— reports/daily/2026-08-10.md 的四节各写着 270–322
+    # 中文字的完整四环。闸门删了,三态一起无所指。
+    # 「跳过必须出声」这条原则没有放弃:不再有跳过态,于是改由回执把
+    # 「覆盖 N 节、查了 N 节」打进 stdout。
+    "JUDGEMENT_RING_CHECKED", "FLIP_INDICATOR_CHECK_UNREACHABLE",
     "NUMBER_WRONG_SECTION_MACRO_UNATTRIBUTED",
     "NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE",
     "NUMBER_WRONG_SECTION_NAMED_PASS",
@@ -4599,7 +4673,7 @@ NEW_LAYER_NOTE_CODES = frozenset({
     # 速览表解析的三态(缺表 / 列名不符 / 缺行),各带计数。
     "OVERVIEW_TABLE_SKIPPED", "OVERVIEW_TABLE_COLUMN_MISMATCH",
     "OVERVIEW_ROW_MISSING",
-    # 速览「失效条件」列与节内翻转指标同源同字(SKILL 第 186/273 行要求),
+    # 速览「失效条件」列与节内翻转指标同源同字(SKILL 第 181/278 行要求),
     # 因此**不能**当 ② 的失效条件来源 —— 这一条把该事实打进 stdout。
     "FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP",
     # 周报:数字归属结构性不适用 / 无 --digest 时 ③ 判不了锚点。
@@ -4653,8 +4727,12 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         self.assertEqual(found, want,
                          "校验器的码清单与冻结表对不上;新增码必须同时入表")
         # 58 → 60(2026-08-14):STRICT_BRIEF_DISABLED(声明)与
-        # DAILY_REQUIRED_OPTION_MISSING(CLI 用法错误)。一个码都没删。
-        self.assertEqual(len(want), 60, len(want))
+        # DAILY_REQUIRED_OPTION_MISSING(CLI 用法错误)。
+        # 60 → 58(2026-08-14 同日,判断环豁免删除):删 3 条跳过声明、
+        # 加 1 条正向回执 JUDGEMENT_RING_CHECKED。**本轮是本表第一次减项** ——
+        # 减项与加项同规格,必须在这里显式记一笔,否则"码没了"与"码被漏登记"
+        # 在这条断言上同形。
+        self.assertEqual(len(want), 58, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4902,7 +4980,7 @@ class FlipIndicatorReachabilityTest(unittest.TestCase):
     def test_overview_invalidation_column_is_declared_as_the_flip_itself(self):
         """速览「失效条件」列**不是** ② 可用的失效条件来源。
 
-        判据(本轮实测,先跑后抄):`skills/fx-daily-report/SKILL.md:186-187`
+        判据(本轮实测,先跑后抄):`skills/fx-daily-report/SKILL.md:181-182`
         与 `:273` 两处逐字要求速览「失效条件」那一格与该币种节判断环的
         **翻转指标同源同字**。在 reports/daily/2026-08-10..14 五份产物上
         逐条比对,两侧去标点后**逐字相同 20/20**(08-13 那一份的五个节没有
@@ -5083,7 +5161,7 @@ class DecisionTriggerSourcedTest(unittest.TestCase):
     """速览「条件方向」格必须逐字包含决策日志同日同币种的 `trigger`。
 
     ---- 为什么新增这一码(实测,先跑后抄)----
-    `skills/fx-daily-report/SKILL.md:185` 与 `:375` 两处写明二者**同源同字**,
+    `skills/fx-daily-report/SKILL.md:180` 与 `:388` 两处写明二者**同源同字**,
     而校验器对它**零提及**:`grep -n "decision|决策日志" scripts/check_report.py`
     无输出。散文规则、零强制。
     本周实测违约率(判据:log 的 trigger 整串是否出现在当日速览「条件方向」
@@ -5092,7 +5170,7 @@ class DecisionTriggerSourcedTest(unittest.TestCase):
     而六份产物全绿。
 
     ---- 方向:表是源,日志是抄件 ----
-    `SKILL.md:374-375` 写的是"把速览表五行的条件方向整理成 JSON 数组"经
+    `SKILL.md:387-388` 写的是"把速览表五行的条件方向整理成 JSON 数组"经
     `log_decision.py` 写入,所以两者不一致时,**错的是日志**。
     git 证据(本轮实测):日志最后一次写入 `eef783e`,五份日报重生成于
     `ee7a2c6`,且 `git merge-base --is-ancestor eef783e ee7a2c6` 为真 ——

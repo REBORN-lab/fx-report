@@ -173,7 +173,7 @@ DISPOSITION_SUMMARY_CURRENCY = ("处置:在**这一条摘要 bullet 里**点名�
                                 "属于哪个币种(写「雷亚尔 5.1049」,"
                                 "不要光写 5.1049);"
                                 "确实说的是别的币种就换成本条点名的那个币种的数")
-DISPOSITION_DECISION_TRIGGER = ("处置:先判哪一份是旧的 —— SKILL 第 374 行"
+DISPOSITION_DECISION_TRIGGER = ("处置:先判哪一份是旧的 —— SKILL 第 387 行"
                                 "写明日志由速览表「条件方向」整理而来,表是源、"
                                 "日志是抄件;改了表没回写就用 "
                                 "`scripts/log_decision.py` 回填日志,"
@@ -529,8 +529,29 @@ def _ring_payload(sentence, labels):
     return _RING_STRIP_RE.sub("", sentence[:min(heads)] if heads else "")
 
 
-def check_judgement_ring(secs, derived, covered, allowed, notes=None):
-    """判断环三码。**走 `full` 体裁的币种节**才查,体裁由脚本给,不由 LLM 给。
+def check_judgement_ring(secs, covered, allowed, notes=None):
+    """判断环三码。**每个被报告覆盖的币种节都查**,没有豁免路径。
+
+    ---- 2026-08-14:三条「快照说这节不用查」的豁免整族删除 ----
+    此前这里有一道体裁闸门:`derived.body_plan.<币种>.mode` 为 `minimal` 的
+    节整节不查,声明写作 `JUDGEMENT_RING_MINIMAL_EXEMPT: …(该节只准写一行,
+    本就没有判断环)`。**那条依据是假的**:实测 reports/daily/2026-08-10.md
+    的 USD/PHP/THB/BRL 四节各写着 270–322 中文字的完整四环,而校验器从不核对
+    「是不是真的只写了一行」。豁免于是只是"这四节不查"的另一种说法,五份产物
+    上判断环的实际执行节数因此是 21/25。
+    处置不是把豁免执行起来 —— 执行它等于把 `body_plan.<币种>.line` 那句
+    「本日无可用增量,不更新判断」写进正文,而正文禁止出现这一类措辞
+    (SKILL 第 7 条)。**处置是删掉豁免本身**:数据薄的那一天,币种节仍要从
+    存量事实(政策利率、实际利率、区间上下沿)拉出判断环,采集口径与缺漏
+    一律只落附录。`body_plan` 随之整块从快照删除(见 collect/derive.py)。
+    同时删掉的还有 `JUDGEMENT_RING_SKIPPED_NO_MODE` 与
+    `JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN` —— 两条都只是同一道闸门的另外两态,
+    闸门没了它们就无所指。判断环是**报告结构**的要求:①② 一个快照字段都不读,
+    ③ 读的是 `allowed`,存量快照照样建得起来。
+
+    删掉跳过声明之后,「这一层跑没跑」在 stdout 上会失去痕迹,所以补一条
+    **正向回执** `JUDGEMENT_RING_CHECKED`:它不是豁免,是"覆盖 N 节、查了
+    N 节"的计数,分母取**实际覆盖到的**币种(写死 5 会在缺节那天谎报全查)。
 
     背景:判断环(关键假设 / 替代解释 / 翻转指标)此前只写在
     `skills/fx-daily-report/SKILL.md` 的散文里,`scripts/` 下**零强制** ——
@@ -569,61 +590,36 @@ def check_judgement_ring(secs, derived, covered, allowed, notes=None):
     ③ 抓到两条真缺陷(USD 与 EUR 的关键假设句里一个可溯源数字都没有),
     ① 与 ② **零命中**。所以 ② 在真实产物上的拦截力**尚未被实测证实**,
     目前只有 fixture 与变异测试证明它会响 —— 不得把它说成"已经拦下过"。
+    豁免删除后的复测(2026-08-14,五份产物一次跑完)证实了同一条:③ 在
+    reports/daily/2026-08-10.md 上抓到 4 条真缺陷(USD/PHP/THB/BRL 的关键
+    假设句里一个可溯源数字都没有),① 与 ② 仍是零命中。
 
-    notes : **出参**,同 check_daily。跳过三态各自出声:
-            没有 `derived.body_plan`(存量快照,合法)、某币种 `mode` 判不出
-            (derive 单币种异常)、`minimal` 体裁豁免。不出声就与「全查过且
-            全过」逐字不可分辨。
+    notes : **出参**,同 check_daily。只剩一条正向回执
+            `JUDGEMENT_RING_CHECKED`,以及 ② 判不出失效条件句时的
+            `FLIP_INDICATOR_CHECK_UNREACHABLE`。**没有跳过态** —— 覆盖到的
+            节就是查过的节,两者相等由回执自己打出来。
     """
     v = []
-    body_plan = derived.get("body_plan")
-    if not isinstance(body_plan, dict):
-        # 存量快照(阶段 1 之前采的)合法地没有这个键 —— 判不了体裁就不判,
-        # 但必须留下一行。声明里带上 schema_version:读者据它自己分辨
-        # 「旧快照」与「新代码产出却漏写了 body_plan」(后者是脚本缺陷)。
-        if notes is not None:
-            notes.append("JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN: 快照无可用的 "
-                         "derived.body_plan(schema_version=%r,实为 %s),"
-                         "本次未校验任何币种节的判断环"
-                         % (derived.get("schema_version"),
-                            type(body_plan).__name__))
-        return v
-    minimal = []
-    full, unreachable = [], []
+    checked, unreachable = [], []
     for c in sorted(covered):
-        entry = body_plan.get(c)
-        mode = entry.get("mode") if isinstance(entry, dict) else None
-        if mode == "minimal":
-            minimal.append(c)
-            continue
-        if mode != "full":
-            # 猜 full 会对着一行正文假报三条违规,猜 minimal 会把有增量的一天
-            # 整节放过 —— 两种猜法都是编造。只声明,不判。
-            if notes is not None:
-                notes.append("JUDGEMENT_RING_SKIPPED_NO_MODE: %s 的 "
-                             "derived.body_plan 未给出 minimal/full 体裁"
-                             "(实为 %r),该币种节的判断环未校验" % (c, mode))
-            continue
-        full.append(c)
+        checked.append(c)
         found, flip_unreachable = _check_one_ring(
             c, find_section(secs, c)[1], allowed)
         v.extend(found)
         if flip_unreachable:
             unreachable.append(c)
-    if minimal and notes is not None:
-        notes.append("JUDGEMENT_RING_MINIMAL_EXEMPT: %d/%d 个覆盖币种节走 "
-                     "minimal 体裁(该节只准写一行,本就没有判断环),未校验"
-                     % (len(minimal), len(covered)))
+    if notes is not None:
+        notes.append("JUDGEMENT_RING_CHECKED: %d/%d 个覆盖币种节的判断环已校验"
+                     "(本层无豁免路径)" % (len(checked), len(covered)))
     if unreachable and notes is not None:
         # ② 要**同一节里两句都判得出**才比得起来。判不出失效条件句就整条
         # 跳过 —— 而这一跳过此前零声明,与「比过了、没重复」逐字不可分辨。
-        # 实测口径(本轮,reports/daily/2026-08-10..14 五份产物):10 个 full
-        # 体裁节全部写了「翻转指标」,其中 7 个判不出失效条件句 —— 也就是说
-        # ② 在真实产物上**七成的节里根本没执行**。
-        notes.append("FLIP_INDICATOR_CHECK_UNREACHABLE: %d/%d 个走 full 体裁的"
-                     "币种节(%s)写了「%s」但判不出失效条件句"
+        # 实测口径(2026-08-14 本轮修完,reports/daily/2026-08-10..14 五份
+        # 产物):25 个币种节全部写了「翻转指标」,判不出失效条件句的 0 个。
+        notes.append("FLIP_INDICATOR_CHECK_UNREACHABLE: %d/%d 个币种节(%s)"
+                     "写了「%s」但判不出失效条件句"
                      "(找的标签:%s),② 在这些节未执行"
-                     % (len(unreachable), len(full), "、".join(unreachable),
+                     % (len(unreachable), len(checked), "、".join(unreachable),
                         FLIP_LABEL, "/".join(INVALIDATION_LABELS)))
     return v
 
@@ -713,7 +709,7 @@ def check_overview_invalidation_column(rows, bodies, notes=None):
     """速览「失效条件」列**不是** ② 可用的失效条件来源 —— 把这件事出声。
 
     ---- 为什么不从这一列取(本轮实测,先跑后抄)----
-    `skills/fx-daily-report/SKILL.md:186-187` 与 `:273` 两处逐字要求:速览表
+    `skills/fx-daily-report/SKILL.md:181-182` 与 `:278` 两处逐字要求:速览表
     「失效条件」那一格必须与该币种节判断环的**翻转指标同源同字**。
     在 reports/daily/2026-08-10..14 五份产物上逐条比对,两侧去掉标点空白后
     **逐字相同 20/20**(2026-08-13 那一份五个节没有独立的翻转指标句,不计入)。
@@ -752,13 +748,13 @@ def check_overview_invalidation_column(rows, bodies, notes=None):
     if same:
         notes.append("FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP: 速览表「%s」列在 "
                      "%d/%d 个币种上与该币种节的翻转指标去标点后逐字相同"
-                     "(SKILL 第 186/273 行要求二者同源同字),该列因此不是"
+                     "(SKILL 第 181/278 行要求二者同源同字),该列因此不是"
                      "独立的失效条件来源,② 不从该列取数"
                      % (OVERVIEW_COL_INVALIDATION, len(same), len(both)))
 
 
 def _check_one_ring(currency, body, allowed):
-    """单个 full 体裁币种节的三码判定。见 check_judgement_ring 的诚实标注。
+    """单个币种节的三码判定。见 check_judgement_ring 的诚实标注。
 
     返回 (violations, flip_unreachable)。`flip_unreachable` 为真 = 本节写了
     翻转指标句、却判不出任何带载荷的失效条件句,② 因此**没有执行** ——
@@ -1287,7 +1283,7 @@ def check_decision_trigger(secs, date, entries, notes=None):
     """`DECISION_TRIGGER_NOT_SOURCED` —— 速览「条件方向」格 ⊇ 日志 `trigger`。
 
     ---- 为什么新增(本轮实测,先跑后抄)----
-    `skills/fx-daily-report/SKILL.md:185` 与 `:375` 两处写明速览表「条件方向」
+    `skills/fx-daily-report/SKILL.md:180` 与 `:388` 两处写明速览表「条件方向」
     那一格与当日写进决策日志的 `trigger` **同源同字**,而校验器对它零提及:
     `grep -n "decision\\|决策日志" scripts/check_report.py` 无输出。
     散文规则、零强制。本周实测违约率(判据:log 的 trigger 整串是否出现在
@@ -1300,12 +1296,12 @@ def check_decision_trigger(secs, date, entries, notes=None):
 
     ---- 判据:包含,不是相等 ----
     速览那一格按模板写的是 `<可观测触发> → 关注<方向>(T+N)`,而日志的
-    `trigger` 只登记触发那一半(SKILL 第 375 行:「把速览表五行的"条件方向"
+    `trigger` 只登记触发那一半(SKILL 第 388 行:「把速览表五行的"条件方向"
     整理成 JSON 数组」)。所以判的是**格里逐字包含 trigger 整串**,不是相等 ——
     要求相等会把每一条合规的都打红。
 
     ---- 方向:表是源,日志是抄件 ----
-    SKILL 第 374 行写明日志由速览表整理而来,所以两者不一致时**错的是日志**
+    SKILL 第 387 行写明日志由速览表整理而来,所以两者不一致时**错的是日志**
     (处置文案照此写)。git 证据(本轮实测):日志最后一次写入 `eef783e`,
     五份日报重生成于 `ee7a2c6`,`git merge-base --is-ancestor eef783e ee7a2c6`
     为真 —— 日志确实是旧的那一份。
@@ -1387,15 +1383,14 @@ def check_weekly_judgement_ring(secs, report, allowed, notes=None):
     也就是三码在周报上的执行次数是 **0**,而周报里照样写满了判断环。
     声明本身是上一轮补的,它照出的洞就是这一条。
 
-    ---- 闸门:结构闸门,不是体裁闸门 ----
-    日报侧的闸门是 `derived.body_plan` 给的体裁(脚本给,不由 LLM 给);
-    周报侧**没有** body_plan,也没有等价的脚本产出物。这里改用**结构闸门**:
-    `## 本周主线` 之下的 `### ` 子节。理由:判断环写在哪里与主线段在哪里
-    是同一件事 —— 有主线段才有判断环,没有主线段时三码无处可判,不是
-    "查过且全过"。闸门不成立时照旧出 `WEEKLY_JUDGEMENT_LAYER_SKIPPED`
-    并带计数(标签数就是"漏掉了多少"的度量)。
-    体裁闸门那条路刻意不选:周报的 minimal/full 体裁不存在,凭标题猜"这一段
-    该不该有判断环"就是编造,与 JUDGEMENT_RING_SKIPPED_NO_MODE 拒绝猜同理。
+    ---- 闸门:结构闸门 ----
+    日报侧**没有闸门**:覆盖到的币种节全查(2026-08-14 起,见
+    `check_judgement_ring`)。周报侧的段落不像币种节那样有固定清单,所以
+    这里用**结构闸门**:`## 本周主线` 之下的 `### ` 子节。理由:判断环写在
+    哪里与主线段在哪里是同一件事 —— 有主线段才有判断环,没有主线段时三码
+    无处可判,不是"查过且全过"。闸门不成立时照旧出
+    `WEEKLY_JUDGEMENT_LAYER_SKIPPED` 并带计数(标签数就是"漏掉了多少"的度量)。
+    凭标题猜"这一段该不该有判断环"那条路刻意不选:猜就是编造。
 
     allowed : 见 `_check_one_ring`。`None`(未提供 --digest)时 ③ 不判并出声。
     """
@@ -1598,7 +1593,7 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
         v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于快照或要点表" % n)
     # 判断环三码必须在 `allowed` 算完之后:③ 的锚点判据逐字复用同一个白名单,
     # 它自己不另建一份 —— 另建就等于给报告开了第二条数字来源。
-    v.extend(check_judgement_ring(secs, derived, covered, allowed, notes=notes))
+    v.extend(check_judgement_ring(secs, covered, allowed, notes=notes))
     # 数字归属两码同样排在 `allowed` 之后:映射检查的候选集是**已可溯源**的
     # 那些数,编造的数由 NUMBER_UNTRACEABLE 单独管,同一个 token 不得吃两条。
     if brief_amb:

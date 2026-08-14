@@ -121,7 +121,7 @@ def cmd_amend_trigger(args):
     """把已登记条目的 `trigger` 改成速览表「条件方向」那一格的原文。
 
     ---- 为什么要有它 ----
-    `skills/fx-daily-report/SKILL.md:374` 写明日志由速览表整理而来:
+    `skills/fx-daily-report/SKILL.md:387` 写明日志由速览表整理而来:
     **表是源、日志是抄件**。改了表没回写时两者漂移,而
     `scripts/check_report.py` 的 `DECISION_TRIGGER_NOT_SOURCED` 会把它打红。
     既有三个子命令(add / set-review / stats)都改不了 trigger,而 SKILL

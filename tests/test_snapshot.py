@@ -174,15 +174,15 @@ class DerivedSectionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
             snap = self._run(tmp, srv)
         self.assertIn("derived", snap)
-        # 3 = 这份快照本该带 body_plan(见 derive.SCHEMA_VERSION 的注释)。
+        # 4 = body_plan 已删(见 derive.SCHEMA_VERSION 的注释)。
         # 端到端断言不可省:私有函数全绿而落盘时漏写这一节,校验器会把它
         # 当成"阶段 1 之前采的存量快照"静默跳过。
-        self.assertEqual(snap["derived"]["schema_version"], 3)
+        self.assertEqual(snap["derived"]["schema_version"], 4)
         self.assertIn("PHP", snap["derived"]["rates"])
         self.assertIn("PHP", snap["derived"]["events"])
-        self.assertIn("PHP", snap["derived"]["body_plan"])
-        self.assertIn(snap["derived"]["body_plan"]["PHP"]["mode"],
-                      ("minimal", "full"))
+        # 落盘路径上也不许再长出 body_plan:derive 删干净了、而组装层又补一份
+        # 回去,是本仓库"两处各算一遍"那类漂移的入口。
+        self.assertNotIn("body_plan", snap["derived"])
 
     def test_derived_uses_multi_day_history(self):
         hist = {"2026-08-%02d" % d: {

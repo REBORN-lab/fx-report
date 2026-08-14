@@ -205,11 +205,11 @@ class AmendTriggerTest(unittest.TestCase):
     """`amend-trigger`:把**已登记**条目的 trigger 改成速览表那一格的原文。
 
     ---- 为什么需要这条子命令(本轮实测)----
-    `skills/fx-daily-report/SKILL.md:374` 写明日志由速览表「条件方向」整理
+    `skills/fx-daily-report/SKILL.md:387` 写明日志由速览表「条件方向」整理
     而来 —— **表是源、日志是抄件**。改了表没回写时两者漂移,而
     `check_report.py` 新增的 `DECISION_TRIGGER_NOT_SOURCED` 会把它打红。
     实测:2026-08-10 与 2026-08-11 各五条正处在这个状态(共 10 条)。
-    修法只能走脚本 —— SKILL 第 373 行写着「经脚本代笔,**禁止直接编辑
+    修法只能走脚本 —— SKILL 第 386 行写着「经脚本代笔,**禁止直接编辑
     jsonl**」,而既有三个子命令(add / set-review / stats)都改不了 trigger。
 
     ---- 非破坏:旧值搬到 `trigger_superseded`,不丢 ----

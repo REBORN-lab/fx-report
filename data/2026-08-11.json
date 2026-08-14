@@ -408,7 +408,7 @@
     }
   },
   "derived": {
-    "schema_version": 3,
+    "schema_version": 4,
     "rates": {
       "PHP": {
         "chg_pct_1d": 0.705,
@@ -499,28 +499,6 @@
         "dropped_malformed": null,
         "main_sample_capped": null,
         "events_verdict": "当日采到 8 条(已顶到当日采集上限(上限不可知),实际篇数只多不少)"
-      }
-    },
-    "body_plan": {
-      "PHP": {
-        "mode": "full",
-        "line": null
-      },
-      "THB": {
-        "mode": "full",
-        "line": null
-      },
-      "BRL": {
-        "mode": "full",
-        "line": null
-      },
-      "EUR": {
-        "mode": "full",
-        "line": null
-      },
-      "USD": {
-        "mode": "full",
-        "line": null
       }
     },
     "real_rate": {

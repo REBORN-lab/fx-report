@@ -264,7 +264,7 @@
     "collector_version": "0.1.0"
   },
   "derived": {
-    "schema_version": 3,
+    "schema_version": 4,
     "rates": {
       "PHP": {
         "chg_pct_1d": null,
@@ -355,28 +355,6 @@
         "dropped_malformed": null,
         "main_sample_capped": null,
         "events_verdict": "当日事件采集失败,有无事件无法判定"
-      }
-    },
-    "body_plan": {
-      "PHP": {
-        "mode": "minimal",
-        "line": "PHP:本日无可用增量,不更新判断;详见附录 A 与附录 C。"
-      },
-      "THB": {
-        "mode": "minimal",
-        "line": "THB:本日无可用增量,不更新判断;详见附录 A 与附录 C。"
-      },
-      "BRL": {
-        "mode": "minimal",
-        "line": "BRL:本日无可用增量,不更新判断;详见附录 A 与附录 C。"
-      },
-      "EUR": {
-        "mode": "full",
-        "line": null
-      },
-      "USD": {
-        "mode": "minimal",
-        "line": "USD:本日无可用增量,不更新判断;详见附录 A 与附录 C。"
       }
     },
     "real_rate": {
