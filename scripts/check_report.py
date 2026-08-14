@@ -142,6 +142,12 @@ DISPOSITION_FLIP = ("处置:翻转指标写「什么一旦出现就改判」(可
 DISPOSITION_ANCHOR = ("处置:在关键假设句里引一个来自快照或要点表的**当前值**;"
                       "不要写阈值 —— 阈值是尚未发生的前瞻价位、不在快照里,"
                       "写进去会被 NUMBER_UNTRACEABLE 当场拦下")
+DISPOSITION_WRONG_SECTION = ("处置:换成该币种自己快照切片里的数;"
+                             "确是跨币种比较时,在**同一节内**点名那个币种"
+                             "(写「比索 61.325」,不要光写 61.325)")
+DISPOSITION_SUMMARY_BODY = ("处置:执行摘要只复述正文写过的数;"
+                            "要保留这个数就先把它写进对应的币种节/速览/复盘/"
+                            "缺漏节,不得只在摘要里出现一次")
 # **两个降级码(VERDICT_SKIPPED_NO_DERIVED / VERDICT_SKIPPED_LEGACY)的处置
 # 仍留在 SKILL,这是有意的**,不是漏改。它们的处置分两支,判别标准是"采集
 # 窗口是否还覆盖 DATE" —— 校验器不知道窗口边界(那在 collect/events.py 的
@@ -522,6 +528,241 @@ def _check_one_ring(currency, body, allowed):
     return v
 
 
+# ---- 数字的**归属**:两条映射级检查 ----
+# 既有 `NUMBER_UNTRACEABLE` 的判据是 `allowed` 三行并集上的**集合成员**判定,
+# 然后做集合差。它是一个**无序词袋**:把美元的数字写进雷亚尔那一节,两个数
+# 都在 `allowed` 里,校验器逐字放行。下面两张表把"数字属于谁"显式建起来。
+#
+# 币种 → 经济体。macro 行与 derived.real_rate 按经济体分键,rates/events 与
+# derived.rates/derived.events 按币种分键 —— 两套键都要走这张表才对得上。
+ECONOMY_OF_CURRENCY = {"USD": "US", "EUR": "EA", "PHP": "PH",
+                       "THB": "TH", "BRL": "BR"}
+# 快照里**按币种/经济体分键**的容器:rates / events / macro / derived。
+# 归属就在这四处取,别处不取。
+CURRENCY_SNAPSHOT_CONTAINERS = ("rates", "events")
+DERIVED_CURRENCY_CONTAINERS = ("rates", "events")
+# ---- 共享池:**显式枚举**,不是"其余都算" ----
+# 「其余都算共享」等于没有约束,所以这里只列两类来源,并在测试里逐元素冻结:
+#   ① 快照里**不按币种分键**的顶层字段。刻意**不含** run_at 与 schema_version:
+#      run_at 是 `2026-08-14T04:56:51+00:00` 这种串,DATE_RE 剥掉日期后留下
+#      04/56/51/00 四个二位数,等于给任意两位数开一张免票;schema_version 是
+#      个位数,已经在 ALLOWED_SMALL 里。实测:这两个键对现有八份产物的判定
+#      **零影响**(加与不加,炸出的条数都是 0),所以不加。
+#   ② 要点表里**显式的**跨币种块。跨币种比较是本仓报告的正常写法,而这个块
+#      正是产出流程给跨币种量指定的落点 —— 它是"共享"的唯一声明处,不是
+#      "凡是我认不出归属的都算共享"。
+SHARED_SNAPSHOT_KEYS = ("date", "calendar_hits", "gaps", "meta")
+SHARED_BRIEF_HEADINGS = ("跨币种共同主线",)
+# 币种别名:节内点名判据。别名少一个就等于把该币种的引用全判成违规,
+# 多一个(如把「元」也算 EUR)就等于把约束整体放掉 —— 逐元素冻结在测试里。
+CURRENCY_ALIASES = {"USD": ("USD", "美元"), "EUR": ("EUR", "欧元"),
+                    "PHP": ("PHP", "比索"), "THB": ("THB", "泰铢"),
+                    "BRL": ("BRL", "雷亚尔")}
+SUMMARY_SECTION_KEY = "执行摘要"
+# 「正文」的范围:币种节 ∪ 这三节。**冻结的清单**,不是"报告的其余部分" ——
+# 后者会让这条码退化成"摘要的数只要在报告里出现过就行",附录里随手一提就算
+# 数。缺漏节在列是实测要求的:reports/daily/2026-08-07.md 的摘要写
+# 「五币种 GDELT 事件采集均为 429」,429 在报告里只出现于缺漏节。
+SUMMARY_BODY_SECTION_KEYS = ("速览", "复盘", "数据缺漏")
+
+
+def _macro_rows(snap):
+    rows = snap.get("macro")
+    return [m for m in rows if isinstance(m, dict)] if isinstance(rows, list) else []
+
+
+def currency_snapshot_slice(snap, currency):
+    """该币种在快照里的**自有切片**,返回 JSON 片段列表(缺的不进列表)。
+
+    取处**显式枚举**,不做模式扫描:rates/events 按币种分键,
+    derived.rates/derived.events 按币种分键,derived.real_rate 与 macro 行按
+    经济体分键。空列表 = 该币种在快照里没有任何切片(判不了归属,见调用点
+    的第三态)。
+    """
+    econ = ECONOMY_OF_CURRENCY.get(currency)
+    parts = []
+    for key in CURRENCY_SNAPSHOT_CONTAINERS:
+        box = snap.get(key)
+        if isinstance(box, dict) and box.get(currency) is not None:
+            parts.append(box[currency])
+    derived = snap.get("derived")
+    if isinstance(derived, dict):
+        for key in DERIVED_CURRENCY_CONTAINERS:
+            box = derived.get(key)
+            if isinstance(box, dict) and box.get(currency) is not None:
+                parts.append(box[currency])
+        rr = derived.get("real_rate")
+        if isinstance(rr, dict) and rr.get(econ) is not None:
+            parts.append(rr[econ])
+    rows = [m for m in _macro_rows(snap) if m.get("economy") == econ]
+    if rows:
+        parts.append(rows)
+    return parts
+
+
+def currency_number_pool(snap, brief_text, currency):
+    """该币种自有的数字集合 = 快照切片 ∪ 要点表里该币种那一节 ∪ 复盘材料里
+    该币种那几行。
+
+    要点表**按币种切**(生产要点表逐字如此,见 briefs/2026-08-14-brief.md),
+    而不是整份进池 —— 整份进池就等于把要点表的跨币种词袋又搬回来一次,本码
+    要消灭的正是词袋。这相对既有 `allowed` 只会**更严**,不会更松。
+    """
+    text = json.dumps(currency_snapshot_slice(snap, currency), ensure_ascii=False)
+    nums = numbers_in(text)
+    sec = find_section(sections(brief_text), currency)
+    if sec:
+        nums |= numbers_in(sec[1])
+    for line in brief_text.splitlines():
+        if line.startswith("- %s |" % currency):
+            nums |= numbers_in(line)
+    return nums
+
+
+def shared_number_pool(snap, brief_text):
+    """共享池 —— 逐元素定义见 SHARED_SNAPSHOT_KEYS / SHARED_BRIEF_HEADINGS。
+
+    ALLOWED_SMALL 整体在池内:序数/条数/月份类小整数没有币种归属,把它们
+    纳进映射约束会把每一句「第 3 条」「T+3」都打红。
+    """
+    nums = set(ALLOWED_SMALL)
+    nums |= numbers_in(json.dumps({k: snap.get(k) for k in SHARED_SNAPSHOT_KEYS},
+                                  ensure_ascii=False))
+    secs = sections(brief_text)
+    for heading in SHARED_BRIEF_HEADINGS:
+        sec = find_section(secs, heading)
+        if sec:
+            nums |= numbers_in(sec[1])
+    return nums
+
+
+def check_number_section_mapping(secs, snap, brief_text, covered, allowed,
+                                 notes=None):
+    """`NUMBER_WRONG_SECTION` —— **质量检查**(映射级)。
+
+    判据是「这个数出自**哪个**币种的切片」对上「它写在**哪个**币种节」,
+    比的是两个位置之间的关系,不是某个 token 在不在一个大词袋里 ——
+    所以它不是**存在性**检查。既有的 `NUMBER_UNTRACEABLE` 才是存在性那一层
+    (`allowed` 三行并集上的集合成员判定),而它对"美元的数写进雷亚尔节"
+    完全不敏感:两个数都在并集里。
+
+    **诚实边界,三条,写在这里而不是只写在汇报里:**
+
+    1. 归属的判定单位是**节**,不是句。节内点名了别的币种(别名表见
+       CURRENCY_ALIASES),该币种的整个数字池就在本节放行。收紧到"同一句
+       必须点名"会误报:实测 reports/daily/2026-08-10.md 的美元节那句
+       「四条本币对美元的参考价……0.86693→0.86543、60.867→60.75、
+       33.055→33.013、5.0998→5.0856」一句点名不到四个币种,句级判定在八份
+       产物上炸出 15 条,全是正常写法;节级判定炸出 0 条。
+       代价说清楚:美元在非美元节里几乎必然被点名(报价的另一条腿就是它),
+       实测八份产物 160 个"节 × 别的币种"里 71 个被点名 —— 也就是说
+       **约 44% 的跨币种引用本码放行**,其中美元那一列几乎全放行。
+       本码拦得住的是没有点名的那 89 个。
+    2. 它只判"这个数出自谁",判不了"这个数用得对不对"。从本币种切片里挑一个
+       无关的数编一句话,本码放行。
+    3. 候选集**只取已可溯源的数**(`allowed`)。编造的数由
+       `NUMBER_UNTRACEABLE` 管 —— 同一个 token 不得同时吃两条违规。
+
+    三态:该币种在快照里一个切片都没有 → 打印跳过声明、不判违规
+    (`currency_snapshot_slice` 返回空,判不了归属就不判)。
+    macro 行没有可识别的 `economy` → 该行并入共享池,并打印声明:那是一条
+    真实的豁免(存量快照的 macro 行没有这个字段),不出声就与"全查过"同形。
+
+    notes : **出参**,同 check_daily。
+    """
+    v = []
+    unattributed = [m for m in _macro_rows(snap)
+                    if m.get("economy") not in set(ECONOMY_OF_CURRENCY.values())]
+    shared = shared_number_pool(snap, brief_text)
+    if unattributed:
+        shared |= numbers_in(json.dumps(unattributed, ensure_ascii=False))
+        if notes is not None:
+            notes.append("NUMBER_WRONG_SECTION_MACRO_UNATTRIBUTED: 快照 macro 有 "
+                         "%d 行没有可识别的 economy,这些行的数字并入共享池、"
+                         "不判归属" % len(unattributed))
+    own = {c: currency_number_pool(snap, brief_text, c) for c in CURRENCIES}
+    no_slice = []
+    for c in sorted(covered):
+        if not currency_snapshot_slice(snap, c):
+            no_slice.append(c)
+            continue
+        body = find_section(secs, c)[1]
+        pool = own[c] | shared
+        for other in CURRENCIES:
+            if other == c:
+                continue
+            if any(a in body for a in CURRENCY_ALIASES[other]):
+                pool |= own[other]
+        for n in sorted((numbers_in(body) & allowed) - pool):
+            src = sorted(o for o in CURRENCIES if o != c and n in own[o])
+            v.append("NUMBER_WRONG_SECTION: %s 节写了 %s,它只出自 %s 的快照"
+                     "切片,而本节没有点名 %s;%s"
+                     % (c, n, "/".join(src) or "别处", "/".join(src) or "它",
+                        DISPOSITION_WRONG_SECTION))
+    if no_slice and notes is not None:
+        notes.append("NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE: %s 在快照里没有"
+                     "任何自有切片(rates/events/derived/macro 都没有该币种或"
+                     "其经济体的条目),这些节的数字归属未校验"
+                     % "、".join(no_slice))
+    return v
+
+
+def check_summary_numbers_in_body(secs, notes=None):
+    """`SUMMARY_NUMBER_NOT_IN_BODY` —— **质量检查**(一致性级)。
+
+    移植自 econstack 被删版本的 A1 检查项,逐字:
+    `| A1 | Do all numbers in the executive summary match the tables? | RED |`
+    比的是**同一个数在两个位置的一致性**,不是"某物有没有出现",所以它不是
+    **存在性**检查;既有的 `NUMBER_UNTRACEABLE` 才是存在性那一层。
+
+    **方向只有一个:摘要 ⊆ 正文。** 反过来(正文的数必须进摘要)会把每一份
+    正常报告打成几十条红 —— 摘要按 spec 最多 6 条,本就装不下正文的数。
+
+    **诚实边界,两条:**
+
+    1. 它只查这个 token 在正文里**出现过**,不查两处说的是不是同一件事。
+       摘要写「参考价 60.843 已升破」而正文写「60.843 未更新」,本码放行 ——
+       那是语义,做不了,不假装能做。
+    2. `ALLOWED_SMALL` 整体豁免,与 `check_number_section_mapping` 同一理由:
+       序数/条数(「摘要第 3 条」「T+3」「四盘」)不是 A1 说的那种数,而它们
+       在正文里没有对应是常态。不豁免时,tests 里 `make_report` 的
+       「摘要第 1/2/3 条」当场炸出 3 条、连带 17 个既有用例变红 —— 那是这一类
+       的真实形状。实测口径:在 reports/daily/2026-08-07..14 八份产物上,
+       豁免与不豁免炸出的条数**都是 0**,这条豁免不换取任何已知的检出力。
+
+    三态:没有执行摘要节(SECTION_MISSING 另有一条,这里不重复判违规)、
+    摘要里没有需要溯源的数 —— 两种都打印跳过声明。
+
+    notes : **出参**,同 check_daily。
+    """
+    v = []
+    s = find_section(secs, SUMMARY_SECTION_KEY)
+    if s is None:
+        if notes is not None:
+            notes.append("SUMMARY_NUMBER_SKIPPED_NO_SECTION: 报告没有「%s」节,"
+                         "摘要数字与正文的一致性未校验" % SUMMARY_SECTION_KEY)
+        return v
+    nums = numbers_in(s[1]) - ALLOWED_SMALL
+    if not nums:
+        if notes is not None:
+            notes.append("SUMMARY_NUMBER_SKIPPED_NO_NUMBERS: 执行摘要里没有"
+                         "需要溯源的数字(序数/条数类小整数已整体豁免),"
+                         "与正文的一致性无可校验")
+        return v
+    body = []
+    for key in tuple(CURRENCIES) + SUMMARY_BODY_SECTION_KEYS:
+        sec = find_section(secs, key)
+        if sec:
+            body.append(sec[1])
+    in_body = numbers_in("\n".join(body))
+    for n in sorted(nums - in_body):
+        v.append("SUMMARY_NUMBER_NOT_IN_BODY: 执行摘要写了 %s,正文(币种节/%s)"
+                 "一处都没有;%s"
+                 % (n, "/".join(SUMMARY_BODY_SECTION_KEYS),
+                    DISPOSITION_SUMMARY_BODY))
+    return v
+
+
 def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=None,
                 prior_text=None):
     """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
@@ -655,6 +896,17 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     # 判断环三码必须在 `allowed` 算完之后:③ 的锚点判据逐字复用同一个白名单,
     # 它自己不另建一份 —— 另建就等于给报告开了第二条数字来源。
     v.extend(check_judgement_ring(secs, derived, covered, allowed, notes=notes))
+    # 数字归属两码同样排在 `allowed` 之后:映射检查的候选集是**已可溯源**的
+    # 那些数,编造的数由 NUMBER_UNTRACEABLE 单独管,同一个 token 不得吃两条。
+    if isinstance(snap, dict):
+        v.extend(check_number_section_mapping(secs, snap, brief_text, covered,
+                                              allowed, notes=notes))
+    elif notes is not None:
+        # 快照顶层不是对象:已记 SNAPSHOT_MALFORMED,但归属这一层确实一条
+        # 都没查过,不出声就与"全查过且全过"同形
+        notes.append("NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE: 快照顶层不是对象,"
+                     "所有币种节的数字归属未校验")
+    v.extend(check_summary_numbers_in_body(secs, notes=notes))
     if strict_brief:
         # 报告 ⊆ 快照∪要点表 一直有校验,但要点表本身 ⊆ 快照 从来没人查——
         # 要点表环节写错的数字会被下游当作合法来源。此开关堵住这条缝。

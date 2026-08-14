@@ -3391,3 +3391,445 @@ class JudgementRingHonestyLabelTest(unittest.TestCase):
     def test_not_all_three_are_claimed_to_be_quality_checks(self):
         """至少两条必须自称存在性 —— 三条全写"质量检查"就是那个病本身。"""
         self.assertGreaterEqual(self.doc.count("存在性检查"), 2, self.doc)
+
+
+# ==================== 数字的**归属**:两条映射级检查 ====================
+#
+# 既有的 `NUMBER_UNTRACEABLE` 判据是 `allowed = numbers_in(snapshot) |
+# numbers_in(brief) | ALLOWED_SMALL` 的**集合成员**判定(check_report.py 里
+# `allowed` 的那三行),然后做集合差。它是**无序词袋**:把美元的数字写进
+# 雷亚尔那一节,两边都在 `allowed` 里,校验器逐字放行。
+# 这两条码补的是「同一个数在不同位置之间的**关系**」,不是「某物有没有出现」,
+# 因此两条**都是质量检查**(诚实标注见 check_report.py 的两个 docstring)。
+#
+# ---- 共享池的定义在测试里**逐元素冻结**,与 DISPOSITION_* 同规格 ----
+# "其余都算共享"等于没有约束。凡改这几行常量就必须改这里 —— 显式动作、进 diff。
+
+MAP_SNAP = {
+    "date": "2026-08-10",
+    "run_at": "2026-08-10T04:56:51+00:00",
+    "schema_version": 1,
+    "rates": {"PHP": {"primary": 60.843, "prev_primary": 60.9},
+              "THB": {"primary": 35.2}, "BRL": {"primary": 5.43},
+              "EUR": {"primary": 0.921}},
+    "macro": [{"economy": "PH", "indicator": "CPI 同比", "value": 3.1,
+               "prev": 3.4, "period": "2026-07"},
+              {"economy": "US", "indicator": "政策利率", "value": 4.25,
+               "period": "2026-08"}],
+    "events": {}, "calendar_hits": [], "gaps": [],
+    "meta": {"caps": {"official_daily": 3}},
+    "derived": {"schema_version": 1, "rates": {}, "events": {},
+                "real_rate": {"US": {"value": 0.26}, "PH": {"value": -1.613},
+                              "TH": {"value": -1.42}, "EA": {"value": -0.499},
+                              "BR": {"value": 9.359}}},
+}
+MAP_SNAP_TEXT = json.dumps(MAP_SNAP, ensure_ascii=False)
+# 要点表按币种分节(生产要点表逐字如此,见 briefs/2026-08-14-brief.md),
+# 外加一个**显式的**跨币种块 —— 后者是共享池的两个来源之一。
+MAP_BRIEF = "\n".join([
+    "# 要点表 2026-08-10",
+    "",
+    "## 跨币种共同主线",
+    "- 四盘同侧移动,统一推力候选值 0.4321",
+    "",
+    "## USD",
+    "- 派生指标:实际利率 0.26(政策利率 4.25)",
+    "",
+    "## EUR",
+    "- 汇率变动:primary 0.921;实际利率 -0.499",
+    "",
+    "## PHP",
+    "- 汇率变动:primary 60.843,prev 60.9;CPI 3.1 前值 3.4;实际利率 -1.613",
+    "",
+    "## THB",
+    "- 汇率变动:primary 35.2;实际利率 -1.42",
+    "",
+    "## BRL",
+    "- 汇率变动:primary 5.43;实际利率 9.359",
+    "",
+])
+MAP_BODIES = {
+    "USD": "**驱动**:政策利率 4.25,实际利率 0.26。",
+    "EUR": "**驱动**:参考价 0.921,实际利率 -0.499。",
+    "PHP": "**驱动**:参考价 60.843(前值 60.9),CPI 3.1 前值 3.4,实际利率 -1.613。",
+    "THB": "**驱动**:参考价 35.2,实际利率 -1.42。",
+    "BRL": "**驱动**:参考价 5.43,实际利率 9.359。",
+}
+MAP_HEADINGS = (("USD", "美元(USD)"), ("EUR", "欧元(EUR)"),
+                ("PHP", "菲律宾比索(PHP)"), ("THB", "泰铢(THB)"),
+                ("BRL", "巴西雷亚尔(BRL)"))
+
+
+def map_report(bodies=None, summary=None, quick="| 币种 | 方向 |\n| --- | --- |",
+               review="- 首次运行,无历史观点可复盘", gaps="无", extra=None):
+    b = dict(MAP_BODIES)
+    b.update(bodies or {})
+    lines = ["# 外汇日报 2026-08-10", "", "## 执行摘要"]
+    lines += summary if summary is not None else ["- 本日无跨币种主线可归纳。"]
+    for code, heading in MAP_HEADINGS:
+        lines += ["", "## " + heading, b[code]]
+    lines += ["", "## 速览", quick]
+    lines += ["", "## 昨日观点复盘", review]
+    lines += ["", "## 数据缺漏", gaps]
+    if extra:
+        lines += ["", "## 附录 B:出处", extra]
+    return "\n".join(lines)
+
+
+def map_check(bodies=None, notes=None, snap=None, brief=None, **kw):
+    return check_report.check_daily(
+        map_report(bodies=bodies, **kw),
+        MAP_SNAP_TEXT if snap is None else snap,
+        MAP_BRIEF if brief is None else brief, notes=notes)
+
+
+def codes_of(violations, prefix):
+    return [x for x in violations if x.startswith(prefix + ":")]
+
+
+class NumberSectionMappingTest(unittest.TestCase):
+    """`NUMBER_WRONG_SECTION` —— **质量检查**(映射级)。
+
+    判据是「这个数出自**哪个**币种的快照切片」对上「它写在**哪个**币种节」,
+    是两个位置之间的关系,不是某个 token 在不在一个大词袋里。
+    """
+
+    def test_clean_report_passes(self):
+        self.assertEqual(codes_of(map_check(), "NUMBER_WRONG_SECTION"), [])
+
+    def test_usd_number_in_the_brl_section_is_a_violation(self):
+        """缺陷原文:**把美元的数字写进雷亚尔那一节,校验器放行**。
+
+        4.25 是 macro 里 economy=US 的读数,只属于 USD 切片;写进雷亚尔节、
+        且该节没有点名美元 —— 既有的 NUMBER_UNTRACEABLE 对它完全不敏感
+        (4.25 就在快照里)。
+        """
+        v = map_check({"BRL": "**驱动**:参考价 5.43,另有 4.25 这一档。"})
+        self.assertEqual(codes_of(v, "NUMBER_UNTRACEABLE"), [], v)
+        line = codes_of(v, "NUMBER_WRONG_SECTION")
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("BRL", line[0])
+        self.assertIn("4.25", line[0])
+        self.assertIn("USD", line[0])
+
+    def test_naming_the_other_currency_licenses_its_numbers(self):
+        """**归属的判定单位是「节」**(诚实边界,不是"同一句"）。
+
+        跨币种比较是本仓报告的正常写法(替代解释环逐条如此),点名即放行。
+        这一条同时是**误报的下界**:收紧到「同一句必须点名」会把
+        reports/daily/2026-08-10.md 的美元节整段打红(实测 15 条)。
+        """
+        v = map_check({"BRL": "**驱动**:参考价 5.43;美元一端政策利率 4.25 未变。"})
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+
+    def test_shared_pool_is_not_everything_else(self):
+        """**变异靶点:共享池写成「其余都算共享」。**
+
+        60.843 在快照里、在要点表里、也在 `allowed` 里 —— 唯独不属于泰铢。
+        共享池若退化成"不属于本币种的都算共享",这一条不会红。
+        """
+        v = map_check({"THB": "**驱动**:参考价 35.2,另一档 60.843。"})
+        line = codes_of(v, "NUMBER_WRONG_SECTION")
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("60.843", line[0])
+        self.assertIn("PHP", line[0])
+
+    def test_shared_pool_never_contains_the_currency_keyed_containers(self):
+        """同一个变异的**结构侧**:共享池的来源清单里不得出现按币种/经济体
+        分键的容器(rates / events / macro / derived)—— 放进去就等于
+        "其余都算共享"。"""
+        for key in ("rates", "events", "macro", "derived"):
+            self.assertNotIn(key, check_report.SHARED_SNAPSHOT_KEYS, key)
+
+    def test_every_currency_section_is_checked_not_just_the_first(self):
+        """**变异靶点:只查第一个币种节。**
+
+        五节各塞一个别人的数,必须五条全红、且五个币种都被点名。
+        """
+        v = map_check({"USD": MAP_BODIES["USD"] + "另有 0.921 一档。",
+                       "EUR": MAP_BODIES["EUR"] + "另有 60.843 一档。",
+                       "PHP": MAP_BODIES["PHP"] + "另有 35.2 一档。",
+                       "THB": MAP_BODIES["THB"] + "另有 5.43 一档。",
+                       "BRL": MAP_BODIES["BRL"] + "另有 4.25 一档。"})
+        lines = codes_of(v, "NUMBER_WRONG_SECTION")
+        self.assertEqual(len(lines), 5, v)
+        named = {c for c in check_report.CURRENCIES
+                 for ln in lines if ln.startswith("NUMBER_WRONG_SECTION: %s " % c)}
+        self.assertEqual(named, set(check_report.CURRENCIES), lines)
+
+    def test_the_explicit_cross_currency_pool_licenses_a_number_anywhere(self):
+        """共享池的第一个来源:要点表里**显式的**跨币种块。"""
+        v = map_check({"THB": MAP_BODIES["THB"] + "统一推力候选值 0.4321。"})
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+
+    def test_the_shared_snapshot_keys_license_a_number_anywhere(self):
+        """共享池的第二个来源:快照里**不按币种分键**的顶层字段。"""
+        v = map_check({"THB": MAP_BODIES["THB"] + "当日公告上限 3 条。"},
+                      snap=json.dumps(dict(MAP_SNAP, meta={"caps": {
+                          "official_daily": 3, "gnews_records": 99}}),
+                          ensure_ascii=False))
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+
+    def test_small_integers_are_never_mapped(self):
+        """**变异靶点:把 ALLOWED_SMALL 也纳入映射约束。**
+
+        序数/条数/月份类小整数没有币种归属,纳进来会把每个"第 3 条""T+3"
+        全打红。ALLOWED_SMALL 必须整体在共享池里。
+        """
+        v = map_check({"THB": MAP_BODIES["THB"] + "这是本节第 7 条依据,时限 T+3。"})
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+        self.assertTrue(check_report.ALLOWED_SMALL
+                        <= check_report.shared_number_pool(MAP_SNAP, MAP_BRIEF))
+
+    def test_untraceable_numbers_are_left_to_the_existing_code(self):
+        """同一个 token 不得同时吃两条违规 —— 编造的数由
+        `NUMBER_UNTRACEABLE` 管,本码只看**可溯源**的那些。"""
+        v = map_check({"THB": MAP_BODIES["THB"] + "另有 77.77 一档。"})
+        self.assertTrue(codes_of(v, "NUMBER_UNTRACEABLE"), v)
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+
+    def test_non_currency_sections_are_not_constrained(self):
+        """执行摘要 / 速览 / 复盘 / 缺漏节天然跨币种,不受本码约束。"""
+        v = map_check(summary=["- 四盘:0.921、60.843、35.2、5.43、4.25。"],
+                      quick="| USD | 4.25 | 0.921 | 60.843 | 35.2 | 5.43 |",
+                      review="- 复盘:0.921、60.843、35.2、5.43、4.25 均未更新")
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+
+    def test_currency_without_any_snapshot_slice_is_skipped_and_declared(self):
+        """三态之三:该币种在快照里一个切片都没有(USD 本就没有 rates 条目;
+        这里连 macro/real_rate/events 一并拿掉)—— 判不了归属就不判,
+        但必须留下一行。「跳过」与「通过」在输出上不可分辨,正是这一族
+        检查要消灭的形态。"""
+        snap = json.loads(MAP_SNAP_TEXT)
+        snap["macro"] = [m for m in snap["macro"] if m["economy"] != "US"]
+        del snap["derived"]["real_rate"]["US"]
+        notes = []
+        v = map_check({"USD": "**驱动**:另有 60.843 一档。"}, notes=notes,
+                      snap=json.dumps(snap, ensure_ascii=False))
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+        line = [n for n in notes
+                if n.startswith("NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("USD", line[0])
+
+    def test_no_skip_note_when_every_covered_currency_had_a_slice(self):
+        """反面:该查的都查了就不许再喊跳过,否则声明本身变成噪声。"""
+        notes = []
+        map_check(notes=notes)
+        self.assertEqual([n for n in notes
+                          if n.startswith("NUMBER_WRONG_SECTION_SKIPPED")],
+                         [], notes)
+
+    def test_unattributable_macro_rows_are_pooled_and_declared(self):
+        """存量快照的 macro 条目没有 `economy`(tests 里的 SNAP 逐字如此)。
+        判不了归属的行并入共享池 —— 但这等于给报告开了一条豁免,必须出声。"""
+        snap = json.loads(MAP_SNAP_TEXT)
+        for m in snap["macro"]:
+            del m["economy"]
+        notes = []
+        v = map_check({"THB": MAP_BODIES["THB"] + "另有 3.1 一档。"}, notes=notes,
+                      snap=json.dumps(snap, ensure_ascii=False))
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+        line = [n for n in notes
+                if n.startswith("NUMBER_WRONG_SECTION_MACRO_UNATTRIBUTED")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("2", line[0])
+
+    def test_violation_line_carries_the_disposition(self):
+        line = codes_of(map_check({"BRL": MAP_BODIES["BRL"] + "另有 4.25。"}),
+                        "NUMBER_WRONG_SECTION")[0]
+        self.assertTrue(line.endswith(check_report.DISPOSITION_WRONG_SECTION),
+                        line)
+
+    def test_cli_turns_a_wrong_section_number_red(self):
+        """端到端:进程内全绿而真 CLI 放行,是本仓库栽过的形态。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            bp = os.path.join(tmp, "b.md")
+            for path, text in (
+                    (rp, map_report({"BRL": MAP_BODIES["BRL"] + "另有 4.25。"})),
+                    (sp, MAP_SNAP_TEXT), (bp, MAP_BRIEF)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp, "--brief", bp,
+                                        "--mode", "daily", "--strict-brief"])
+            out = buf.getvalue()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NUMBER_WRONG_SECTION", out)
+
+
+class SummaryNumbersAreInTheBodyTest(unittest.TestCase):
+    """`SUMMARY_NUMBER_NOT_IN_BODY` —— **质量检查**(一致性级)。
+
+    移植自 econstack 被删版本的 A1 检查项,逐字:
+    `| A1 | Do all numbers in the executive summary match the tables? | RED |`
+    """
+
+    def test_summary_numbers_present_in_the_body_pass(self):
+        v = map_check(summary=["- 比索参考价 60.843 未变。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY"), [], v)
+
+    def test_summary_only_number_is_a_violation(self):
+        """摘要里那个 0.4321 只在要点表的跨币种块里有,正文一处都没写 ——
+        既有的 NUMBER_UNTRACEABLE 放行(它在 `allowed` 里)。"""
+        v = map_check(summary=["- 统一推力候选值 0.4321。"])
+        self.assertEqual(codes_of(v, "NUMBER_UNTRACEABLE"), [], v)
+        line = codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY")
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("0.4321", line[0])
+
+    def test_direction_is_summary_into_body_not_the_reverse(self):
+        """**变异靶点:方向反过来(变成正文数字必须进摘要)。**
+
+        正文有一堆摘要没写的数(本来就该如此,摘要只有 6 条),
+        反向实现会把每一份正常报告打成几十条红。
+        """
+        v = map_check(summary=["- 本日无跨币种主线可归纳。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY"), [], v)
+        v2 = map_check(summary=["- 统一推力候选值 0.4321。"])
+        self.assertEqual(len(codes_of(v2, "SUMMARY_NUMBER_NOT_IN_BODY")), 1, v2)
+
+    def test_quick_table_and_review_and_gaps_all_count_as_body(self):
+        """正文的范围是**冻结的清单**:币种节 ∪ 速览 ∪ 复盘 ∪ 缺漏节。
+        缺漏节在列是实测要求的 —— reports/daily/2026-08-07.md 的摘要写
+        「GDELT 事件采集均为 429」,429 只出现在缺漏节里。"""
+        for kw in ({"quick": "| EUR | 0.4321 |"},
+                   {"review": "- 上期统一推力候选值 0.4321"},
+                   {"gaps": "- [gdelt/USD] HTTP Error 0.4321"}):
+            with self.subTest(**kw):
+                v = map_check(summary=["- 统一推力候选值 0.4321。"], **kw)
+                self.assertEqual(codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY"), [], v)
+
+    def test_an_appendix_outside_the_frozen_list_is_not_body(self):
+        """反面:清单之外的节(附录)不算正文 —— 否则"正文"退化成
+        "报告的其余部分",这条码就只剩摘要自己不在场时才可能红。"""
+        v = map_check(summary=["- 统一推力候选值 0.4321。"],
+                      extra="- [@X] 统一推力候选值 0.4321")
+        self.assertEqual(len(codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY")), 1, v)
+
+    def test_small_integers_are_never_required_to_be_in_the_body(self):
+        """**变异靶点:摘要侧不豁免 ALLOWED_SMALL。**
+
+        序数/条数(「摘要第 7 条」「T+3」)在正文里没有对应是常态,不是
+        A1 说的那种数。不豁免时,本文件 `make_report` 的「摘要第 1/2/3 条」
+        当场炸出 3 条,17 个既有用例连带变红 —— 那是这一类的真实形状。
+        实测:在 reports/daily/2026-08-07..14 八份产物上,豁免与不豁免炸出
+        的条数**都是 0**,这条豁免不换取任何已知的检出力。
+        """
+        v = map_check(summary=["- 摘要第 7 条:比索参考价 60.843 未变(T+3)。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY"), [], v)
+
+    def test_a_summary_with_only_small_integers_declares_the_skip(self):
+        """豁免掉之后一个可查的数都不剩 —— 那与"全查过且全过"在输出上不可
+        分辨,必须走跳过声明这一支。"""
+        notes = []
+        map_check(summary=["- 摘要第 7 条:本日无跨币种主线。"], notes=notes)
+        line = [n for n in notes
+                if n.startswith("SUMMARY_NUMBER_SKIPPED_NO_NUMBERS")]
+        self.assertEqual(len(line), 1, notes)
+
+    def test_summary_without_numbers_skips_and_declares(self):
+        """三态:摘要里一个数都没有 → 跳过并声明。"""
+        notes = []
+        map_check(summary=["- 本日无跨币种主线可归纳。"], notes=notes)
+        line = [n for n in notes
+                if n.startswith("SUMMARY_NUMBER_SKIPPED_NO_NUMBERS")]
+        self.assertEqual(len(line), 1, notes)
+
+    def test_missing_summary_section_skips_and_declares(self):
+        notes = []
+        report = map_report().replace("## 执行摘要", "## 摘要占位")
+        v = check_report.check_daily(report, MAP_SNAP_TEXT, MAP_BRIEF,
+                                     notes=notes)
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY"), [], v)
+        self.assertTrue([n for n in notes
+                         if n.startswith("SUMMARY_NUMBER_SKIPPED_NO_SECTION")],
+                        notes)
+
+    def test_no_skip_note_when_the_summary_had_numbers(self):
+        notes = []
+        map_check(summary=["- 比索参考价 60.843 未变。"], notes=notes)
+        self.assertEqual([n for n in notes
+                          if n.startswith("SUMMARY_NUMBER_SKIPPED")], [], notes)
+
+    def test_violation_line_carries_the_disposition(self):
+        line = codes_of(map_check(summary=["- 统一推力候选值 0.4321。"]),
+                        "SUMMARY_NUMBER_NOT_IN_BODY")[0]
+        self.assertTrue(line.endswith(check_report.DISPOSITION_SUMMARY_BODY),
+                        line)
+
+    def test_cli_turns_a_summary_only_number_red(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "r.md")
+            sp = os.path.join(tmp, "s.json")
+            bp = os.path.join(tmp, "b.md")
+            for path, text in (
+                    (rp, map_report(summary=["- 统一推力候选值 0.4321。"])),
+                    (sp, MAP_SNAP_TEXT), (bp, MAP_BRIEF)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp, "--brief", bp,
+                                        "--mode", "daily", "--strict-brief"])
+            out = buf.getvalue()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("SUMMARY_NUMBER_NOT_IN_BODY", out)
+
+
+class NumberMappingPoolFrozenTest(unittest.TestCase):
+    """共享池、币种↔经济体映射、别名表、正文节清单 —— **逐元素**冻结。
+
+    与 DISPOSITION_* 同规格:这几张表是判定本身,悄悄多一个元素就等于悄悄
+    多一条豁免。改它们必须同时改这里,显式动作、进 diff。
+    """
+
+    def test_shared_snapshot_keys_are_frozen(self):
+        self.assertEqual(check_report.SHARED_SNAPSHOT_KEYS,
+                         ("date", "calendar_hits", "gaps", "meta"))
+
+    def test_shared_brief_headings_are_frozen(self):
+        self.assertEqual(check_report.SHARED_BRIEF_HEADINGS,
+                         ("跨币种共同主线",))
+
+    def test_economy_of_currency_is_frozen(self):
+        self.assertEqual(check_report.ECONOMY_OF_CURRENCY,
+                         {"USD": "US", "EUR": "EA", "PHP": "PH",
+                          "THB": "TH", "BRL": "BR"})
+
+    def test_currency_aliases_are_frozen(self):
+        self.assertEqual(check_report.CURRENCY_ALIASES,
+                         {"USD": ("USD", "美元"), "EUR": ("EUR", "欧元"),
+                          "PHP": ("PHP", "比索"), "THB": ("THB", "泰铢"),
+                          "BRL": ("BRL", "雷亚尔")})
+
+    def test_summary_body_section_keys_are_frozen(self):
+        self.assertEqual(check_report.SUMMARY_BODY_SECTION_KEYS,
+                         ("速览", "复盘", "数据缺漏"))
+
+    def test_every_currency_has_an_economy_and_aliases(self):
+        for c in check_report.CURRENCIES:
+            self.assertIn(c, check_report.ECONOMY_OF_CURRENCY, c)
+            self.assertIn(c, check_report.CURRENCY_ALIASES, c)
+
+
+class NumberMappingHonestyLabelTest(unittest.TestCase):
+    """诚实标注:两个码各自的性质写在源码 docstring 里,并写明**它管不了
+    什么**。调研实测 IMF 那套评分器停在存在性那一层,而我们刚照出自己也停在
+    那一层 —— 把存在性说成质量,就是复现同一个病;反过来,把质量检查的
+    边界写没了,也是同一个病。"""
+
+    def test_wrong_section_is_labelled_a_quality_check_with_its_boundary(self):
+        doc = check_report.check_number_section_mapping.__doc__ or ""
+        self.assertIn("NUMBER_WRONG_SECTION", doc)
+        self.assertIn("质量检查", doc)
+        self.assertIn("存在性", doc)
+
+    def test_summary_body_is_labelled_a_quality_check_with_its_boundary(self):
+        doc = check_report.check_summary_numbers_in_body.__doc__ or ""
+        self.assertIn("SUMMARY_NUMBER_NOT_IN_BODY", doc)
+        self.assertIn("质量检查", doc)
+        self.assertIn("存在性", doc)
