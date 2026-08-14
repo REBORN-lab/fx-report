@@ -37,5 +37,5 @@
 
 ## 6. delta spec
 
-- [ ] 6.1 `specs/fx-daily-report/spec.md`:MODIFY `### Requirement: 数字纪律`,补结论句逐字引用条文与场景
-- [ ] 6.2 `specs/fx-weekly-report/spec.md`:MODIFY `### Requirement: 周报跨日聚合与数字溯源`,同上
+- [x] 6.1 `specs/fx-daily-report/spec.md`:MODIFY `### Requirement: 数字纪律`,补结论句逐字引用条文与场景
+- [x] 6.2 `specs/fx-weekly-report/spec.md`:MODIFY `### Requirement: 周报跨日聚合与数字溯源`,同上

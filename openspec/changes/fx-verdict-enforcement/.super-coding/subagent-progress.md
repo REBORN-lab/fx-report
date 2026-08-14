@@ -1536,3 +1536,53 @@ reports/daily/2026-08-11.md 正文对不上——例如记「比索昨日无明�
    用一次回填撬动三个已绿产物,不划算。
 3. 这些条目的陈旧本身是本次事故的证据(与 brief 同源:都写自错误快照),
    正确修法在下一轮采集向前,不在向后改写。
+
+## 新增失败模式:电池 runner 被外部杀死 → 变异残留(2026-08-14 实测)
+
+第二次实例(第一次是 `| head -30` 触发 SIGPIPE)。本次:电池在 2 分钟工具超时处被
+SIGTERM 打断,`finally` 未跑完,`scripts/check_report.py` 带着一处变异留在工作树里
+(`git diff --stat` 实测 1 file changed, 1 insertion(+), 1 deletion(-))。
+`git checkout --` 还原后 29729 bytes,与归档记录一致。
+
+同轮还暴露第三个约束:**电池与任何并发测试不能共用一棵工作树**。电池原地改写
+`scripts/*.py` 约 5 分钟,期间另一个 agent 正跑 `python3 -m unittest tests.test_check_report`,
+会撞上变异体、报出假缺口。实际发生并被及时中止。
+
+固化为三条:
+1. 电池只能在**长超时的后台**跑(单轮 ≈ 15 靶点 × 全量 18s,总计 300s+),不接管道。
+2. 电池运行期间,**同一工作树上不得有并发测试**;要并发就必须 worktree 隔离。
+3. 电池自带 `finally` 还原**不足以**保证还原(外部信号可越过它);调用者必须在电池
+   之外独立跑一次 `git status --porcelain` 复核,非空即视为电池未完成。
+
+## T10 —— delta spec 逐场景核对 + 最终回归 ✅(2026-08-14)
+
+### Step 1 结构校验 ✅
+`openspec validate fx-verdict-enforcement --strict` → `Change 'fx-verdict-enforcement' is valid`,`rc=0`。
+
+### Step 2 逐场景核对 ✅ 32/32 有落点,零缺口
+`grep -c '^#### Scenario:'` 实测 daily 16 / weekly 16 = **32**;44 个测试单元逐个单跑,
+`nonzero_rc_count=0`;核对者在循环前后各取一次 `sha256sum scripts/check_report.py`
+(两次同为 `70fbdba2…`),证明该轮无并发变异污染。
+
+**计划里那张映射表被证伪三处**(表是计划期写的声明,不是事实):
+1. **漏了 4 个 daily 场景**(#13–#16:容器非对象 / 缺币种条目 / 兜底不波及存量快照 /
+   无派生节)。它们**有**覆盖,只是表里从未点名 `DailyContainerGateTest` 与
+   `DailyNoDerivedNoticeTest`。
+2. **两行指错文件**:「引用派生指标」「派生量缺失时不补算」表里挂在
+   `CheckDailyTest`/`StrictBriefTest` 名下,而这两个类**根本不碰这两个场景**;
+   真落点是 `tests/test_derive.py::RealRateTest`。
+3. **「历史周报与聚合文件不配对」只测了一半**:`NoLegacyExemptionSwitchTest` 覆盖的是
+   「MUST NOT 引入豁免开关」那半句;「校验如实失败」那半句**没有任何测试点名历史产物**
+   (`tests/` 下无一读 `reports/weekly/` 或 `state/weekly-digest-*`),只靠通用机制
+   `WeeklyVerdictQuotingTest` + T9 手工实跑证据。表里已如实标注,属**已声明的软点**。
+
+**另查出两条 prompt-only 子句(均为存量继承,非本 change 引入)**:
+「实际利率同时给出政策利率与 CPI 的期号」与「派生量缺失时日报如实说明不可得」——
+生产端有测试,**报告端只有 SKILL 散文,校验器零命中**(`grep 期号|policy_period|cpi_period`
+在 `check_report.py` 中无结果)。这正是本 change 要消灭的「同一判定散文与脚本两处各写一遍」
+形态,记入 verify 待办。
+
+### Step 3 最终回归 + 电池 ✅
+- `Ran 687 tests` / `OK` / `rc=0`
+- 电池 **KILLED 15 / 执行 15 / 登记 15(地板 15)**,`BATTERY_RC=0`,
+  跑在独立 worktree(detached `31197d5`)里,跑后 `git status --porcelain` 为空

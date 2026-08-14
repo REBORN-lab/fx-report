@@ -2483,7 +2483,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Verify(通常无需修改): `openspec/changes/fx-verdict-enforcement/specs/fx-daily-report/spec.md`、`.../fx-weekly-report/spec.md`
 
-- [ ] **T10 Step 1: 结构校验**
+- [x] **T10 Step 1: 结构校验**
 
 ```bash
 openspec validate fx-verdict-enforcement --strict; echo "rc=$?"
@@ -2491,7 +2491,7 @@ openspec validate fx-verdict-enforcement --strict; echo "rc=$?"
 
 Expected: `Change 'fx-verdict-enforcement' is valid`,`rc=0`。
 
-- [ ] **T10 Step 2: 逐场景核对实现**
+- [x] **T10 Step 2: 逐场景核对实现**
 
 对照下表逐条确认,每个 `#### Scenario:` 都能指到一个已通过的测试:
 
@@ -2516,7 +2516,7 @@ Expected: `Change 'fx-verdict-enforcement' is valid`,`rc=0`。
 
 任一行找不到落点 → 补测试,**不要**改 spec 迁就实现。
 
-- [ ] **T10 Step 3: 最终全量回归 + 电池复跑**
+- [x] **T10 Step 3: 最终全量回归 + 电池复跑**
 
 ```bash
 find . -name __pycache__ -type d -exec rm -rf {} +
@@ -2527,7 +2527,7 @@ git status --short
 
 Expected: 测试 `OK`;电池 `KILLED 10 / 执行 10 / 登记 10` 且 `exit=0`;`git status --short` 干净(电池的 `finally` 已把源码逐字节还原 —— 有残留就是还原失败,立刻 `git checkout` 并查电池)。
 
-- [ ] **T10 Step 4: 勾选并提交**
+- [x] **T10 Step 4: 勾选并提交**
 
 把 tasks.md 的 `6.1`、`6.2` 改成 `- [x]`。此时 tasks.md 应无剩余未勾选项:
 
