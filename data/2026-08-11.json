@@ -408,7 +408,7 @@
     }
   },
   "derived": {
-    "schema_version": 1,
+    "schema_version": 3,
     "rates": {
       "PHP": {
         "chg_pct_1d": 0.705,
@@ -444,36 +444,83 @@
         "count": 8,
         "count_prev": null,
         "count_delta": null,
+        "channel_changed_from": null,
         "count_capped": true,
-        "count_prev_capped": null
+        "count_prev_capped": null,
+        "sample_capped": null,
+        "dropped_malformed": null,
+        "main_sample_capped": null,
+        "events_verdict": "当日采到 8 条(已顶到当日采集上限(上限不可知),实际篇数只多不少)"
       },
       "THB": {
         "count": null,
         "count_prev": null,
         "count_delta": null,
+        "channel_changed_from": null,
         "count_capped": null,
-        "count_prev_capped": null
+        "count_prev_capped": null,
+        "sample_capped": null,
+        "dropped_malformed": null,
+        "main_sample_capped": null,
+        "events_verdict": "当日事件采集失败,有无事件无法判定"
       },
       "BRL": {
         "count": null,
         "count_prev": null,
         "count_delta": null,
+        "channel_changed_from": null,
         "count_capped": null,
-        "count_prev_capped": null
+        "count_prev_capped": null,
+        "sample_capped": null,
+        "dropped_malformed": null,
+        "main_sample_capped": null,
+        "events_verdict": "当日事件采集失败,有无事件无法判定"
       },
       "EUR": {
         "count": null,
         "count_prev": 8,
         "count_delta": null,
+        "channel_changed_from": null,
         "count_capped": null,
-        "count_prev_capped": true
+        "count_prev_capped": true,
+        "sample_capped": null,
+        "dropped_malformed": null,
+        "main_sample_capped": null,
+        "events_verdict": "当日事件采集失败,有无事件无法判定"
       },
       "USD": {
         "count": 8,
         "count_prev": null,
         "count_delta": null,
+        "channel_changed_from": null,
         "count_capped": true,
-        "count_prev_capped": null
+        "count_prev_capped": null,
+        "sample_capped": null,
+        "dropped_malformed": null,
+        "main_sample_capped": null,
+        "events_verdict": "当日采到 8 条(已顶到当日采集上限(上限不可知),实际篇数只多不少)"
+      }
+    },
+    "body_plan": {
+      "PHP": {
+        "mode": "full",
+        "line": null
+      },
+      "THB": {
+        "mode": "full",
+        "line": null
+      },
+      "BRL": {
+        "mode": "full",
+        "line": null
+      },
+      "EUR": {
+        "mode": "full",
+        "line": null
+      },
+      "USD": {
+        "mode": "full",
+        "line": null
       }
     },
     "real_rate": {
