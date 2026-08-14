@@ -63,6 +63,33 @@ WEEKLY_BAN_ONE_RE = r"(?m)^1\. \*\*三条结论句.*?(?=\n\n|\n\d+\. )"
 # 正则非贪婪 + re.search 只取首个匹配直接躲过。处置文案已搬进校验器,
 # SKILL 侧不再有 bullet 可摘 —— 详见 ViolationDispositionTest 的类注释。
 
+# ---- 2026-08-14 可读性/论证深度改造(依据 ①②③④⑤⑨)新增的段落正则 ----
+# 全部**有界**(`.*?` 到下一个已知锚点),理由同 DAILY_VIOLATION_RE:贪婪到 EOF
+# 会让"这一段被删掉"可以由后面追加的任意内容喂饱。
+#
+# 这批规则全是**散文**,没有任何运行时判据 —— 校验器不认识"关键假设""翻转
+# 指标""写作顺序"。本仓库的实测教训是:没有哨兵的散文规则会被下一次重构
+# 顺手删掉且无人知晓(ViolationDispositionTest 的类注释记了三次这样的存活)。
+# 所以每条规则都钉在**它自己那一段**里,锚点取该段独有的整串。
+D_WRITE_ORDER_RE = r"(?m)^### 写作顺序.*?(?=\n\*\*读者要的是)"
+D_RING_BUDGET_RE = r"(?m)^\*\*任何一环与上一环无关.*?(?=\n#### )"
+D_TRANSMISSION_RE = r"(?m)^#### 传导环.*?(?=\n#### )"
+D_ECB_RE = r"(?m)^#### 引 ECB 政策传导.*?(?=\n#### )"
+D_JUDGEMENT_RE = r"(?m)^#### 判断环.*?(?=\n#### )"
+D_CHANGE_SPEC_RE = r"(?m)^#### 「本期相对上期的变化」怎么写.*?(?=\n\*\*禁令)"
+D_CHANGE_TMPL_RE = r"(?m)^    ## 本期相对上期的变化.*?(?=\n\n)"
+D_BAN11_RE = r"(?m)^11\. \*\*零效应判断.*?(?=\n\n)"
+D_BAN12_RE = r"(?m)^12\. \*\*无关素材.*?(?=\n\n)"
+
+W_WRITE_ORDER_RE = r"(?m)^### 写作顺序.*?(?=\n只依据第 1 步素材)"
+W_THEME_TMPL_RE = r"(?m)^    ### 主线一:.*?(?=\n\n    \(### 主线二)"
+W_HARD_FORM_RE = r"(?m)^\*\*本周主线的硬形态:\*\*.*?(?=\n\n)"
+W_ECB_RE = r"(?m)^\*\*引 ECB 政策传导做归因时.*?(?=\n\n)"
+W_CHANGE_SPEC_RE = r"(?m)^## 「本周相对上周的变化」怎么写.*?(?=\n## )"
+W_CHANGE_TMPL_RE = r"(?m)^    ## 本周相对上周的变化.*?(?=\n\n)"
+W_BAN7_RE = r"(?m)^7\. \*\*零效应判断.*?(?=\n8\. )"
+W_BAN8_RE = r"(?m)^8\. \*\*无关素材.*?(?=\n\n)"
+
 # 「快照里没有结论句」这一形态的标签串。它不是文案 —— 第 2 步写下它,禁令 9
 # 把它当作豁免的**触发条件**,第 5 步两个降级码各引用一次。四站必须逐字同串:
 # 任一站漏改,那一站的读者就按另一套口径行事,而这正是 I2 那条链的起点。
@@ -482,6 +509,286 @@ class WeeklySkillTest(SkillDocTestCase):
         交叉引用,不该出现同款文案。"""
         self.assertNotIn("重新派生该日快照", flat(WEEKLY),
                          "周报侧若有同一处置文案须一并同步")
+
+
+class WritingOrderIsDecoupledTest(SkillDocTestCase):
+    """依据 ①:**生成顺序**必须与**呈现顺序**解耦,且写作顺序清单要在第 4 步
+    (周报第 2 步)开头。
+
+    守的是什么:模板从上往下是 执行摘要 → 速览 → 币种节,而那正是"先答后编
+    理由"的排布。实测里这不是风格问题 —— 同一模型自由文本 86.51、受约束
+    结构化格式 23.44,而解析错误率只有 0.148%(即差距不是解析造成的);
+    机制是 100% 的响应把 answer 键排在 reason 键之前,于是零样本思维链退化
+    成零样本直答。
+
+    锚点为什么是这几个:
+    - "故意不同" —— 解耦这件事的**声明**。删掉它,清单会被读成"模板的另一种
+      写法",顺序冲突时读者按模板走,规则等于不存在。
+    - 禁令整句 —— 清单本身是描述性的,只有这一句是**禁止性**的;没有它,
+      "先写摘要再回填"不违反任何字面。
+    - 顺序断言(index 比较)—— 只断言"这几个词都在"会被任意重排喂饱,而重排
+      恰恰就是这条规则唯一要防的事。所以比的是位置,不是存在性。
+    - "0.148%" —— 依据里最容易被当成废话删掉的那半句(它排除了"格式解析
+      出错"这个替代解释)。留着它,下一个人才知道这条规则不能靠"改改格式"
+      绕过。
+    """
+
+    def test_daily_writing_order_is_stated_and_ordered(self):
+        seg = self.seg_or_fail(DAILY, D_WRITE_ORDER_RE, "日报第 4 步写作顺序")
+        self.assertIn("故意不同", seg,
+                      "写作顺序不再声明它与呈现顺序解耦 —— 会被读成模板的复述")
+        self.assertIn("禁止先写执行摘要或速览表、再回填币种节", seg,
+                      "写作顺序丢了禁止性条款,只剩描述性清单")
+        # 生成顺序:证据三环 → 判断环 → 速览表 → 执行摘要。逐对比较相邻两档的
+        # 出现位置,任何一次重排都会红。
+        for earlier, later in (("证据三环", "判断环"),
+                               ("判断环", "速览表"),
+                               ("速览表", "执行摘要")):
+            self.assertLess(
+                seg.index(earlier), seg.index(later),
+                "写作顺序被重排:「%s」不再排在「%s」之前" % (earlier, later))
+        self.assertIn("0.148%", seg,
+                      "删掉了「差距不是解析错误造成的」那半句依据 —— 这条规则"
+                      "会被误当成格式问题绕过")
+
+    def test_weekly_writing_order_is_stated_and_ordered(self):
+        seg = self.seg_or_fail(WEEKLY, W_WRITE_ORDER_RE, "周报第 2 步写作顺序")
+        self.assertIn("故意不同", seg, "周报写作顺序不再声明解耦")
+        self.assertIn("禁止先写落点表或覆盖声明、再回填主线", seg,
+                      "周报写作顺序丢了禁止性条款")
+        for earlier, later in (("证据三段", "判断段"),
+                               ("判断段", "各币种一周落点表"),
+                               ("各币种一周落点表", "覆盖声明")):
+            self.assertLess(
+                seg.index(earlier), seg.index(later),
+                "周报写作顺序被重排:「%s」不再排在「%s」之前" % (earlier, later))
+        self.assertIn("0.148%", seg, "周报侧同样删掉了那半句依据")
+
+
+class PeriodOverPeriodChangeTest(SkillDocTestCase):
+    """依据 ②(情报体系评审标准第 7 条):周期性产品**必须**说明本期判断相对
+    上期有何变化,**且不得使用模板套话**。
+
+    守的是什么:本仓库实测的原缺陷 —— 三个币种的实际利率四天一字未变,
+    却被原样写了四遍。只加一个"写变化"的节治不了它,因为"无实质变化"是
+    最省事的出口;真正吃劲的是**必须写明为什么没变**加上**套话禁令**,
+    所以这两条各有自己的断言,不合并。
+
+    模板与细则**分两处断言**:模板给出节的位置与五行形态,细则给出四选一
+    与禁令。只断言其中一处时,另一处可以被整段删掉而全绿(与 LABEL_SITES
+    分站断言同一理由)。
+    """
+
+    def test_daily_section_is_in_the_template(self):
+        seg = self.seg_or_fail(DAILY, D_CHANGE_TMPL_RE, "日报模板「本期相对上期」节")
+        self.assertIn("五币种五行", seg, "模板不再要求逐币种各占一行")
+        # 首次运行的出口必须写在模板里:没有它,第一份日报无从落笔,而最可能
+        # 的动作是把整节省掉 —— 那样这条规则在第一份报告上就已经名存实亡。
+        self.assertIn("首次运行,无上期可比", seg, "模板缺首次运行的出口")
+
+    def test_daily_change_rules_forbid_boilerplate_and_blanks(self):
+        seg = self.seg_or_fail(DAILY, D_CHANGE_SPEC_RE, "日报「本期相对上期」细则")
+        for opt in ("方向变了", "触发位变了", "依据变了", "无实质变化"):
+            self.assertIn(opt, seg, "四选一少了「%s」" % opt)
+        # 这一条是整节的承重墙:允许"无实质变化"但必须给理由,否则该节退化成
+        # 一列"无变化"。
+        self.assertIn("必须写明为什么没变", seg,
+                      "「无实质变化」不再需要给理由 —— 该节会退化成一列无变化")
+        self.assertIn("不得留空,不得写套话", seg, "套话禁令没了")
+        # 套话得有**具名样例**:只写"不得写套话"是无法执行的判据,而这几个词
+        # 正是实测里反复出现的那几句。
+        self.assertIn("维持原判", seg, "套话禁令丢了具名样例,变成无法执行的judgement")
+        self.assertIn("禁止与上一份日报的同节逐字重复", seg,
+                      "跨期逐字重复禁令没了 —— 这是评审标准点名的那一条")
+        # 数字白名单那条是**可执行性**保障:上一份日报不在白名单里,照直引用
+        # 上期数字会被 NUMBER_UNTRACEABLE 当场拦下,规则与校验器冲突。
+        self.assertIn("上一份日报不在白名单里", seg,
+                      "丢了数字硬约束 —— 照写会当场炸 NUMBER_UNTRACEABLE")
+
+    def test_weekly_section_is_in_the_template(self):
+        seg = self.seg_or_fail(WEEKLY, W_CHANGE_TMPL_RE, "周报模板「本周相对上周」节")
+        self.assertIn("每条主线一行", seg, "模板不再要求逐主线各占一行")
+        self.assertIn("首次运行,无上期可比", seg, "模板缺首次运行的出口")
+
+    def test_weekly_change_rules_forbid_boilerplate_and_blanks(self):
+        seg = self.seg_or_fail(WEEKLY, W_CHANGE_SPEC_RE, "周报「本周相对上周」细则")
+        for opt in ("方向变了", "翻转位变了", "依据变了", "无实质变化"):
+            self.assertIn(opt, seg, "四选一少了「%s」" % opt)
+        self.assertIn("必须写明为什么没变", seg, "「无实质变化」不再需要给理由")
+        self.assertIn("不得留空,不得写套话", seg, "套话禁令没了")
+        self.assertIn("维持原判", seg, "套话禁令丢了具名样例")
+        self.assertIn("禁止与上一份周报的同节逐字重复", seg, "跨期逐字重复禁令没了")
+        self.assertIn("上一份周报不在白名单里", seg,
+                      "丢了数字硬约束 —— 照写会当场炸 NUMBER_UNTRACEABLE")
+
+
+class JudgementRingHasThreePartsTest(SkillDocTestCase):
+    """依据 ③:判断环必须三件齐全 —— 关键假设 / 替代解释 / 翻转指标。
+
+    守的是什么:旧形态只要求"失效条件",而失效条件是**消极**判据("没发生
+    即作废"),常常等不到;评审标准要的是**翻转指标**("什么一旦出现就改判",
+    积极、可观测)。两者字面相近,最容易的回退就是把翻转指标又写回失效条件,
+    所以"出现即改判"这一串单独断言。
+
+    "替代解释自带翻转指标"也单独断言:少了这半句,替代解释会退化成一句
+    "也可能是别的原因",既不可证伪也不影响任何动作。
+
+    预算那条(不可压缩)守的是与校验器的**硬冲突**:币种节有 330 中文字的
+    硬上限(check_report.MAX_SECTION_CJK),判断环变重之后,最省事的解法
+    就是删掉三件里的一件来腾字数 —— 而那正好把这条规则完整回退掉。
+    """
+
+    def test_daily_judgement_ring_names_all_three(self):
+        seg = self.seg_or_fail(DAILY, D_JUDGEMENT_RE, "日报判断环细则")
+        for part in ("关键假设", "替代解释", "翻转指标"):
+            self.assertIn(part, seg, "判断环少了「%s」" % part)
+        self.assertIn("假设不成立时判断会怎样", seg,
+                      "关键假设只剩「假设是什么」,没交代假设不成立的后果")
+        self.assertIn("它自己也要带一个翻转指标", seg,
+                      "替代解释不再自带翻转指标 —— 会退化成「也可能是别的原因」")
+        self.assertIn("出现即改判", seg,
+                      "翻转指标被写回了消极的失效条件语义")
+
+    def test_daily_ring_budget_protects_the_three_parts(self):
+        seg = self.seg_or_fail(DAILY, D_RING_BUDGET_RE, "日报四环预算段")
+        self.assertIn("判断环的三件是不可压缩项", seg,
+                      "预算段不再保护判断环三件 —— 字数一紧就会被删掉一件")
+        # 硬上限必须写出来:预算之和(320)与校验器上限(330)的关系是这条
+        # 规则可执行的前提,漏写就会有人把四环预算加回到 330 以上。
+        self.assertIn("校验器硬上限330", seg, "预算段丢了校验器硬上限")
+
+    def test_weekly_theme_has_seven_segments_with_the_three(self):
+        seg = self.seg_or_fail(WEEKLY, W_THEME_TMPL_RE, "周报主线模板")
+        for part in ("关键假设", "替代解释", "翻转指标"):
+            self.assertIn(part, seg, "周报主线少了「%s」段" % part)
+        self.assertIn("它自己的翻转指标", seg, "周报替代解释不再自带翻转指标")
+        self.assertIn("一旦出现就改判", seg, "周报翻转指标被写回消极语义")
+        # 反向:旧的五段式用「证伪条件」收尾。它一旦长回主线模板,就与新的
+        # 翻转指标并存,而"哪一段算数"无处可判 —— 本仓库反复栽的形态。
+        self.assertNotIn("证伪条件", seg,
+                         "旧的「证伪条件」段长回主线模板了,与翻转指标口径冲突")
+
+    def test_weekly_hard_form_protects_the_three_segments(self):
+        seg = self.seg_or_fail(WEEKLY, W_HARD_FORM_RE, "周报主线硬形态")
+        self.assertIn("七段齐全", seg, "硬形态还在说五段 —— 新增三段不受约束")
+        self.assertIn("不可压缩项", seg, "硬形态不再保护后三段")
+
+
+class TransmissionSourceTest(SkillDocTestCase):
+    """依据 ④(风险评估矩阵里 `Source of impact` 那一列):传导环必须命名
+    **这条影响是通过什么传到汇率的**,而不是只说相关。
+
+    守的是什么:那一列的作用是**逼出机制而非相关性**。"A 与汇率同向"读起来
+    像有传导,实际不含任何可证伪内容 —— 读者据它判断不出这条链什么时候会断。
+    所以除了正面要求,还断言那句**明确的不合格判定**;只留正面要求时,
+    "A 与汇率相关"照样可以自称满足"写了传导"。
+    """
+
+    def test_daily_transmission_names_its_source(self):
+        seg = self.seg_or_fail(DAILY, D_TRANSMISSION_RE, "日报传导环细则")
+        self.assertIn("影响传导来源", seg, "传导环不再要求命名影响传导来源")
+        self.assertIn("相关性不是机制", seg,
+                      "丢了「只说相关即不合格」的判定 —— 相关性会冒充传导")
+
+    def test_weekly_transmission_names_its_source(self):
+        seg = self.seg_or_fail(WEEKLY, W_THEME_TMPL_RE, "周报主线模板")
+        self.assertIn("显式命名影响传导来源", seg,
+                      "周报传导机制段不再要求命名影响传导来源")
+        self.assertIn("即为不合格", seg, "周报侧丢了「只说相关即不合格」的判定")
+
+
+class EcbHierarchyTest(SkillDocTestCase):
+    """依据 ⑤:ECB 官方的传导机制分解里**汇率不是一级渠道**,它挂在
+    "影响资产价格"之下。
+
+    守的是什么:引 ECB 权威去支撑一个 ECB 自己不认的结构,是**拿别人的名义
+    背书自己的说法**。这条规则有**两个方向**,必须都在:
+    ① 引 ECB 时按 ECB 的层级写;② 用我们自己那四类机制叙述时不要引 ECB。
+    只留 ① 时,读者会给自家的四类机制统统挂上 ECB 的名义再"按层级"写一遍,
+    违规照旧;只留 ② 时,ECB 的层级本身无人遵守。
+    """
+
+    def _assert_both_directions(self, path, pattern, name):
+        seg = self.seg_or_fail(path, pattern, name)
+        self.assertIn("汇率不是一级渠道", seg,
+                      "%s 丢了 ECB 层级的核心事实" % name)
+        self.assertIn("影响资产价格", seg,
+                      "%s 没写明汇率挂在哪一级之下 —— 层级无从执行" % name)
+        # flat() 去掉了所有空白,故锚点写作「不要引ECB权威」(原文 ECB 两侧有空格)
+        self.assertIn("不要引ECB权威", seg,
+                      "%s 丢了反向条款 —— 自家四类机制会被挂上 ECB 的名义" % name)
+
+    def test_daily_states_both_directions(self):
+        self._assert_both_directions(DAILY, D_ECB_RE, "日报 ECB 层级段")
+
+    def test_weekly_states_both_directions(self):
+        self._assert_both_directions(WEEKLY, W_ECB_RE, "周报 ECB 层级段")
+
+
+class MeasuredFailureModeBansTest(SkillDocTestCase):
+    """依据 ⑨ 的两条针对性禁令。两条是**互补**的,分开断言:
+
+    - **零效应要显式写**:实测零效应识别率仅 13.8%(需修正符号方向的语境下
+      整体准确率 73.9%→41.3%)。"这条消息其实不影响汇率"是最难写对的一类
+      判断,不显式写就等于没判。
+    - **无关素材不进正文**:实测一段无关文字就降 12.3 个百分点,且**形式被
+      保留而实质失效** —— 读起来仍像那么回事,所以作者自己发现不了。
+
+    两条合起来才闭环:少了前者,零效应判断会被"无关素材不进正文"顺手扫掉
+    (它明明是判断,不是无关素材);少了后者,"显式写出来"会被当成许可,
+    把一切无关素材都写进正文再补一句"无直接因果"。所以**分工那句**也断言。
+
+    实测数字当锚点是有意的:它们是这两条禁令**唯一**不可替换的部分。规则
+    本身可以被改写成任意同义句,而"13.8%""12.3"一旦不见,说明依据被删掉了,
+    下一个人就会把禁令当成风格偏好删掉。
+    """
+
+    def test_daily_zero_effect_must_be_written(self):
+        seg = self.seg_or_fail(DAILY, D_BAN11_RE, "日报禁令 11(零效应)")
+        self.assertIn("必须把这个判断本身写出来", seg, "零效应判断不再要求显式写出")
+        self.assertIn("13.8%", seg, "丢了零效应识别率这条依据")
+
+    def test_daily_irrelevant_material_stays_out(self):
+        seg = self.seg_or_fail(DAILY, D_BAN12_RE, "日报禁令 12(无关素材)")
+        self.assertIn("放弃不写", seg, "无关素材不再要求直接放弃")
+        self.assertIn("而不是写进来再补一句", seg,
+                      "丢了「写进来再说无因果」这个具体反例 —— 那正是实测的形态")
+        self.assertIn("12.3", seg, "丢了无关文字降幅这条依据")
+        # flat() 去掉所有空白,故锚点不带空格(原文是「与禁令 11 的分工」)
+        self.assertIn("与禁令11的分工", seg,
+                      "两条禁令的分工没写 —— 零效应判断会被当成无关素材扫掉")
+
+    def test_weekly_zero_effect_must_be_written(self):
+        seg = self.seg_or_fail(WEEKLY, W_BAN7_RE, "周报禁令 7(零效应)")
+        self.assertIn("必须把这个判断本身写出来", seg, "零效应判断不再要求显式写出")
+        self.assertIn("13.8%", seg, "丢了零效应识别率这条依据")
+        # 周报独有:零效应判断不得占掉一条主线名额(主线上限 5 条,校验器还有
+        # THEME_TOO_MANY)。少了这句,"显式写出来"与"3–5 条主线"会互相挤。
+        self.assertIn("不另起主线", seg,
+                      "零效应判断会占掉主线名额,挤掉真正有链的那几条")
+
+    def test_weekly_irrelevant_material_stays_out(self):
+        seg = self.seg_or_fail(WEEKLY, W_BAN8_RE, "周报禁令 8(无关素材)")
+        self.assertIn("放弃不写", seg, "无关素材不再要求直接放弃")
+        self.assertIn("12.3", seg, "丢了无关文字降幅这条依据")
+        self.assertIn("与第7条的分工", seg, "两条禁令的分工没写")
+
+
+class ProbabilityLexiconTodoTest(SkillDocTestCase):
+    """依据 ③ 第四点(概率词绑数值区间)**本轮明确不做**,但必须留下 TODO。
+
+    守的是什么:不是规则,是**待办本身**。这一条被推迟的理由是代价(要为五
+    币种各定一套词表并长期守住口径),不是它不重要;没有落盘的 TODO,下一
+    轮无从知道这是"想过并推迟"还是"没想到"。
+
+    两份 SKILL 都要有:概率词口径若只在一份里落地,日报与周报会各走一套词表,
+    而那恰恰是这条依据点名禁止的"混用不同词表行"。
+    """
+
+    def test_both_skills_carry_the_deferred_todo(self):
+        for name, path in (("日报", DAILY), ("周报", WEEKLY)):
+            self.assertIn("概率词绑数值区间", flat(path),
+                          "%s 缺概率词表的 TODO —— 下一轮会当成没想到" % name)
 
 
 CODE_RE = re.compile(r'"(VERDICT_[A-Z_]+):')
