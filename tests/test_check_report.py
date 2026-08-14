@@ -3907,3 +3907,692 @@ class NumberMappingHonestyLabelTest(unittest.TestCase):
         self.assertIn("SUMMARY_NUMBER_NOT_IN_BODY", doc)
         self.assertIn("质量检查", doc)
         self.assertIn("存在性", doc)
+
+
+# ==================== 节定位唯一化(Fatal 1)====================
+#
+# `find_section` 取**首个**匹配 —— 报告里只要出现一个重名小节,五个新码
+# 定位到的就是错的那一节,于是全部悄悄不跑,输出仍是 `CHECK PASSED`。
+# 复现(本轮实测,见 SectionKeyMustResolveUniquelyTest.test_a_decoy_section_
+# used_to_silence_all_five_new_codes 的 fixture):同一份报告加两行占位标题,
+# 五码命中由 5 变 1,而那 1 条还是对着占位文本的**假**违规。
+# **在修掉它之前,这五个码的强制力等于一行报告编辑。**
+#
+# 误报成本先复算再动手(本轮实测,不是抄对抗报告的数):
+# 8 份日报 × 10 个日报键、8 份要点表 × 6 个要点表键、1 份周报 × 5 个周报键,
+# 多重匹配**共 0 次**。所以唯一化是零成本的。
+
+AMB_DECOY_SUMMARY = "## 执行摘要(草稿,占位)"
+AMB_DECOY_PHP = "## 菲律宾比索(PHP)——占位"
+
+
+def amb_snap(modes=None):
+    snap = json.loads(MAP_SNAP_TEXT)
+    m = {c: "full" for c in check_report.CURRENCIES}
+    m.update(modes or {})
+    snap["derived"]["body_plan"] = {c: {"mode": mode, "line": None}
+                                    for c, mode in m.items()}
+    return json.dumps(snap, ensure_ascii=False)
+
+
+# PHP 节:五码里的 ①②③④ 一次踩全(④ 靠 35.2 —— 泰铢的数、本节不点名泰铢)
+AMB_PHP_BODY = ("**分歧与判断**:关键假设是通胀已经见顶,这句里没有任何数。"
+                "翻转指标:升破那条线。失效条件:升破那条线。"
+                "另外 35.2 摆在这里。")
+AMB_SUMMARY = ["- 摘要写了 0.4321 这个数。"]      # ⑤:只在要点表跨币种块里
+# 其余四节写**完整且合规**的判断环:这样 ①②③ 的命中数恰好各为 1,
+# "五码全中 → 加两行占位后只剩 1 条(且是假的)"这句话才是逐字可验的。
+AMB_CLEAN_BODIES = {
+    "USD": ("**驱动**:政策利率 4.25,实际利率 0.26。**分歧与判断**:"
+            "关键假设是 4.25 在下期读数前不动;不成立时改按会议路径重写。"
+            "替代解释:美元一端在统一定价。翻转指标:实际利率回落至 0 一侧(T+3)。"),
+    "EUR": ("**驱动**:参考价 0.921,实际利率 -0.499。**分歧与判断**:"
+            "关键假设是 0.921 仍代表当前定盘;不成立时本节整体作废。"
+            "替代解释:欧洲一端的政策路径。翻转指标:参考价回落至上一次定盘之下(T+3)。"),
+    "THB": ("**驱动**:参考价 35.2,实际利率 -1.42。**分歧与判断**:"
+            "关键假设是 35.2 仍代表当前定盘;不成立时本节整体作废。"
+            "替代解释:出口一端的季节性。翻转指标:参考价回落至上一次定盘之下(T+3)。"),
+    "BRL": ("**驱动**:参考价 5.43,实际利率 9.359。**分歧与判断**:"
+            "关键假设是 5.43 仍代表当前定盘;不成立时本节整体作废。"
+            "替代解释:选举溢价而非套息厚度。翻转指标:参考价回落至上一次定盘之下(T+3)。"),
+}
+
+
+def amb_report(decoy=False):
+    bodies = dict(AMB_CLEAN_BODIES)
+    bodies["PHP"] = AMB_PHP_BODY
+    rep = map_report(bodies=bodies, summary=list(AMB_SUMMARY))
+    if not decoy:
+        return rep
+    rep = rep.replace("## 执行摘要\n",
+                      AMB_DECOY_SUMMARY + "\n- 占位,无数字。\n\n## 执行摘要\n")
+    return rep.replace("## 菲律宾比索(PHP)\n",
+                       AMB_DECOY_PHP + "\n占位。\n\n## 菲律宾比索(PHP)\n")
+
+
+FIVE_NEW_CODES = ("JUDGEMENT_RING_INCOMPLETE",
+                  "FLIP_INDICATOR_IS_INVALIDATION_RESTATED",
+                  "ASSUMPTION_UNANCHORED",
+                  "NUMBER_WRONG_SECTION",
+                  "SUMMARY_NUMBER_NOT_IN_BODY")
+
+
+class SectionKeyMustResolveUniquelyTest(unittest.TestCase):
+    """节定位**唯一化 + 失败关闭**:同一个键匹配到 ≥2 个小节即 `SECTION_AMBIGUOUS`,
+    且依赖该节的检查一律不执行,**不得静默取第一个**。
+
+    这是本仓反复出现的同一个病(「打印通过,但守的不是它声称的东西」)的
+    第 14 次实例,所以修法按**不变量**做:唯一的解析入口 `find_section`
+    对 ≥2 个匹配返回 `None`,任何调用点都拿不到"第一个"。
+    """
+
+    def _codes(self, v):
+        return {c: len([x for x in v if x.startswith(c + ":")])
+                for c in FIVE_NEW_CODES}
+
+    def test_the_five_new_codes_all_fire_without_a_decoy(self):
+        """基线:同一份报告在没有重名小节时,五个码**全部**命中。
+        没有这一条,下面那条"加了占位就全灭"证明不了任何事。"""
+        v = check_report.check_daily(amb_report(), amb_snap(), MAP_BRIEF)
+        self.assertEqual(self._codes(v), {c: 1 for c in FIVE_NEW_CODES}, v)
+
+    def test_a_decoy_section_must_not_silence_the_five_new_codes(self):
+        """**变异靶点(Fatal 1 本体):两行占位标题把五个码全部关掉。**
+
+        修前实测:五码命中 {① 1, ② 0, ③ 0, ④ 0, ⑤ 0} —— ② ③ ④ ⑤ 全灭,
+        ① 退化成对着「占位。」那一行的假违规,而 stdout **零声明**。
+        修后要求:重名即红,不允许静默取第一个。
+        """
+        v = check_report.check_daily(amb_report(decoy=True), amb_snap(),
+                                     MAP_BRIEF)
+        amb = [x for x in v if x.startswith("SECTION_AMBIGUOUS:")]
+        self.assertEqual(len(amb), 2, v)
+        self.assertTrue(any("执行摘要" in x for x in amb), amb)
+        self.assertTrue(any("PHP" in x for x in amb), amb)
+
+    def test_the_ambiguity_line_quotes_both_headings_and_the_disposition(self):
+        """"有重名"不可操作 —— 读者得自己去报告里数标题。两个标题原文
+        一起打出来,并带处置。"""
+        v = check_report.check_daily(amb_report(decoy=True), amb_snap(),
+                                     MAP_BRIEF)
+        line = [x for x in v if x.startswith("SECTION_AMBIGUOUS:")
+                and "执行摘要" in x][0]
+        self.assertIn(AMB_DECOY_SUMMARY[3:], line)
+        self.assertIn("2 个", line)
+        self.assertTrue(line.endswith(check_report.DISPOSITION_AMBIGUOUS), line)
+
+    def test_find_section_returns_none_when_the_key_is_ambiguous(self):
+        """不变量本体:唯一的解析入口对 ≥2 个匹配返回 None。
+        调用点因此**拿不到**"第一个",失败关闭是结构性的,不靠每个调用点自觉。
+        """
+        secs = [("菲律宾比索(PHP)——占位", "占位。"),
+                ("菲律宾比索(PHP)", "正文。")]
+        self.assertIsNone(check_report.find_section(secs, "PHP"))
+        self.assertEqual(check_report.find_section(secs[1:], "PHP"),
+                         ("菲律宾比索(PHP)", "正文。"))
+
+    def test_zero_matches_keeps_the_existing_section_missing_semantics(self):
+        """匹配 0 个**沿用既有行为**:SECTION_MISSING,不是 SECTION_AMBIGUOUS。"""
+        rep = amb_report().replace("## 泰铢(THB)\n", "## 某某\n")
+        v = check_report.check_daily(rep, amb_snap(), MAP_BRIEF)
+        self.assertTrue(any(x == "SECTION_MISSING: 缺少币种节 THB" for x in v), v)
+        self.assertEqual([x for x in v if x.startswith("SECTION_AMBIGUOUS:")], [])
+
+    def test_an_ambiguous_currency_does_not_also_report_section_missing(self):
+        """重名 ≠ 缺失。同一处缺陷不得产生两条互相矛盾的违规
+        (「缺少币种节 PHP」而报告里明明有两节)。"""
+        v = check_report.check_daily(amb_report(decoy=True), amb_snap(),
+                                     MAP_BRIEF)
+        self.assertNotIn("SECTION_MISSING: 缺少币种节 PHP", v)
+
+    def test_an_ambiguous_brief_section_is_a_violation_too(self):
+        """要点表侧同理:数字池按 `## <币种>` 切,重名就等于让被查方挑池子。"""
+        brief = MAP_BRIEF.replace("## PHP\n", "## PHP(草稿)\n- 占位\n\n## PHP\n")
+        v = check_report.check_daily(amb_report(), amb_snap(), brief)
+        line = [x for x in v if x.startswith("SECTION_AMBIGUOUS:")]
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("要点表", line[0])
+
+    def test_an_ambiguous_prior_report_section_is_a_violation_too(self):
+        """上一份日报里塞两个同名节 = 关掉今天的跨期重复检查。同样失败关闭。"""
+        prior = amb_report() + "\n\n## 本期相对上期的变化\n- A。\n\n" \
+                               "## 本期相对上期的变化(旧)\n- B。\n"
+        cur = amb_report() + "\n\n## 本期相对上期的变化\n- A。\n"
+        v = check_report.check_daily(cur, amb_snap(), MAP_BRIEF,
+                                     prior_text=prior)
+        line = [x for x in v if x.startswith("SECTION_AMBIGUOUS:")]
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("上一份日报", line[0])
+
+    def test_weekly_section_keys_must_resolve_uniquely(self):
+        """周报侧同理:`本周主线` 重名会让 THEME_TOO_MANY 数错那一节。"""
+        rep = make_weekly().replace("## 本周主线\n",
+                                    "## 本周主线(草稿)\n- 占位\n\n## 本周主线\n")
+        v = check_report.check_weekly(rep)
+        line = [x for x in v if x.startswith("SECTION_AMBIGUOUS:")]
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("本周主线", line[0])
+
+    def test_no_check_answers_a_question_about_the_wrong_section(self):
+        """**变异靶点:`find_section` 退回"取首个匹配"。**
+
+        只断言"重名要出 SECTION_AMBIGUOUS"是不够的 —— 那条断言在取首个的
+        实现上照样绿(歧义是 `section_hits` 数出来的,与取谁无关)。
+        要害是**取首个会对着错的那一节给出答案**:占位节写 5 条,
+        `THEME_TOO_MANY` 就照着占位节数,打出一条关于**不存在的问题**的红。
+        失败关闭的含义是"不回答",不是"回答错的那个"。
+        """
+        decoy = "## 本周主线(草稿)\n" + "\n".join(
+            "- 占位 %d" % (i + 1) for i in range(5)) + "\n\n## 本周主线\n"
+        v = check_report.check_weekly(
+            make_weekly().replace("## 本周主线\n", decoy))
+        self.assertEqual([x for x in v if x.startswith("THEME_TOO_MANY")], [], v)
+
+    def test_an_ambiguous_currency_section_is_not_measured_against_the_decoy(self):
+        """同一个变异的日报侧:占位节塞满中文字,`SECTION_TOO_LONG` 就照着
+        占位节量,而真正那一节根本没被看过。"""
+        long_decoy = ("## 菲律宾比索(PHP)——占位\n" + "占" * 400 +
+                      "\n\n## 菲律宾比索(PHP)\n")
+        rep = map_report(bodies={"PHP": AMB_PHP_BODY}).replace(
+            "## 菲律宾比索(PHP)\n", long_decoy)
+        v = check_report.check_daily(rep, amb_snap(), MAP_BRIEF)
+        self.assertEqual([x for x in v if x.startswith("SECTION_TOO_LONG")],
+                         [], v)
+        self.assertTrue([x for x in v if x.startswith("SECTION_AMBIGUOUS:")], v)
+
+    def test_the_five_new_codes_do_not_run_against_the_decoy_either(self):
+        """失败关闭的另一半:五个码在歧义键上**一条都不出** —— 出了就说明
+        它们对着占位文本算了答案(修前那条假的 ① 正是这个形状)。"""
+        v = check_report.check_daily(amb_report(decoy=True), amb_snap(),
+                                     MAP_BRIEF)
+        self.assertEqual(self._codes(v), {c: 0 for c in FIVE_NEW_CODES}, v)
+
+    def test_cli_turns_an_ambiguous_report_red(self):
+        """端到端:进程内断言全绿而真 CLI 放行,是本仓库栽过的形态。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, sp, bp = (os.path.join(tmp, n)
+                          for n in ("r.md", "s.json", "b.md"))
+            for path, text in ((rp, amb_report(decoy=True)),
+                               (sp, amb_snap()), (bp, MAP_BRIEF)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, sp, "--brief", bp,
+                                        "--mode", "daily", "--strict-brief"])
+            out = buf.getvalue()
+        self.assertEqual(rc, 1, out)
+        self.assertIn("SECTION_AMBIGUOUS", out)
+
+    def test_section_key_lists_are_frozen(self):
+        """三份键清单**逐元素**冻结:悄悄从清单里去掉一个键,就等于把那个键
+        的唯一化悄悄关掉。与 SHARED_SNAPSHOT_KEYS 同规格。"""
+        self.assertEqual(
+            check_report.DAILY_REPORT_SECTION_KEYS,
+            ("USD", "EUR", "PHP", "THB", "BRL", "执行摘要", "复盘",
+             "数据缺漏", "本期相对上期", "速览"))
+        self.assertEqual(check_report.BRIEF_SECTION_KEYS,
+                         ("USD", "EUR", "PHP", "THB", "BRL", "跨币种共同主线"))
+        self.assertEqual(check_report.WEEKLY_REPORT_SECTION_KEYS,
+                         ("本周主线", "各币种", "复盘汇总", "下周关注", "缺漏汇总"))
+
+    def test_every_key_reachable_by_find_section_is_in_a_frozen_list(self):
+        """闭合件:源码里传给 `find_section` 的常量键,必须都在某份冻结清单里。
+        新加一个 `find_section(secs, "新节")` 而不入清单 → 这条红,
+        它的唯一化就不会被悄悄漏掉。"""
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        listed = set(check_report.DAILY_REPORT_SECTION_KEYS)
+        listed |= set(check_report.BRIEF_SECTION_KEYS)
+        listed |= set(check_report.WEEKLY_REPORT_SECTION_KEYS)
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id in ("find_section", "section_hits")):
+                continue
+            arg = node.args[1] if len(node.args) > 1 else None
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                self.assertIn(arg.value, listed,
+                              "find_section 的字面量键 %r 不在任何冻结清单里"
+                              % arg.value)
+
+
+# ==================== 共享池的归属减法(Major 2)====================
+
+class SharedPoolIsNotWrittenByTheCheckedPartyTest(unittest.TestCase):
+    """共享池里来自**要点表**的那一半由被查方(LLM)撰写 —— 于是"想让某个数
+    在某节合法,只要把它写进要点表的跨币种块"。闸门的输入被被查方控制,而且
+    **不出声**。
+
+    修法:要点表那一部分先过**归属减法** —— 凡是在要点表 `## <币种>` 那节
+    出现过的数,只解锁该币种,不进共享池。快照侧的 SHARED_SNAPSHOT_KEYS
+    不参与减法(那一侧不由被查方撰写)。
+    """
+
+    CROSS = "- 四盘同侧移动,统一推力候选值 0.4321"
+
+    def test_writing_a_currency_number_into_the_cross_block_cannot_unlock_it(self):
+        """**变异靶点(Major 2 本体):逐个数自助解锁。**
+
+        60.843 是比索的数。把它抄进要点表的跨币种块,修前它就进了共享池,
+        于是泰铢节写 60.843 逐字放行 —— 而那一行是 LLM 自己写的。
+        """
+        brief = MAP_BRIEF.replace(
+            self.CROSS, self.CROSS + ";比索 60.843 是当日锚")
+        v = map_check({"THB": "**驱动**:参考价 35.2,另一档 60.843。"},
+                      brief=brief)
+        line = codes_of(v, "NUMBER_WRONG_SECTION")
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("60.843", line[0])
+        self.assertIn("PHP", line[0])
+
+    def test_a_genuinely_cross_currency_number_stays_shared(self):
+        """减法的**上界**:跨币种块里那些**没有**币种块认领的数仍是共享的。
+        减过头就等于把跨币种比较这条正常写法整体判死。"""
+        v = map_check({"THB": "**驱动**:参考价 35.2,统一推力 0.4321。"})
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+
+    def test_snapshot_side_shared_keys_are_never_subtracted(self):
+        """减法**只作用于要点表那一部分**:快照的 gaps/date/calendar_hits/meta
+        不由被查方撰写,把它们也减掉是没有理由的收紧。
+
+        429 同时出现在快照 gaps 与要点表的 PHP 块里 —— 它仍然是共享的。
+        """
+        snap = json.loads(MAP_SNAP_TEXT)
+        snap["gaps"] = [{"source": "gdelt", "scope": "USD",
+                         "note": "HTTP Error 429"}]
+        brief = MAP_BRIEF.replace("## PHP\n", "## PHP\n- 事件源 429 未取到\n")
+        v = map_check({"THB": "**驱动**:参考价 35.2,事件源 429 未取到。"},
+                      snap=json.dumps(snap, ensure_ascii=False), brief=brief,
+                      gaps="- [gdelt/USD] HTTP Error 429")
+        self.assertEqual(codes_of(v, "NUMBER_WRONG_SECTION"), [], v)
+
+    def test_shared_pool_helper_drops_brief_attributed_numbers(self):
+        """单元级:同一个数同时出现在跨币种块与某币种块时,共享池里不得有它。"""
+        brief = MAP_BRIEF.replace(
+            self.CROSS, self.CROSS + ";比索 60.843 是当日锚")
+        pool = check_report.shared_number_pool(json.loads(MAP_SNAP_TEXT), brief)
+        self.assertNotIn("60.843", pool)
+        self.assertIn("0.4321", pool)
+
+
+# ==================== 三处放行/不可达必须出声(Major 3 / 5 / 6)============
+
+class NamedPassThroughIsDeclaredTest(unittest.TestCase):
+    """Major 3:**节内点名了别的币种 → 该币种池整个放行**,而且不出声。
+
+    这是 `check_number_section_mapping` 自己写明的诚实边界(判定单位是节),
+    不是缺陷 —— 但"放行了多少"必须打印出来,否则它与"全查过且全过"在输出上
+    逐字不可分辨。声明**带计数**:放行了几个组合、放行了几个数字实例。
+    """
+
+    def test_no_declaration_when_nothing_was_released(self):
+        notes = []
+        map_check(notes=notes)
+        self.assertEqual([n for n in notes
+                          if n.startswith("NUMBER_WRONG_SECTION_NAMED_PASS:")],
+                         [], notes)
+
+    def test_declaration_carries_both_counts(self):
+        """5 个币种节 × 4 个别的币种 = 20 个组合;本例点名 1 个,
+        因此放行 1 个数字实例(4.25 是美元的数,写在雷亚尔节里)。"""
+        notes = []
+        map_check({"BRL": "**驱动**:参考价 5.43;美元一端政策利率 4.25 未变。"},
+                  notes=notes)
+        line = [n for n in notes
+                if n.startswith("NUMBER_WRONG_SECTION_NAMED_PASS:")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("1/20", line[0])
+        self.assertIn("1 个数字实例", line[0])
+
+    def test_declaration_is_printed_by_the_cli(self):
+        """进程内出声、真 CLI 不出声,是本仓库栽过的形态。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, sp, bp = (os.path.join(tmp, n)
+                          for n in ("r.md", "s.json", "b.md"))
+            report = map_report(
+                bodies={"BRL": "**驱动**:参考价 5.43;美元一端政策利率 4.25 未变。"})
+            for path, text in ((rp, report), (sp, MAP_SNAP_TEXT),
+                               (bp, MAP_BRIEF)):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main([rp, sp, "--brief", bp, "--mode", "daily"])
+            out = buf.getvalue()
+        self.assertIn("NUMBER_WRONG_SECTION_NAMED_PASS:", out)
+
+
+RING_NO_INVALIDATION = ("关键假设是 3.1 这一读数仍代表当前通胀。"
+                        "替代解释:比索走弱是美元一端在统一定价。"
+                        "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+
+
+class FlipCheckUnreachableIsDeclaredTest(unittest.TestCase):
+    """Major 5:② 只有在同一节里**同时**判得出翻转指标句与失效条件句时才执行。
+    判不出失效条件句就整条跳过 —— 而这一跳过此前**零声明**,与"比过了、没重复"
+    逐字不可分辨。
+    """
+
+    def test_a_section_without_an_invalidation_sentence_declares_it(self):
+        notes = []
+        v = ring_check(RING_NO_INVALIDATION, notes=notes)
+        self.assertEqual(ring_codes(v, "JUDGEMENT_RING_INCOMPLETE"), [], v)
+        line = [n for n in notes
+                if n.startswith("FLIP_INDICATOR_CHECK_UNREACHABLE:")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("1/1", line[0])
+        self.assertIn("PHP", line[0])
+
+    def test_a_reachable_section_declares_nothing(self):
+        """反面:能比就不出声 —— 否则声明退化成每次都打的噪声。"""
+        notes = []
+        ring_check(notes=notes)
+        self.assertEqual([n for n in notes
+                          if n.startswith("FLIP_INDICATOR_CHECK_UNREACHABLE:")],
+                         [], notes)
+
+    def test_declaration_names_the_invalidation_labels_it_looked_for(self):
+        """不可操作的声明等于没声明:读者得知道校验器找的是哪几个标签。"""
+        notes = []
+        ring_check(RING_NO_INVALIDATION, notes=notes)
+        line = [n for n in notes
+                if n.startswith("FLIP_INDICATOR_CHECK_UNREACHABLE:")][0]
+        for lab in check_report.INVALIDATION_LABELS:
+            self.assertIn(lab, line)
+
+
+class WeeklyJudgementLayerIsDeclaredTest(unittest.TestCase):
+    """Major 6:周报模式下五个新码**一个都不跑**,而周报里写满了判断环,
+    输出却是**裸 `CHECK PASSED`**。整层不查同样必须出声,并带计数。
+    """
+
+    WITH_RING = ("USD 观望:关键假设是政策利率不动;替代解释:美元一端统一定价;"
+                 "翻转指标:四盘同步回落。EUR 震荡;PHP 通胀回落主导;"
+                 "THB 出口疲弱;BRL 政策预期反复。")
+
+    def test_weekly_declares_the_whole_layer_is_not_run(self):
+        notes = []
+        check_report.check_weekly(make_weekly(), notes=notes)
+        line = [n for n in notes
+                if n.startswith("WEEKLY_JUDGEMENT_LAYER_SKIPPED:")]
+        self.assertEqual(len(line), 1, notes)
+
+    def test_the_declaration_counts_the_judgement_rings_it_did_not_check(self):
+        """"有跳过"不够 —— 必须说跳过了多少。本例三个标签各 1 处,共 3 处。"""
+        notes = []
+        check_report.check_weekly(make_weekly(currency_body=self.WITH_RING),
+                                  notes=notes)
+        line = [n for n in notes
+                if n.startswith("WEEKLY_JUDGEMENT_LAYER_SKIPPED:")][0]
+        self.assertIn("3 处", line)
+
+    def test_the_declaration_names_all_five_codes(self):
+        """点名五个码:读者据此知道周报少了哪几层,而不是"少了点什么"。"""
+        notes = []
+        check_report.check_weekly(make_weekly(), notes=notes)
+        line = [n for n in notes
+                if n.startswith("WEEKLY_JUDGEMENT_LAYER_SKIPPED:")][0]
+        for code in FIVE_NEW_CODES:
+            self.assertIn(code, line)
+
+    def test_the_weekly_cli_no_longer_prints_a_bare_check_passed(self):
+        """端到端:生产周报命令行(带 --digest)必须打出这条声明。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "w.md")
+            dp = os.path.join(tmp, "d.json")
+            with open(rp, "w", encoding="utf-8") as f:
+                f.write(make_weekly(currency_body=self.WITH_RING))
+            with open(dp, "w", encoding="utf-8") as f:
+                json.dump({"week": "2026-W32", "generated_from": [],
+                           "events": {}, "rates": {}}, f)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main([rp, "--mode", "weekly", "--digest", dp])
+            out = buf.getvalue()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("WEEKLY_JUDGEMENT_LAYER_SKIPPED:", out)
+        self.assertIn("CHECK PASSED", out)
+
+
+# ============ 摘要数字的**关系判定**(Major 4,选 (b))============
+
+class SummaryNumberAttributionTest(unittest.TestCase):
+    """`SUMMARY_NUMBER_WRONG_CURRENCY` —— **关系判定**(归属级)。
+
+    Major 4 的原文:`SUMMARY_NUMBER_NOT_IN_BODY` 被标为「质量检查」,而实现
+    是**换了参照池的集合差存在性判定**。二选一里选 (b)「把实现升级成真正的
+    关系判定」——(a) 只改标注是诚实的下策。
+    升级落在这一层:摘要 bullet 点名了币种 X,这一条里的数就必须出自 X
+    (或共享池);只出自 Y 的数写在点名 X 的那一条里 = 归属错。
+    判据是**数与币种之间的对应**,不是某个 token 在不在另一个池里。
+
+    旧码一条都没删:它退回它本来的身份(存在性层),标注同步改正 ——
+    见 SummaryHonestyLabelTest。
+    """
+
+    def test_clean_summary_passes(self):
+        self.assertEqual(
+            codes_of(map_check(summary=["- 比索参考价 60.843 未变。"]),
+                     "SUMMARY_NUMBER_WRONG_CURRENCY"), [])
+
+    def test_a_number_from_another_currency_is_a_violation(self):
+        """**变异靶点(Major 4 本体):存在性判定对这一条完全不敏感。**
+
+        60.843 是比索的数,写在点名泰铢的那一条里。它在正文的比索节里出现过
+        —— 所以 `SUMMARY_NUMBER_NOT_IN_BODY` 逐字放行,`NUMBER_UNTRACEABLE`
+        也放行(它在快照里)。只有关系判定看得见。
+        """
+        v = map_check(summary=["- 泰铢一档写成 60.843。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_NOT_IN_BODY"), [], v)
+        self.assertEqual(codes_of(v, "NUMBER_UNTRACEABLE"), [], v)
+        line = codes_of(v, "SUMMARY_NUMBER_WRONG_CURRENCY")
+        self.assertEqual(len(line), 1, v)
+        self.assertIn("60.843", line[0])
+        self.assertIn("THB", line[0])
+        self.assertIn("PHP", line[0])
+
+    def test_naming_the_owning_currency_in_the_same_bullet_passes(self):
+        """判定单位是 **bullet**,点名即放行 —— 与 NUMBER_WRONG_SECTION 的
+        节级点名同规矩,跨币种对照是摘要的正常写法。"""
+        v = map_check(summary=["- 泰铢 35.2 与比索 60.843 同向。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_WRONG_CURRENCY"), [], v)
+
+    def test_a_number_no_currency_owns_is_not_this_codes_business(self):
+        """**误报的下界**:归属不到任何币种的数(共享池、日期碎片如
+        `2026-08` 剥出来的 `08`)不归本码管 —— 那一类由存在性层与
+        NUMBER_UNTRACEABLE 管。同一个 token 不得吃两条违规。
+        实测:不加这条门,reports/daily/2026-08-13.md 的摘要「参考月 2026-08」
+        当场炸出一条 `08` 的假红。"""
+        v = map_check(summary=["- 泰铢一档,统一推力 0.4321,参考月 2026-08。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_WRONG_CURRENCY"), [], v)
+
+    def test_a_bullet_naming_no_currency_declares_the_skip(self):
+        """点不出币种就判不了归属 —— 不判,但出声,并带计数。"""
+        notes = []
+        v = map_check(summary=["- 某一档写成 60.843。"], notes=notes)
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_WRONG_CURRENCY"), [], v)
+        line = [n for n in notes
+                if n.startswith("SUMMARY_NUMBER_SKIPPED_NO_CURRENCY_NAMED:")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("1 条", line[0])
+
+    def test_small_integers_are_exempt_here_too(self):
+        """与 NUMBER_WRONG_SECTION / SUMMARY_NUMBER_NOT_IN_BODY 同一条豁免:
+        序数/条数没有币种归属。三处口径必须一致,否则「T+3」在一处红一处绿。"""
+        v = map_check(summary=["- 泰铢第 7 条:同向(T+3)。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_WRONG_CURRENCY"), [], v)
+
+    def test_violation_line_quotes_the_bullet_and_the_disposition(self):
+        line = codes_of(map_check(summary=["- 泰铢一档写成 60.843。"]),
+                        "SUMMARY_NUMBER_WRONG_CURRENCY")[0]
+        self.assertIn("泰铢一档写成 60.843", line)
+        self.assertTrue(
+            line.endswith(check_report.DISPOSITION_SUMMARY_CURRENCY), line)
+
+
+class SummaryHonestyLabelTest(unittest.TestCase):
+    """诚实标注:Major 4 指出 `check_summary_numbers_in_body` 的 docstring
+    **在同一页里自相矛盾** —— 既说"不是存在性",又说"只查出现过"。
+    改法是让标注跟着实现走:存在性层就写存在性,关系判定写在新的那一层。
+    """
+
+    def test_the_existence_layer_no_longer_calls_itself_a_quality_check(self):
+        """断言落在 docstring 的**首行**(也就是标注本身),不是全文:
+        更正的来龙去脉要写在正文里,那一段自然会提到"质量检查"这四个字。
+        旧的自称串另行逐字禁掉 —— 标注改回去必须显式动作、进 diff。"""
+        doc = check_report.check_summary_numbers_in_body.__doc__ or ""
+        first = doc.splitlines()[0]
+        self.assertIn("SUMMARY_NUMBER_NOT_IN_BODY", first)
+        self.assertIn("存在性检查", first)
+        self.assertNotIn("质量检查", first)
+        self.assertNotIn("**质量检查**(一致性级)", doc)
+
+    def test_the_relation_layer_is_labelled_a_relation_check(self):
+        doc = check_report.check_summary_number_attribution.__doc__ or ""
+        self.assertIn("SUMMARY_NUMBER_WRONG_CURRENCY", doc)
+        self.assertIn("关系判定", doc)
+        self.assertIn("存在性", doc)
+
+
+# ==================== 码清单冻结扩到新码与新声明(Minor 10)==============
+
+def _emitted_codes(module_path):
+    """扫源码里**被打印出去的**全部违规/声明码(不再只扫 `VERDICT_*`)。
+
+    判据与 `_emitted_verdict_codes` 同:AST 里以 `大写码:` 开头的字符串
+    字面量。**已知边界**(实测口径,不许写成全称):码若由变量或 f-string
+    拼出来,这个扫描看不到。
+    """
+    with open(module_path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    codes = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            m = re.match(r"([A-Z][A-Z0-9_]{3,})[::]", node.value)
+            if m:
+                codes.add(m.group(1))
+    return codes
+
+
+# 判断环 / 数字归属 / 节唯一化这一层的**违规码 → 它自己那一条处置**。
+NEW_LAYER_VIOLATION_DISPOSITION = {
+    "SECTION_AMBIGUOUS": "DISPOSITION_AMBIGUOUS",
+    "JUDGEMENT_RING_INCOMPLETE": "DISPOSITION_RING",
+    "FLIP_INDICATOR_IS_INVALIDATION_RESTATED": "DISPOSITION_FLIP",
+    "ASSUMPTION_UNANCHORED": "DISPOSITION_ANCHOR",
+    "NUMBER_WRONG_SECTION": "DISPOSITION_WRONG_SECTION",
+    "SUMMARY_NUMBER_NOT_IN_BODY": "DISPOSITION_SUMMARY_BODY",
+    "SUMMARY_NUMBER_WRONG_CURRENCY": "DISPOSITION_SUMMARY_CURRENCY",
+}
+# 同一层的**声明码**(走 notes,不改退出码,因此不带处置)。
+NEW_LAYER_NOTE_CODES = frozenset({
+    "JUDGEMENT_RING_SKIPPED_NO_BODY_PLAN", "JUDGEMENT_RING_SKIPPED_NO_MODE",
+    "JUDGEMENT_RING_MINIMAL_EXEMPT", "FLIP_INDICATOR_CHECK_UNREACHABLE",
+    "NUMBER_WRONG_SECTION_MACRO_UNATTRIBUTED",
+    "NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE",
+    "NUMBER_WRONG_SECTION_NAMED_PASS",
+    "SUMMARY_NUMBER_SKIPPED_NO_SECTION", "SUMMARY_NUMBER_SKIPPED_NO_NUMBERS",
+    "SUMMARY_NUMBER_SKIPPED_NO_CURRENCY_NAMED",
+    "SUMMARY_NUMBER_SKIPPED_AMBIGUOUS",
+    "WEEKLY_JUDGEMENT_LAYER_SKIPPED",
+})
+# 这一层**之外**的既有码,写死在这里只为让上面两张表闭合:
+# 「全部码 = 既有 ∪ VERDICT ∪ 本层」,新增任何码都必须显式入某一张表。
+LEGACY_CODES = frozenset({
+    "SNAPSHOT_MALFORMED", "SECTION_MISSING", "SECTION_TOO_LONG",
+    "SUMMARY_TOO_LONG", "GAPS_NOT_DISCLOSED", "GAPS_MISMATCH", "GAP_OMITTED",
+    "NUMBER_UNTRACEABLE", "BRIEF_NUMBER_UNTRACEABLE",
+    "BRIEF_REVIEW_BLOCK_MALFORMED", "BRIEF_REVIEW_BLOCK_SKIPPED",
+    "PRIOR_PERIOD_SECTION_MISSING", "PRIOR_PERIOD_BOILERPLATE",
+    "PRIOR_PERIOD_SKIPPED_NO_SECTION", "PRIOR_PERIOD_ABSENT_SKIPPED",
+    "THEME_TOO_MANY", "DATE_STRUCTURE", "COVERAGE_MISSING",
+    "COVERAGE_GAP_DATES", "CURRENCY_MISSING", "REVIEW_TOKEN_MISSING",
+    "WEEKLY_DIGEST_ABSENT_SKIPPED",
+})
+
+
+class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
+    """Minor 10:码清单冻结此前**只覆盖 `VERDICT_*`** —— 五个新码与它们的
+    声明码不在任何冻结表里,于是"新增码必须同时入表"这句话对它们不成立,
+    悄悄加一个码、或悄悄改一条处置,没有任何断言会红。
+
+    这一条把冻结扩到全清单:`_emitted_codes` 扫出来的**全部**码,必须恰好
+    等于三张表的并集。
+    """
+
+    def test_the_full_code_inventory_is_frozen(self):
+        found = _emitted_codes(check_report.__file__)
+        want = (set(NEW_LAYER_VIOLATION_DISPOSITION) | set(NEW_LAYER_NOTE_CODES)
+                | set(LEGACY_CODES) | set(VERDICT_VIOLATION_DISPOSITION)
+                | set(VERDICT_NOTE_CODES))
+        self.assertEqual(found, want,
+                         "校验器的码清单与冻结表对不上;新增码必须同时入表")
+        self.assertEqual(len(want), 49, len(want))
+
+    def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
+        """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
+        这句断言就失去分辨力。"""
+        texts = [getattr(check_report, name)
+                 for name in NEW_LAYER_VIOLATION_DISPOSITION.values()]
+        for t in texts:
+            self.assertTrue(t.startswith("处置:"), t)
+        self.assertEqual(len(set(texts)), len(texts), texts)
+
+    def test_each_new_layer_code_carries_its_own_disposition(self):
+        """逐码处置对应:每条违规行**行尾恰是它自己那一条**处置,且不含
+        另外六条中的任何一条。与 `assert_own_disposition` 同规格 ——
+        只断言"带了某条处置"时,把六条互相对调照样全绿。"""
+        seen = set()
+        for label, out in self._stdouts():
+            for raw in out.splitlines():
+                line = raw.lstrip(" -").rstrip()
+                m = re.match(r"([A-Z][A-Z0-9_]+):", line)
+                if not m or m.group(1) not in NEW_LAYER_VIOLATION_DISPOSITION:
+                    continue
+                code = m.group(1)
+                want = getattr(check_report,
+                               NEW_LAYER_VIOLATION_DISPOSITION[code])
+                self.assertTrue(line.endswith(want),
+                                "%s:%s 的处置不是它自己那一条:%s"
+                                % (label, code, line))
+                for other_code, other_name in \
+                        NEW_LAYER_VIOLATION_DISPOSITION.items():
+                    if other_code != code:
+                        self.assertNotIn(getattr(check_report, other_name),
+                                         line, "%s 行里混入了 %s 的处置"
+                                         % (code, other_code))
+                seen.add(code)
+        self.assertEqual(seen, set(NEW_LAYER_VIOLATION_DISPOSITION),
+                         "有映射了处置却没有任何用例触发的码")
+
+    def _stdouts(self):
+        """两次**真 CLI**(生产 argv 形状),覆盖七个码。"""
+        summary = ["- 摘要写了 0.4321 这个数。", "- 泰铢一档写成 60.843。"]
+        out = []
+        for label, report in (("no-decoy", amb_report()),
+                              ("decoy", amb_report(decoy=True))):
+            report = report.replace("- 摘要写了 0.4321 这个数。",
+                                    "\n".join(summary))
+            with tempfile.TemporaryDirectory() as tmp:
+                rp, sp, bp = (os.path.join(tmp, n)
+                              for n in ("r.md", "s.json", "b.md"))
+                for path, text in ((rp, report), (sp, amb_snap()),
+                                   (bp, MAP_BRIEF)):
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(text)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    check_report.main([rp, sp, "--brief", bp,
+                                       "--mode", "daily", "--strict-brief"])
+                out.append((label, buf.getvalue()))
+        return out
+
+    def test_every_new_layer_note_code_is_reachable(self):
+        """声明码也要闭合:表里列了却没有任何路径打得出来的码 = 死码,
+        与"打印通过但没查"是同一族问题。"""
+        with open(check_report.__file__, encoding="utf-8") as f:
+            src = f.read()
+        for code in NEW_LAYER_NOTE_CODES:
+            self.assertIn('"%s: ' % code, src.replace("\n", " ").replace(
+                '"\n', '"').replace("  ", " ") or src, code)

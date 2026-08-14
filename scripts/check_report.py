@@ -163,6 +163,13 @@ DISPOSITION_WRONG_SECTION = ("处置:换成该币种自己快照切片里的数;
 DISPOSITION_SUMMARY_BODY = ("处置:执行摘要只复述正文写过的数;"
                             "要保留这个数就先把它写进对应的币种节/速览/复盘/"
                             "缺漏节,不得只在摘要里出现一次")
+DISPOSITION_SUMMARY_CURRENCY = ("处置:在**这一条摘要 bullet 里**点名这个数"
+                                "属于哪个币种(写「雷亚尔 5.1049」,"
+                                "不要光写 5.1049);"
+                                "确实说的是别的币种就换成本条点名的那个币种的数")
+DISPOSITION_AMBIGUOUS = ("处置:把重名的小节标题改成互不包含的标题,"
+                         "或合并成一节;校验器**不猜**哪一节是正主,"
+                         "这一条不改,依赖该节的检查就一直不执行")
 # **两个降级码(VERDICT_SKIPPED_NO_DERIVED / VERDICT_SKIPPED_LEGACY)的处置
 # 仍留在 SKILL,这是有意的**,不是漏改。它们的处置分两支,判别标准是"采集
 # 窗口是否还覆盖 DATE" —— 校验器不知道窗口边界(那在 collect/events.py 的
@@ -228,11 +235,60 @@ def sections(md):
     return out
 
 
+def section_hits(secs, key):
+    """该键匹配到的**全部**小节。节定位的唯一事实源,`find_section` 只是它的
+    「必须恰好一个」包装 —— 两处各写一遍匹配规则必然漂移。"""
+    return [(h, b) for h, b in secs if key in h]
+
+
 def find_section(secs, key):
-    for h, b in secs:
-        if key in h:
-            return h, b
-    return None
+    """**恰好一个**匹配才返回 (标题, 正文);0 个与 ≥2 个都返回 None。
+
+    ---- ≥2 个返回 None 是**失败关闭**,不是顺手的健壮性 ----
+    修前这里取**首个**匹配。于是报告里只要出现一个重名小节,判断环三码与
+    数字归属两码定位到的就是错的那一节,五个码**全部悄悄不跑**,输出仍是
+    `CHECK PASSED`。**在修掉它之前,这五个码的强制力等于一行报告编辑。**
+    决定性实测(本轮,fixture 逐字见 tests 的 `amb_report`):同一份报告
+    加两行占位标题(`## 执行摘要(草稿,占位)` 与 `## 菲律宾比索(PHP)——占位`),
+    五码命中由 {①1 ②1 ③1 ④1 ⑤1} 变成 {①1 ②0 ③0 ④0 ⑤0} —— ②③④⑤ 全灭,
+    而剩下那条 ① 是对着「占位。」那一行的**假**违规,stdout **零声明**。
+
+    修法按**不变量**做,不是在每个调用点加一句提示:**唯一的解析入口**对
+    ≥2 个匹配返回 None,任何调用点都拿不到"第一个",失败关闭因此是结构性的。
+    响亮的那一半在调用点:`ambiguity_violations` 把 `SECTION_AMBIGUOUS` 打成
+    违规,所以"关掉了检查"不会以 rc=0 收场。
+
+    **误报成本先复算再改**(本轮实测,不是抄对抗报告的数):
+    8 份日报 × 10 个日报键、8 份要点表 × 6 个要点表键、1 份周报 × 5 个周报键,
+    多重匹配**共 0 次**。唯一化是零成本的。
+
+    0 个匹配**沿用既有语义**(调用点报 `SECTION_MISSING`),这一支一字未改。
+    """
+    hits = section_hits(secs, key)
+    return hits[0] if len(hits) == 1 else None
+
+
+def ambiguous_sections(secs, keys):
+    """{键: [重名标题]},只含匹配 ≥2 个的键;顺序按 `keys` 给的顺序。"""
+    out = {}
+    for key in keys:
+        hits = section_hits(secs, key)
+        if len(hits) > 1:
+            out[key] = [h for h, _ in hits]
+    return out
+
+
+def ambiguity_violations(secs, keys, label):
+    """把节定位歧义打成违规行。**重名 ≠ 缺失**,两者的处置完全不同,
+    所以它不复用 `SECTION_MISSING`。
+
+    标题原文一起打出来:只说"有重名"不可操作 —— 读者得自己回报告里数标题。
+    """
+    return ["SECTION_AMBIGUOUS: %s有 %d 个小节标题含「%s」(%s);"
+            "节定位不唯一,依赖该节的检查本轮全部按失败关闭、未执行;%s"
+            % (label, len(heads), key,
+               "、".join("「%s」" % h for h in heads), DISPOSITION_AMBIGUOUS)
+            for key, heads in ambiguous_sections(secs, keys).items()]
 
 
 def numbers_in(text):
@@ -243,7 +299,7 @@ def list_items(body):
     return [line for line in body.splitlines() if LIST_ITEM_RE.match(line)]
 
 
-def check_prior_period(report, prior_text, notes=None):
+def check_prior_period(report, prior_text, notes=None, ambiguous=()):
     """「本期相对上期的变化」节不得与**上一份日报**的同节逐字重复。
 
     三态,互为对方的静默失败形态:
@@ -258,14 +314,27 @@ def check_prior_period(report, prior_text, notes=None):
 
     notes : **出参**,同 check_daily。跳过声明必须打印 ——「跳过」与「通过」
             在输出上不可分辨,正是这一族检查要消灭的形态。
+
+    ambiguous : 当前报告里已判为节定位歧义的键集合。含本节的键时整条不判 ——
+            `SECTION_AMBIGUOUS` 已经把它打红了,再报一条
+            `PRIOR_PERIOD_SECTION_MISSING`(而报告里明明有两节)是自相矛盾。
+            **上一份日报**那一侧的歧义在这里单独判:往昨天的报告里塞两个同名
+            节,就等于关掉今天的跨期重复检查,那条路必须也是失败关闭。
     """
     v = []
+    if PRIOR_PERIOD_SECTION_KEY in (ambiguous or ()):
+        return v
     cur = find_section(sections(report), PRIOR_PERIOD_SECTION_KEY)
     if cur is None:
         return ["PRIOR_PERIOD_SECTION_MISSING: 缺少「%s的变化」节"
                 "(周期性产品必须说明本期判断相对上期有何变化);%s"
                 % (PRIOR_PERIOD_SECTION_KEY, DISPOSITION_PRIOR_PERIOD)]
-    prior = find_section(sections(prior_text), PRIOR_PERIOD_SECTION_KEY)
+    prior_secs = sections(prior_text)
+    amb = ambiguity_violations(prior_secs, (PRIOR_PERIOD_SECTION_KEY,),
+                               "上一份日报")
+    if amb:
+        return amb
+    prior = find_section(prior_secs, PRIOR_PERIOD_SECTION_KEY)
     if prior is None:
         if notes is not None:
             notes.append("PRIOR_PERIOD_SKIPPED_NO_SECTION: 上一份日报没有"
@@ -483,6 +552,7 @@ def check_judgement_ring(secs, derived, covered, allowed, notes=None):
                             type(body_plan).__name__))
         return v
     minimal = []
+    full, unreachable = [], []
     for c in sorted(covered):
         entry = body_plan.get(c)
         mode = entry.get("mode") if isinstance(entry, dict) else None
@@ -497,16 +567,37 @@ def check_judgement_ring(secs, derived, covered, allowed, notes=None):
                              "derived.body_plan 未给出 minimal/full 体裁"
                              "(实为 %r),该币种节的判断环未校验" % (c, mode))
             continue
-        v.extend(_check_one_ring(c, find_section(secs, c)[1], allowed))
+        full.append(c)
+        found, flip_unreachable = _check_one_ring(
+            c, find_section(secs, c)[1], allowed)
+        v.extend(found)
+        if flip_unreachable:
+            unreachable.append(c)
     if minimal and notes is not None:
         notes.append("JUDGEMENT_RING_MINIMAL_EXEMPT: %d/%d 个覆盖币种节走 "
                      "minimal 体裁(该节只准写一行,本就没有判断环),未校验"
                      % (len(minimal), len(covered)))
+    if unreachable and notes is not None:
+        # ② 要**同一节里两句都判得出**才比得起来。判不出失效条件句就整条
+        # 跳过 —— 而这一跳过此前零声明,与「比过了、没重复」逐字不可分辨。
+        # 实测口径(本轮,reports/daily/2026-08-10..14 五份产物):10 个 full
+        # 体裁节全部写了「翻转指标」,其中 7 个判不出失效条件句 —— 也就是说
+        # ② 在真实产物上**七成的节里根本没执行**。
+        notes.append("FLIP_INDICATOR_CHECK_UNREACHABLE: %d/%d 个走 full 体裁的"
+                     "币种节(%s)写了「%s」但判不出失效条件句"
+                     "(找的标签:%s),② 在这些节未执行"
+                     % (len(unreachable), len(full), "、".join(unreachable),
+                        FLIP_LABEL, "/".join(INVALIDATION_LABELS)))
     return v
 
 
 def _check_one_ring(currency, body, allowed):
-    """单个 full 体裁币种节的三码判定。见 check_judgement_ring 的诚实标注。"""
+    """单个 full 体裁币种节的三码判定。见 check_judgement_ring 的诚实标注。
+
+    返回 (violations, flip_unreachable)。`flip_unreachable` 为真 = 本节写了
+    翻转指标句、却判不出任何带载荷的失效条件句,② 因此**没有执行** ——
+    调用点必须把它计数打印出来,不出声就与「比过了、没重复」不可分辨。
+    """
     v = []
     missing = [lab for lab in RING_LABELS if lab not in body]
     if missing:
@@ -518,6 +609,14 @@ def _check_one_ring(currency, body, allowed):
     flips = [s for s in sents if FLIP_LABEL in s]
     invalids = [s for s in sents
                 if any(lab in s for lab in INVALIDATION_LABELS)]
+    flip_payloads = [p for p in (_ring_payload(f, (FLIP_LABEL,)) for f in flips)
+                     if p]
+    inv_payloads = [p for p in (_ring_payload(i, INVALIDATION_LABELS)
+                                for i in invalids) if p]
+    # ② 的可达条件:两侧都得有带载荷的句子。只有一侧时下面的双重循环一次都
+    # 不进,而"没进过循环"与"比过了、没重复"在返回值上完全同形 —— 所以把它
+    # 显式算出来交给调用点声明,不留在这里当沉默的第三态。
+    flip_unreachable = bool(flip_payloads) and not inv_payloads
     for f in flips:
         fn = _ring_payload(f, (FLIP_LABEL,))
         if not fn:
@@ -540,7 +639,7 @@ def _check_one_ring(currency, body, allowed):
         if not (numbers_in(s) & allowed):
             v.append("ASSUMPTION_UNANCHORED: %s 节的关键假设句里没有可溯源"
                      "数字:「%s」;%s" % (currency, s, DISPOSITION_ANCHOR))
-    return v
+    return v, flip_unreachable
 
 
 # ---- 数字的**归属**:两条映射级检查 ----
@@ -574,11 +673,38 @@ CURRENCY_ALIASES = {"USD": ("USD", "美元"), "EUR": ("EUR", "欧元"),
                     "PHP": ("PHP", "比索"), "THB": ("THB", "泰铢"),
                     "BRL": ("BRL", "雷亚尔")}
 SUMMARY_SECTION_KEY = "执行摘要"
+# 年-月式样。**只给 check_summary_number_attribution 用**,理由见那里的
+# 诚实边界 4:`DATE_RE` 不认 `2026-08`,而改 `DATE_RE` 会连带放松两个既有的
+# `*_UNTRACEABLE` 闸门。负向断言 `(?!\d)` 挡住 `2026-0812` 这种非日期串。
+YEAR_MONTH_RE = re.compile(r"\d{4}-\d{2}(?!\d)")
 # 「正文」的范围:币种节 ∪ 这三节。**冻结的清单**,不是"报告的其余部分" ——
 # 后者会让这条码退化成"摘要的数只要在报告里出现过就行",附录里随手一提就算
 # 数。缺漏节在列是实测要求的:reports/daily/2026-08-07.md 的摘要写
 # 「五币种 GDELT 事件采集均为 429」,429 在报告里只出现于缺漏节。
 SUMMARY_BODY_SECTION_KEYS = ("速览", "复盘", "数据缺漏")
+
+
+def _dedup(keys):
+    """保序去重。三份键清单里有重复项(`复盘`/`数据缺漏` 既是结构必需节、
+    又在摘要正文清单里),去重后才好逐元素冻结。"""
+    seen, out = set(), []
+    for k in keys:
+        if k not in seen:
+            seen.add(k)
+            out.append(k)
+    return tuple(out)
+
+
+# ---- 需要唯一化的节键:**三份冻结清单**,见 find_section 的失败关闭说明 ----
+# 清单里少一个键,就等于把那个键的唯一化悄悄关掉(而那正是 Fatal 1 的形状),
+# 所以与 SHARED_SNAPSHOT_KEYS 同规格逐元素冻结,并由
+# `test_every_key_reachable_by_find_section_is_in_a_frozen_list` 做闭合:
+# 源码里传给 `find_section`/`section_hits` 的**字面量**键必须都在清单里。
+DAILY_REPORT_SECTION_KEYS = _dedup(
+    tuple(CURRENCIES) + ("执行摘要", "复盘", "数据缺漏", PRIOR_PERIOD_SECTION_KEY)
+    + SUMMARY_BODY_SECTION_KEYS)
+BRIEF_SECTION_KEYS = _dedup(tuple(CURRENCIES) + SHARED_BRIEF_HEADINGS)
+WEEKLY_REPORT_SECTION_KEYS = _dedup(tuple(WEEKLY_SECTIONS))
 
 
 def _macro_rows(snap):
@@ -634,20 +760,50 @@ def currency_number_pool(snap, brief_text, currency):
     return nums
 
 
+def brief_attributed_numbers(brief_text):
+    """要点表里**已经有币种归属**的数字 —— `## <币种>` 那几节的并集。"""
+    secs = sections(brief_text)
+    nums = set()
+    for c in CURRENCIES:
+        sec = find_section(secs, c)
+        if sec:
+            nums |= numbers_in(sec[1])
+    return nums
+
+
 def shared_number_pool(snap, brief_text):
     """共享池 —— 逐元素定义见 SHARED_SNAPSHOT_KEYS / SHARED_BRIEF_HEADINGS。
 
     ALLOWED_SMALL 整体在池内:序数/条数/月份类小整数没有币种归属,把它们
     纳进映射约束会把每一句「第 3 条」「T+3」都打红。
+
+    ---- 要点表那一部分先过**归属减法**,快照那一部分不过 ----
+    共享池有两个来源,而其中一个(要点表的跨币种块)**由被查方撰写**:
+    要点表是 LLM 写的,于是"想让某个数在某节合法,只要把它写进跨币种块" ——
+    闸门的输入被被查对象控制,与 V7/V8/V12 那三条真绕过同型。
+    减法把这条路封上:凡是在要点表 `## <币种>` 那节出现过的数,**只解锁该
+    币种**,不进共享池。抄进跨币种块也没用 —— 它已经有归属了。
+    快照侧的 SHARED_SNAPSHOT_KEYS **不参与减法**:那一侧不由被查方撰写,
+    减它没有理由,而且会把 gaps 里的 HTTP 状态码之类整体判死。
+
+    **减法的上界**:跨币种块里那些**没有**任何币种块认领的数仍是共享的 ——
+    跨币种比较是本仓报告的正常写法,减过头等于把这条写法整体判死。
+    实测口径(本轮,reports/daily/2026-08-10..14 五份产物):
+    跨币种块共 32 个数字,其中 28 个可归属到具体币种块;减法把
+    `NUMBER_WRONG_SECTION` 由 0 条变成 6 条,全部落在
+    reports/daily/2026-08-13.md 的美元节 —— 逐条判定为**真缺陷**并改了报告
+    (那一节把四条交叉盘的步幅 1.493/0.24/0.076/0.052 并排列出却一个币种都
+    没点名,而列出的顺序与要点表里的顺序不同,读者按位置对应必然对错)。
     """
     nums = set(ALLOWED_SMALL)
     nums |= numbers_in(json.dumps({k: snap.get(k) for k in SHARED_SNAPSHOT_KEYS},
                                   ensure_ascii=False))
     secs = sections(brief_text)
+    attributed = brief_attributed_numbers(brief_text)
     for heading in SHARED_BRIEF_HEADINGS:
         sec = find_section(secs, heading)
         if sec:
-            nums |= numbers_in(sec[1])
+            nums |= numbers_in(sec[1]) - attributed
     return nums
 
 
@@ -697,23 +853,39 @@ def check_number_section_mapping(secs, snap, brief_text, covered, allowed,
                          "不判归属" % len(unattributed))
     own = {c: currency_number_pool(snap, brief_text, c) for c in CURRENCIES}
     no_slice = []
+    named_pairs = total_pairs = released = 0
     for c in sorted(covered):
         if not currency_snapshot_slice(snap, c):
             no_slice.append(c)
             continue
         body = find_section(secs, c)[1]
         pool = own[c] | shared
+        strict = set(pool)          # 不含点名放行的那一份,只用来数放行量
         for other in CURRENCIES:
             if other == c:
                 continue
+            total_pairs += 1
             if any(a in body for a in CURRENCY_ALIASES[other]):
+                named_pairs += 1
                 pool |= own[other]
-        for n in sorted((numbers_in(body) & allowed) - pool):
+        here = numbers_in(body) & allowed
+        bad = sorted(here - pool)
+        released += len((here - strict) - set(bad))
+        for n in bad:
             src = sorted(o for o in CURRENCIES if o != c and n in own[o])
             v.append("NUMBER_WRONG_SECTION: %s 节写了 %s,它只出自 %s 的快照"
                      "切片,而本节没有点名 %s;%s"
                      % (c, n, "/".join(src) or "别处", "/".join(src) or "它",
                         DISPOSITION_WRONG_SECTION))
+    if named_pairs and notes is not None:
+        # 诚实边界 1 说的那 44%(本轮在五份产物上复算为 59/100)此前**零声明**:
+        # 「放行了大半」与「全查过且全过」在 stdout 上逐字不可分辨。
+        # 声明带两个计数 ——「有跳过」不可操作,得说跳过了多少。
+        notes.append("NUMBER_WRONG_SECTION_NAMED_PASS: %d/%d 个「币种节 × 别的"
+                     "币种」组合因节内点名了对方而整池放行,其中 %d 个数字实例"
+                     "因此未判归属(归属的判定单位是节,不是句,见 "
+                     "check_number_section_mapping 的诚实边界 1)"
+                     % (named_pairs, total_pairs, released))
     if no_slice and notes is not None:
         notes.append("NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE: %s 在快照里没有"
                      "任何自有切片(rates/events/derived/macro 都没有该币种或"
@@ -722,13 +894,100 @@ def check_number_section_mapping(secs, snap, brief_text, covered, allowed,
     return v
 
 
-def check_summary_numbers_in_body(secs, notes=None):
-    """`SUMMARY_NUMBER_NOT_IN_BODY` —— **质量检查**(一致性级)。
+def check_summary_number_attribution(secs, snap, brief_text, allowed,
+                                     notes=None, ambiguous=()):
+    """`SUMMARY_NUMBER_WRONG_CURRENCY` —— **关系判定**(归属级)。
+
+    判据:摘要 bullet 点名了币种 X,这一条里的数就必须出自 X 的切片(或共享
+    池);只出自 Y 的数写在点名 X 的那一条里 = 归属错。比的是**数与币种之间
+    的对应**,不是某个 token 在不在另一个池里 —— 所以它不是**存在性**判定,
+    与 `check_number_section_mapping` 是同一形制,只是判定单位由「节」换成
+    「bullet」。
+
+    ---- 它为什么存在:Major 4 的更正 ----
+    `SUMMARY_NUMBER_NOT_IN_BODY` 此前自称「质量检查」,而实现是**换了参照池
+    的集合差存在性判定**,docstring 在同一页里既说"不是存在性"又说"只查出现
+    过",自相矛盾。二选一里选的是 (b)「把实现升级成真正的关系判定」——
+    (a) 只改标注是诚实的下策。升级落在这一层;旧码一条都没删,它退回它本来
+    的身份(存在性层),标注同步改正。
+
+    **诚实边界,三条:**
+
+    1. 判定单位是 **bullet**,点名即放行 —— 与 NUMBER_WRONG_SECTION 的节级
+       点名同规矩。跨币种对照是摘要的正常写法。
+    2. 只判「这个数出自谁」,判不了「这个数用得对不对」。
+    3. 归属不到**任何**币种的数不归本码管 —— 那一类由存在性层与
+       `NUMBER_UNTRACEABLE` 管,同一个 token 不得吃两条违规。
+    4. **年-月碎片先剥掉**(`YEAR_MONTH_RE`,只在本层剥)。`DATE_RE` 认
+       `2026-08-10` 与「8 月」,**不认 `2026-08`**;于是摘要写「参考月
+       2026-08」时 `numbers_in` 吐出 `2026` 与 `08` 两个 token,而快照的
+       `"period": "2026-07"` 让它们真的落在某个币种的切片里 —— 边界 3 那道门
+       挡不住。实测:不剥,reports/daily/2026-08-13.md 的摘要当场炸出
+       `08`(「只出自 USD」)与 `2026`(「只出自 PHP/USD」)两条假红。
+       **刻意不去改 `DATE_RE`**:那会同时放松 `NUMBER_UNTRACEABLE`
+       与 `BRIEF_NUMBER_UNTRACEABLE` 这两个既有闸门,而本轮不放宽任何既有
+       判据。剥这一下只收窄**新码自己**的射程,既有行为一字不动。
+
+    **真实产物上的实测**(本轮,reports/daily/2026-08-10..14 五份):
+    抓到 1 条真缺陷 —— 2026-08-11 摘要首条点名了比索/泰铢/欧元,却写了
+    `5.1049`(雷亚尔的触发位),读者按位置对应必然对错。已改报告。
+
+    ambiguous : 见 check_prior_period。摘要节重名时整条不判(SECTION_AMBIGUOUS
+            已经把它打红,而 `find_section` 这时返回 None)。
+    """
+    v = []
+    if SUMMARY_SECTION_KEY in ambiguous:
+        return v
+    s = find_section(secs, SUMMARY_SECTION_KEY)
+    if s is None:
+        return v          # 缺节由存在性层的 SUMMARY_NUMBER_SKIPPED_NO_SECTION 声明
+    own = {c: currency_number_pool(snap, brief_text, c) for c in CURRENCIES}
+    shared = shared_number_pool(snap, brief_text)
+    unnamed = 0
+    for item in list_items(s[1]):
+        nums = (numbers_in(YEAR_MONTH_RE.sub(" ", item)) & allowed) \
+            - ALLOWED_SMALL
+        if not nums:
+            continue
+        named = [c for c in CURRENCIES
+                 if any(a in item for a in CURRENCY_ALIASES[c])]
+        if not named:
+            unnamed += 1
+            continue
+        pool = set(shared)
+        for c in named:
+            pool |= own[c]
+        for n in sorted(nums - pool):
+            src = sorted(o for o in CURRENCIES if o not in named and n in own[o])
+            if not src:
+                continue                      # 诚实边界 3
+            v.append("SUMMARY_NUMBER_WRONG_CURRENCY: 执行摘要该条点名 %s,"
+                     "却写了 %s —— 它只出自 %s 的快照切片;原文:「%s」;%s"
+                     % ("/".join(named), n, "/".join(src), item.strip(),
+                        DISPOSITION_SUMMARY_CURRENCY))
+    if unnamed and notes is not None:
+        notes.append("SUMMARY_NUMBER_SKIPPED_NO_CURRENCY_NAMED: %d 条带数字的"
+                     "摘要 bullet 没有点名任何币种(别名表:%s),这些条的数字"
+                     "归属未校验"
+                     % (unnamed, "/".join(
+                         "".join(CURRENCY_ALIASES[c]) for c in CURRENCIES)))
+    return v
+
+
+def check_summary_numbers_in_body(secs, notes=None, ambiguous=()):
+    """`SUMMARY_NUMBER_NOT_IN_BODY` —— **存在性检查**(参照池换成了正文)。
 
     移植自 econstack 被删版本的 A1 检查项,逐字:
     `| A1 | Do all numbers in the executive summary match the tables? | RED |`
-    比的是**同一个数在两个位置的一致性**,不是"某物有没有出现",所以它不是
-    **存在性**检查;既有的 `NUMBER_UNTRACEABLE` 才是存在性那一层。
+
+    ---- 标注更正(Major 4):这一条**不是**质量检查 ----
+    此前它自称「质量检查(一致性级)」,理由写的是"比的是同一个数在两个位置
+    的一致性"。那句话与它自己的诚实边界 1「只查这个 token 在正文里出现过」
+    在**同一页里自相矛盾**,而实现是后者:`nums(摘要) - nums(正文)` 的集合差
+    —— 换了参照池的存在性判定,与 `NUMBER_UNTRACEABLE` 只差参照池是谁。
+    把存在性说成质量,就是复现 IMF 那套评分器的病,所以标注改正,不含糊。
+    **真正的关系判定另建一层**,见 `check_summary_number_attribution`
+    (`SUMMARY_NUMBER_WRONG_CURRENCY`);本码一条没删,只是回到它本来的身份。
 
     **方向只有一个:摘要 ⊆ 正文。** 反过来(正文的数必须进摘要)会把每一份
     正常报告打成几十条红 —— 摘要按 spec 最多 6 条,本就装不下正文的数。
@@ -749,8 +1008,21 @@ def check_summary_numbers_in_body(secs, notes=None):
     摘要里没有需要溯源的数 —— 两种都打印跳过声明。
 
     notes : **出参**,同 check_daily。
+    ambiguous : 见 check_prior_period。摘要节或任一正文节重名时整条不判 ——
+            重名会让 `find_section` 返回 None,正文池随之**少掉一整节**,
+            于是这一层会对着残缺的正文池假报一串违规。失败关闭在这里的形态
+            是"不判并出声",红由 SECTION_AMBIGUOUS 出。
     """
     v = []
+    blocking = sorted(set(ambiguous or ())
+                      & ({SUMMARY_SECTION_KEY} | set(CURRENCIES)
+                         | set(SUMMARY_BODY_SECTION_KEYS)))
+    if blocking:
+        if notes is not None:
+            notes.append("SUMMARY_NUMBER_SKIPPED_AMBIGUOUS: 摘要或正文的 %d 个"
+                         "节键(%s)在报告里重名,节定位不唯一,摘要数字与正文"
+                         "的存在性未校验" % (len(blocking), "、".join(blocking)))
+        return v
     s = find_section(secs, SUMMARY_SECTION_KEY)
     if s is None:
         if notes is not None:
@@ -800,8 +1072,22 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     for p in snap_problems:
         v.append("SNAPSHOT_MALFORMED: " + p)
 
+    # ---- 节定位唯一化,**最先做**:见 find_section 的失败关闭说明 ----
+    # 下面每一处 `find_section` 都依赖"恰好一个匹配";重名时它返回 None,
+    # 而 None 在既有分支里的含义是"缺失" —— 所以歧义键必须在这里先拦住,
+    # 否则会打出「缺少币种节 PHP」而报告里明明有两节,自相矛盾。
+    amb = ambiguous_sections(secs, DAILY_REPORT_SECTION_KEYS)
+    v.extend(ambiguity_violations(secs, DAILY_REPORT_SECTION_KEYS, "报告"))
+    brief_secs = sections(brief_text)
+    brief_amb = ambiguous_sections(brief_secs, BRIEF_SECTION_KEYS)
+    v.extend(ambiguity_violations(brief_secs, BRIEF_SECTION_KEYS, "要点表"))
+
     covered = set()
     for c in CURRENCIES:
+        if c in amb:
+            # 失败关闭:歧义币种不进 covered,判断环/归属/结论句三层都不查它。
+            # SECTION_AMBIGUOUS 已经把这一处打红,不再叠一条 SECTION_MISSING
+            continue
         if find_section(secs, c):
             covered.add(c)
         else:
@@ -810,7 +1096,9 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
             # (check_weekly 的注释这么写,而日报侧此前分两处算)
             v.append("SECTION_MISSING: 缺少币种节 %s" % c)
     s = find_section(secs, "执行摘要")
-    if not s:
+    if "执行摘要" in amb:
+        pass                                  # 已出 SECTION_AMBIGUOUS
+    elif not s:
         v.append("SECTION_MISSING: 缺少执行摘要")
     elif len(list_items(s[1])) > MAX_SUMMARY_ITEMS:
         v.append("SUMMARY_TOO_LONG: 执行摘要 %d 条 > %d"
@@ -822,11 +1110,13 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
             if n > MAX_SECTION_CJK:
                 v.append("SECTION_TOO_LONG: %s 节 %d 中文字 > %d" % (c, n, MAX_SECTION_CJK))
     rev = find_section(secs, "复盘")
-    if not rev or not rev[1].strip():
+    if "复盘" not in amb and (not rev or not rev[1].strip()):
         v.append("SECTION_MISSING: 缺少复盘节(首次运行也须保留并注明)")
 
     gap_sec = find_section(secs, "数据缺漏")
-    if not gap_sec:
+    if "数据缺漏" in amb:
+        pass                                  # 已出 SECTION_AMBIGUOUS
+    elif not gap_sec:
         v.append("SECTION_MISSING: 缺少数据缺漏节")
     elif snap is not None:
         gaps_raw = snap.get("gaps", [])
@@ -913,15 +1203,26 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
     v.extend(check_judgement_ring(secs, derived, covered, allowed, notes=notes))
     # 数字归属两码同样排在 `allowed` 之后:映射检查的候选集是**已可溯源**的
     # 那些数,编造的数由 NUMBER_UNTRACEABLE 单独管,同一个 token 不得吃两条。
-    if isinstance(snap, dict):
+    if brief_amb:
+        # 要点表按 `## <币种>` 切池;那一侧重名时数字池会**少掉一整节**,
+        # 归属这一层于是对着残缺的池假报一串违规。失败关闭 = 不判并出声,
+        # 红由 SECTION_AMBIGUOUS 出(它已经在 v 里了)
+        if notes is not None:
+            notes.append("NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE: 要点表有 %d 个"
+                         "节键(%s)重名,数字池切不出来,所有币种节的数字归属"
+                         "未校验" % (len(brief_amb), "、".join(brief_amb)))
+    elif isinstance(snap, dict):
         v.extend(check_number_section_mapping(secs, snap, brief_text, covered,
                                               allowed, notes=notes))
+        v.extend(check_summary_number_attribution(secs, snap, brief_text,
+                                                  allowed, notes=notes,
+                                                  ambiguous=amb))
     elif notes is not None:
         # 快照顶层不是对象:已记 SNAPSHOT_MALFORMED,但归属这一层确实一条
         # 都没查过,不出声就与"全查过且全过"同形
         notes.append("NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE: 快照顶层不是对象,"
                      "所有币种节的数字归属未校验")
-    v.extend(check_summary_numbers_in_body(secs, notes=notes))
+    v.extend(check_summary_numbers_in_body(secs, notes=notes, ambiguous=amb))
     if strict_brief:
         # 报告 ⊆ 快照∪要点表 一直有校验,但要点表本身 ⊆ 快照 从来没人查——
         # 要点表环节写错的数字会被下游当作合法来源。此开关堵住这条缝。
@@ -947,7 +1248,8 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=False, notes=Non
         for n in sorted(numbers_in("\n".join(traced)) - brief_allowed):
             v.append("BRIEF_NUMBER_UNTRACEABLE: 要点表数字 %s 不见于快照" % n)
     if prior_text is not None:
-        v.extend(check_prior_period(report, prior_text, notes=notes))
+        v.extend(check_prior_period(report, prior_text, notes=notes,
+                                    ambiguous=amb))
     return v
 
 
@@ -1117,7 +1419,8 @@ def main(argv=None):
                 return 2
             daily_texts.append(text)
         violations = check_weekly(report, digest_text, daily_texts,
-                                  digest if args.digest is not None else None)
+                                  digest if args.digest is not None else None,
+                                  notes=notes)
     # 降级声明先于结论打印:退出码 0 却跳过了几条,读者必须看得见
     for note in notes:
         print(note)
@@ -1130,11 +1433,44 @@ def main(argv=None):
     return 0
 
 
-def check_weekly(report, digest_text=None, daily_texts=(), digest=None):
+def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
+                 notes=None):
+    """周报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
+
+    notes : **出参**,同 check_daily。此前这一侧**没有**这个参数,理由写的是
+            「required 恒为 True,缺字段直接进 violations,不会产生跳过」——
+            那句话只覆盖了结论句那一层,漏掉了更大的一块:
+            **判断环三码与数字归属两码在周报模式下一个都不跑**,而周报里
+            照样写满了判断环(reports/weekly/2026-W33.md 实测 27 处标签)。
+            于是周报的 stdout 是**裸 `CHECK PASSED`**,与「五层全查过且全过」
+            逐字不可分辨 —— 正是这一族检查要消灭的形态。
+            整层不查同样要出声,并带计数,见 WEEKLY_JUDGEMENT_LAYER_SKIPPED。
+    """
     v = []
     secs = sections(report)
+    if notes is not None:
+        # **只声明,不移植**:五个码的判据全部按日报的形状建(币种节 × 快照
+        # 切片 × 要点表分节),周报既没有按币种分的快照切片、也没有要点表,
+        # 硬搬过来只会造出一层判不准的红。能诚实交付的是"说清楚没查"。
+        rings = sum(report.count(lab) for lab in RING_LABELS)
+        notes.append("WEEKLY_JUDGEMENT_LAYER_SKIPPED: 周报模式不运行判断环三码"
+                     "(%s)与数字归属两码(%s),本份周报里有 %d 处判断环标签"
+                     "(%s)未校验"
+                     % ("/".join(("JUDGEMENT_RING_INCOMPLETE",
+                                  "FLIP_INDICATOR_IS_INVALIDATION_RESTATED",
+                                  "ASSUMPTION_UNANCHORED")),
+                        "/".join(("NUMBER_WRONG_SECTION",
+                                  "SUMMARY_NUMBER_NOT_IN_BODY")),
+                        rings,
+                        "、".join("%s %d" % (lab, report.count(lab))
+                                  for lab in RING_LABELS)))
+    # 节定位唯一化,理由与 check_daily 同(见 find_section)。周报侧 `本周主线`
+    # 重名会让 THEME_TOO_MANY 数错那一节,`缺漏汇总` 重名会让 GAP_OMITTED
+    # 对着空节比 —— 两种都是静默放行。
+    amb = ambiguous_sections(secs, WEEKLY_REPORT_SECTION_KEYS)
+    v.extend(ambiguity_violations(secs, WEEKLY_REPORT_SECTION_KEYS, "周报"))
     for key in WEEKLY_SECTIONS:
-        if not find_section(secs, key):
+        if key not in amb and not find_section(secs, key):
             v.append("SECTION_MISSING: 缺少 %s 节" % key)
     ml = find_section(secs, "本周主线")
     if ml and len(list_items(ml[1])) > MAX_THEME_ITEMS:
