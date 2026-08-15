@@ -224,6 +224,10 @@ DISPOSITION_RING = ("处置:把没写的那件补进该币种节的「分歧与�
 DISPOSITION_FLIP = ("处置:翻转指标写「什么一旦出现就改判」(可观测量带 T+N),"
                     "失效条件写「什么没发生就作废」;二者语义不同,"
                     "不得把后者换个说法当前者交差")
+DISPOSITION_INVALIDATION_COLUMN = (
+    "处置:表里那一格改写成**这条判断的失效条件** —— 什么**没**发生它就作废"
+    "(该判断的保质期),必须是价格或指标的可观测量并带 T+N;"
+    "「什么一旦出现就改判」留给宿主段的翻转指标,两处不得写成同一句")
 DISPOSITION_ANCHOR = ("处置:在关键假设句里引一个来自快照或要点表的**当前值**;"
                       "不要写阈值 —— 阈值是尚未发生的前瞻价位、不在快照里,"
                       "写进去会被 NUMBER_UNTRACEABLE 当场拦下")
@@ -780,52 +784,88 @@ def overview_rows(secs, notes=None):
     return out
 
 
-def check_overview_invalidation_column(rows, bodies, notes=None):
-    """速览「失效条件」列**不是** ② 可用的失效条件来源 —— 把这件事出声。
+# 打进声明里的**宿主名**。日报的宿主是币种节,周报的宿主是主线段;两侧共用
+# 同一个判定函数,只有这一个词不同。
+INVALIDATION_SCOPE_DAILY = "币种节"
+INVALIDATION_SCOPE_WEEKLY = "主线段"
 
-    ---- 为什么不从这一列取(本轮实测,先跑后抄)----
-    `skills/fx-daily-report/SKILL.md:181-182` 与 `:278` 两处逐字要求:速览表
-    「失效条件」那一格必须与该币种节判断环的**翻转指标同源同字**。
-    在 reports/daily/2026-08-10..14 五份产物上逐条比对,两侧去掉标点空白后
-    **逐字相同 20/20**(2026-08-13 那一份五个节没有独立的翻转指标句,不计入)。
-    所以"从速览表取失效条件喂给 ②"= 拿翻转指标和它自己比:按构造 25/25 全红,
-    一条真缺陷都不代表。**判据放错地方的修法不能是换一个更错的地方。**
-    ② 真正该比的失效条件在币种节正文里 —— 关键假设那一句的「不成立/作废」
-    后半句,`INVALIDATION_LABELS` 认的就是它;本轮修的是那个识别器
-    (见 `_ring_payload` 的后缀式回退与 `INVALIDATION_LABELS` 的「作废」)。
 
-    这一条**不判违规**:20/20 相同正是 SKILL 要求的形态,报告没有错。
-    它只把"该列与翻转指标同字、因此不能当独立来源"打成一条带计数的声明,
-    让这个事实出现在 stdout 里,而不是只留在某个人的汇报里。
-    报告与 SKILL 之间这处口径矛盾(一边定义翻转指标为"出现即改判"、一边要求
-    它与"失效条件"同字)已由 reports/daily/2026-08-14.md 的附录 D 登记,
-    须在 SKILL 层裁决后统一改,不在校验器里单方面裁定。
+def _flip_payloads(body):
+    """该段正文里全部**带载荷**的翻转指标句载荷。载荷口径见 `_ring_payload`。"""
+    return [p for p in (_ring_payload(s, (FLIP_LABEL,))
+                        for s in split_sentences(body or "")
+                        if FLIP_LABEL in s) if p]
 
-    rows   : `overview_rows` 的返回值
-    bodies : {币种: 币种节正文}
+
+def check_invalidation_independent(pairs, scope, notes=None):
+    """表里「失效条件」格与它宿主段的「翻转指标」句**必须是两件事**。重合即违规。
+
+    ---- 这条码替换掉了什么(2026-08-15)----
+    此处原先是 `FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP` —— 一条**只声明、不判定**
+    的 notes 行,内容是"该列在 N/M 个币种上与翻转指标逐字相同,因此不是独立的
+    失效条件来源"。它之所以只能声明,是因为 `skills/fx-daily-report/SKILL.md`
+    当时**要求**二者同源同字(周报侧同):按规定两处本就该是同一句,任何
+    "两者不得相同"的检查都会恒红,校验器只好把事实打印出来、把判定让给人。
+
+    而同一份 SKILL 又给两个词下了**相反**的定义 —— 失效条件是「什么**没**发生
+    就作废」(消极,常常等不到),翻转指标是「什么**一旦出现**就改判」(积极、
+    可观测、带 T+N)。一句要求同字、一句要求语义相反,「哪一句算数」无处可判。
+    2026-08-15 在 SKILL 层裁决:走解耦(A 案),同字要求整条删除。
+    要求没了,声明存在的理由随之没了,于是判定升级成本码 —— 它是旧要求的
+    **反面**,同时是"解耦有没有真落地"的判据:报告第 4 列若还抄着翻转指标,
+    这条码当场红,退出码非 0。
+
+    ---- 与 ② `FLIP_INDICATOR_IS_INVALIDATION_RESTATED` 的分工 ----
+    ② 比的是**同一段正文内两句**的关系:翻转指标句 vs 关键假设那一句的
+    「不成立/作废」后半句(`INVALIDATION_LABELS` 认的就是它)。本码比的是
+    **表格与正文之间**。两者判的不是同一对字符串,所以:
+
+    - **② 维持在段内取数,不改用表里这一列。** 解耦之后该列确实已经是独立
+      来源了,技术上喂得进去;不喂是因为**那会让同一对字符串被判两遍** ——
+      表↔节这条关系已由本码守着,再让 ② 也比一遍,同一处缺陷出两条码、两条
+      互相矛盾的处置(本码叫"改表格那一格",② 叫"改翻转指标那一句"),而
+      ② 原本守的「关键假设的不成立半句被搬去当翻转指标」那条会被稀释成噪声。
+      分工是:**本码守表↔节,② 守节内两句**,两条判据互不覆盖。
+
+    ---- 诚实边界 ----
+    只做去标点空白后的**逐字/子串**比较,不做语义判断。同义改写(「回落」写成
+    「退回」)绕得过去 —— 它挡的是最省事的那条路(原样搬过去),不是语义等价。
+    语义判断做不了,不假装能做。
+
+    pairs : [(行名, 「失效条件」格原文, [宿主段正文, …])]。宿主可以有多段 ——
+            周报一行可归属多条主线,任一条的翻转指标与它重合都算。
+    scope : 打进违规行与声明里的宿主名(`INVALIDATION_SCOPE_*`)。
+    notes : **出参**,同 check_daily。恒打一条正向回执 —— 「查过且全过」与
+            「两侧取不到载荷、根本没得查」在返回值上完全同形。
+
+    **本函数是该码字面量的唯一产地**,日报与周报两条路径都落到它上面
+    (由 InvalidationColumnIsIndependentTest 的 AST 断言钉住)。
     """
-    if notes is None:
-        return
-    same = []
-    for c in CURRENCIES:
-        cell = (rows.get(c) or {}).get(OVERVIEW_COL_INVALIDATION)
-        body = bodies.get(c)
-        if not cell or not body:
+    v, checked = [], 0
+    for name, cell, bodies in pairs:
+        col = _RING_STRIP_RE.sub("", cell or "")
+        pays = []
+        for body in bodies:
+            pays.extend(_flip_payloads(body))
+        # 两侧都得有载荷才比得起来。空载荷不比:`"" in x` 恒真,会把"这一格
+        # 空着"误判成"照抄了翻转指标" —— 两件事不同因不同果,不得同判。
+        if not col or not pays:
             continue
-        col = _RING_STRIP_RE.sub("", cell)
-        flips = [s for s in split_sentences(body) if FLIP_LABEL in s]
-        pays = [p for p in (_ring_payload(f, (FLIP_LABEL,)) for f in flips) if p]
-        if col and any(col == p or col in p or p in col for p in pays):
-            same.append(c)
-    both = [c for c in CURRENCIES
-            if (rows.get(c) or {}).get(OVERVIEW_COL_INVALIDATION)
-            and bodies.get(c)]
-    if same:
-        notes.append("FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP: 速览表「%s」列在 "
-                     "%d/%d 个币种上与该币种节的翻转指标去标点后逐字相同"
-                     "(SKILL 第 181/278 行要求二者同源同字),该列因此不是"
-                     "独立的失效条件来源,② 不从该列取数"
-                     % (OVERVIEW_COL_INVALIDATION, len(same), len(both)))
+        checked += 1
+        for p in pays:
+            if col == p or col in p or p in col:
+                v.append("INVALIDATION_COLUMN_IS_FLIP_RESTATED: %s 的「%s」格与"
+                         "该%s的翻转指标去掉标点与空白后重复(逐字相同或互为"
+                         "子串);「%s」格原文:「%s」;翻转指标载荷:「%s」;%s"
+                         % (name, OVERVIEW_COL_INVALIDATION, scope,
+                            OVERVIEW_COL_INVALIDATION, cell, p,
+                            DISPOSITION_INVALIDATION_COLUMN))
+                break               # 同一格已判红,不按宿主段数叠红
+    if notes is not None:
+        notes.append("INVALIDATION_COLUMN_CHECKED: %d/%d 行的「%s」格与对应%s"
+                     "翻转指标的独立性已校验(两侧都取得到载荷的行才算分子)"
+                     % (checked, len(pairs), OVERVIEW_COL_INVALIDATION, scope))
+    return v
 
 
 def _check_one_ring(currency, body, allowed):
@@ -1541,6 +1581,60 @@ def theme_subsections(secs):
     return out
 
 
+# ---- 周报侧「失效条件」列的宿主:`## 各币种一周落点` 表 + 「主线归属」列 ----
+# 表结构逐字见 reports/weekly/2026-W33.md:
+#   | 币种 | 主线归属 | 周内价格落点 | 下周判断(时限) | 失效条件 |
+# 与日报侧同规矩:**按表头列名解析,不按列序号硬取**(理由见 OVERVIEW_COLUMNS
+# 那一段)。宿主由「主线归属」格点名的主线段决定 —— 凭标题猜哪一段是宿主那条
+# 路刻意不选,猜就是编造(与 check_weekly_judgement_ring 拒绝猜同一条理由)。
+WEEKLY_LANDING_SECTION_KEY = "各币种一周落点"
+WEEKLY_COL_THEME = "主线归属"
+WEEKLY_LANDING_COLUMNS = (OVERVIEW_COL_CURRENCY, WEEKLY_COL_THEME,
+                          OVERVIEW_COL_INVALIDATION)
+
+
+def theme_names(secs):
+    """主线段 → [(段名, 正文)]。段名取标题里冒号之前那一截,与
+    `check_weekly_judgement_ring` 的取名口径**同一处来源**,不另抄一份。"""
+    return [(re.split(r"[::]", h, 1)[0].strip() or h, b)
+            for h, b in theme_subsections(secs)]
+
+
+def weekly_invalidation_pairs(secs):
+    """周报落点表 → `check_invalidation_independent` 要的 pairs;取不到返回 None。
+
+    返回 None 的三态(调用点统一打一条带计数的跳过声明):没有落点表 /
+    表头三列不是恰好各一列(**失败关闭**,少一列时按剩下的列硬取就是错位) /
+    没有主线段。
+    """
+    sec = find_section(secs, WEEKLY_LANDING_SECTION_KEY)
+    rows = _pipe_rows(sec[1]) if sec else []
+    if not rows:
+        return None
+    header = rows[0]
+    idx = {}
+    for key in WEEKLY_LANDING_COLUMNS:
+        hits = [i for i, h in enumerate(header) if key in h]
+        if len(hits) == 1:
+            idx[key] = hits[0]
+    if len(idx) != len(WEEKLY_LANDING_COLUMNS):
+        return None
+    named = theme_names(secs)
+    if not named:
+        return None
+    out = []
+    for cells in rows[1:]:
+        if max(idx.values()) >= len(cells):
+            continue
+        cur = cells[idx[OVERVIEW_COL_CURRENCY]]
+        if cur not in CURRENCIES:
+            continue
+        belong = cells[idx[WEEKLY_COL_THEME]]
+        hosts = [b for n, b in named if n and n in belong]
+        out.append((cur, cells[idx[OVERVIEW_COL_INVALIDATION]], hosts))
+    return out
+
+
 def check_weekly_judgement_ring(secs, report, allowed, notes=None):
     """判断环三码在**周报模式**的执行入口。
 
@@ -1836,13 +1930,18 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
                      "未校验" % (len(CURRENCIES), OVERVIEW_COL_TRIGGER))
     # ---- 速览表那一层:先解析一次,两个用途共用 ----
     # ① 决策日志同源同字(`check_decision_trigger`);
-    # ② 「失效条件」列与翻转指标同字的声明(`check_overview_invalidation_column`)。
+    # ② 「失效条件」列与该币种节翻转指标的**独立性**
+    #    (`check_invalidation_independent`)。2026-08-15 之前这里是一条只声明
+    #    不判定的 FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP,理由与它的死因见该函数。
     # 解析放在这里而不是各自解析:两处各解析一次会各打一遍
     # OVERVIEW_TABLE_* 声明,读者看到的是同一件事说两遍。
     if OVERVIEW_SECTION_KEY not in amb:
         rows = overview_rows(secs, notes=notes)
         bodies = {c: find_section(secs, c)[1] for c in sorted(covered)}
-        check_overview_invalidation_column(rows, bodies, notes=notes)
+        v.extend(check_invalidation_independent(
+            [(c, (rows.get(c) or {}).get(OVERVIEW_COL_INVALIDATION),
+              [bodies.get(c)]) for c in sorted(covered)],
+            INVALIDATION_SCOPE_DAILY, notes=notes))
         if decision_entries is not None:
             date = snap.get("date") if isinstance(snap, dict) else None
             if isinstance(date, str) and date:
@@ -2249,6 +2348,21 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
     # 它自己不另建一份 —— 与日报侧同规矩。`allowed` 为 None(未给 --digest)
     # 时 ③ 不判并出声,另两码照常执行。
     v.extend(check_weekly_judgement_ring(secs, report, allowed, notes=notes))
+    # 落点表「失效条件」列与归属主线翻转指标的独立性。日报侧的同构检查在
+    # check_daily 里,两侧共用 `check_invalidation_independent` —— 判定只有一份。
+    pairs = weekly_invalidation_pairs(secs)
+    if pairs is None:
+        if notes is not None:
+            notes.append("WEEKLY_INVALIDATION_COLUMN_SKIPPED: 周报取不到"
+                         "「%s」表的 %d 列(%s)或取不到主线段,"
+                         "%d 个币种的「%s」格与主线翻转指标的独立性未校验"
+                         % (WEEKLY_LANDING_SECTION_KEY,
+                            len(WEEKLY_LANDING_COLUMNS),
+                            "、".join(WEEKLY_LANDING_COLUMNS),
+                            len(CURRENCIES), OVERVIEW_COL_INVALIDATION))
+    else:
+        v.extend(check_invalidation_independent(
+            pairs, INVALIDATION_SCOPE_WEEKLY, notes=notes))
     if isinstance(digest, dict):
         # 与日报的 GAP_OMITTED 对称:聚合出的每个缺漏源都必须在缺漏汇总里出现
         by_source = digest.get("gaps_by_source")

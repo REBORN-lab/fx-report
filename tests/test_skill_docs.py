@@ -32,6 +32,18 @@ def flat(path):
     return "".join(raw(path).split())
 
 
+def plain(path):
+    """在 flat 之上再去掉 markdown 强调号(`*`)。
+
+    为什么要单独有这一层:被删的那条旧要求写作「与本环的翻转指标**同源同字**」,
+    星号正好落在「翻转指标」与「同源同字」中间,于是 flat 之后子串
+    「翻转指标同源同字」**并不存在** —— 拿它当反向锚点会静默失守(实测:
+    flat(DAILY) 里该子串 0 次命中,而那一句原封不动地在文件里)。
+    强调号是排版,不是语义;比对前一律剥掉。
+    """
+    return "".join(raw(path).split()).replace("*", "")
+
+
 def block(text, start_re):
     """摘出一个段落并压平。整文件断言判不了"这句话有没有落在该落的段里":
     「存量快照」在本文件里出现好几处,只查全文会让禁令 9 缺豁免口也照样绿。"""
@@ -83,6 +95,14 @@ D_CHANGE_SPEC_RE = r"(?m)^#### 「本期相对上期的变化」怎么写.*?(?=\
 D_CHANGE_TMPL_RE = r"(?m)^    ## 本期相对上期的变化.*?(?=\n\n)"
 D_BAN11_RE = r"(?m)^11\. \*\*零效应判断.*?(?=\n\n)"
 D_BAN12_RE = r"(?m)^12\. \*\*无关素材.*?(?=\n\n)"
+# ---- 2026-08-15 失效条件 / 翻转指标解耦(A 案)新增的段落正则 ----
+# 两份 SKILL 的**表模板段**各一条:第 4 列的语义定义必须写在表旁边,
+# 写作时读者眼睛落在哪里、定义就得在哪里。
+D_OVERVIEW_TMPL_RE = r"(?m)^    \| 币种 \| 条件方向.*?(?=\n\n)"
+W_LANDING_TMPL_RE = r"(?m)^    \| 币种 \| 主线归属.*?(?=\n\n)"
+# 两条定义并列的那一段(周报侧)。日报侧并列段落在 `#### 判断环` 小节内,
+# 由 D_JUDGEMENT_RE 覆盖,不另开正则。
+W_INVALIDATION_RE = r"(?m)^\*\*失效条件与翻转指标.*?(?=\n\n)"
 
 W_WRITE_ORDER_RE = r"(?m)^### 写作顺序.*?(?=\n只依据第 1 步素材)"
 W_THEME_TMPL_RE = r"(?m)^    ### 主线一:.*?(?=\n\n    \(### 主线二)"
@@ -675,6 +695,120 @@ class JudgementRingHasThreePartsTest(SkillDocTestCase):
         seg = self.seg_or_fail(WEEKLY, W_HARD_FORM_RE, "周报主线硬形态")
         self.assertIn("七段齐全", seg, "硬形态还在说五段 —— 新增三段不受约束")
         self.assertIn("不可压缩项", seg, "硬形态不再保护后三段")
+
+
+class InvalidationAndFlipAreDecoupledTest(SkillDocTestCase):
+    """2026-08-15:速览/落点表第 4 列「失效条件」与判断环「翻转指标」**解耦**。
+
+    ---- 修前的病灶(实测,先跑后抄)----
+    同一份 SKILL 给两个词下了**相反**的定义,又要求两处**同源同字**:
+    - `#### 判断环` 的表行:失效条件 =「没发生就作废」(消极),
+      翻转指标 =「出现即改判」(积极);
+    - 速览表模板段与 `#### 判断环` 段末各有一句要求二者**同源同字**。
+    照后者写,前者那条区分就不存在;照前者写,后者必违反。两句字面冲突,
+    「哪一句算数」无处可判 —— 本仓库反复栽的形态。
+
+    后果落到校验器上是一条**只能声明、不能判定**的码:
+    `FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP: 速览表「失效条件」列在 5/5 个币种上
+     与该币种节的翻转指标去标点后逐字相同(…),该列因此不是独立的失效条件
+     来源,② 不从该列取数`
+    —— 按规定两处本就该是同一句,任何"两者不得相同"的检查都会恒红,于是
+    校验器只好把事实打印出来、不判。
+
+    ---- 本类守什么 ----
+    ① 反向:**一句要求二者同字的旧句都不许留**。留一句就等于矛盾没解,
+       而下游那条新违规码会与 SKILL 直接冲突。判据不是"某两个字面串不见了"
+       —— 那种锚点换个措辞就绕过 —— 而是**全文每一处「同源同字」都必须
+       是「条件方向 ↔ 决策日志 trigger」那一条**(它由
+       `DECISION_TRIGGER_NOT_SOURCED` 守着,是仓库里唯一正当的同字要求)。
+    ② 正向:第 4 列的语义写成「什么没发生就作废」,可观测量 + `T+N`;
+    ③ 正向:两条定义**并列写在一处并互相点名**,且写明两处不得写成同一句。
+    三条缺一不可:只有 ① 时读者不知道第 4 列该写什么;只有 ②③ 时旧要求
+    可以原地长回来。
+    """
+
+    HOSTS = (("日报", DAILY), ("周报", WEEKLY))
+
+    def test_every_same_wording_rule_is_about_the_decision_log(self):
+        """全文普查式反向锚点。
+
+        为什么不逐字禁那两句:措辞空间无界(ViolationDispositionTest 的类注释
+        记了三次靠改写措辞存活的实测)。这里改成**枚举全部命中并逐个验明
+        身份** —— 新写一条要求"失效条件与翻转指标同源同字"的句子,不管措辞
+        怎么变,只要还用"同源同字"这个词就会被这一条抓住;换词写(如"逐字
+        相同")则会被下面 ③ 的"两处不得写成同一句"直接矛盾,进 diff 时看得见。
+        """
+        t = plain(DAILY)
+        hits = [m.start() for m in re.finditer("同源同字", t)]
+        # 地板:日报侧的「条件方向 ↔ 决策日志 trigger」是仓库里**唯一正当**的
+        # 同字要求(由 DECISION_TRIGGER_NOT_SOURCED 守着,实测两处:速览表模板段
+        # 与第 5 步的决策日志段)。少了它,下面的循环就会空转通过 —— 而"把这个词
+        # 从文档里删干净"正是最省事的绕过。
+        self.assertGreaterEqual(len(hits), 2,
+                                "日报侧的决策日志同字要求少了 —— 循环会空转")
+        for i in hits:
+            win = t[max(0, i - 60):i]
+            self.assertTrue(
+                "trigger" in win or "决策日志" in win,
+                "日报里这一处「同源同字」不是「条件方向 ↔ 决策日志 trigger」"
+                "那一条 —— 失效条件与翻转指标的解耦被推翻了:…%s同源同字"
+                % win[-40:])
+        # 周报侧**一处都不该有**:它此前唯一那处就是被删掉的「落点表失效条件 ↔
+        # 主线翻转指标」,而周报流程里没有决策日志。这里写死 0 而不是复用上面
+        # 那套窗口判定 —— 窗口判定要求"每一处都得是决策日志那条",在一个根本
+        # 没有决策日志的文件里它恒真,等于不设防。
+        self.assertEqual(plain(WEEKLY).count("同源同字"), 0,
+                         "周报里又出现了同字要求 —— 周报没有决策日志,"
+                         "任何同字要求都只可能是被删掉的那条长回来了")
+
+    def test_the_old_coupling_sentences_are_gone_verbatim(self):
+        """逐字锚点是**补充**,不是主力(主力是上面那条普查)。
+
+        三串各自是被删掉那两句的**唯一开头**,留着任何一串都说明旧句只是被
+        改了半截。剥掉 `*` 之后比对,理由见 `plain` 的注释。
+        """
+        for phrase in ("并与该币种节判断环的翻转指标同源同字",
+                       "与本环的翻转指标同源同字",
+                       "与它归属主线的翻转指标同源同字"):
+            for name, path in self.HOSTS:
+                self.assertNotIn(phrase, plain(path),
+                                 "%s 里旧的同字要求还在:%s" % (name, phrase))
+
+    def test_daily_overview_column_means_what_must_not_happen(self):
+        seg = self.seg_or_fail(DAILY, D_OVERVIEW_TMPL_RE, "日报速览表模板段")
+        self.assertIn("什么没发生这条判断就作废", seg,
+                      "速览第 4 列没写明语义是「什么没发生就作废」")
+        self.assertIn("可观测量", seg, "速览第 4 列不再要求可观测量")
+        self.assertIn("`T+N`", seg, "速览第 4 列不再要求带 T+N")
+        self.assertIn("两处不得写成同一句", seg,
+                      "速览表模板段没写明它与翻转指标不得写成同一句")
+
+    def test_daily_states_both_definitions_side_by_side(self):
+        seg = self.seg_or_fail(DAILY, D_JUDGEMENT_RE, "日报判断环细则")
+        self.assertIn("什么没发生,这条判断就作废", seg, "失效条件的定义不在此处")
+        self.assertIn("什么一旦出现,就把这条判断改判", seg,
+                      "翻转指标的定义不在此处 —— 两条定义没有并列")
+        self.assertIn("禁止逐字相同、也禁止互为子串", seg,
+                      "没写明两处不得重合 —— 校验器那条新违规码在 SKILL 里无据")
+        self.assertIn("INVALIDATION_COLUMN_IS_FLIP_RESTATED", seg,
+                      "没点名违反时报哪个码,读者拿到红也对不上这一段")
+
+    def test_weekly_landing_column_means_what_must_not_happen(self):
+        seg = self.seg_or_fail(WEEKLY, W_LANDING_TMPL_RE, "周报落点表模板段")
+        self.assertIn("什么没发生这条判断就作废", seg,
+                      "落点表第 5 列没写明语义是「什么没发生就作废」")
+        self.assertIn("`T+N`", seg, "落点表第 5 列不再要求带 T+N")
+        self.assertIn("两处不得写成同一句", seg,
+                      "落点表模板段没写明它与主线翻转指标不得写成同一句")
+
+    def test_weekly_states_both_definitions_side_by_side(self):
+        seg = self.seg_or_fail(WEEKLY, W_INVALIDATION_RE, "周报两条定义并列段")
+        self.assertIn("什么没发生,这条判断就作废", seg, "失效条件的定义不在此处")
+        self.assertIn("什么一旦出现,就把这条主线改判", seg,
+                      "翻转指标的定义不在此处 —— 两条定义没有并列")
+        self.assertIn("禁止逐字相同、也禁止互为子串", seg, "没写明两处不得重合")
+        self.assertIn("INVALIDATION_COLUMN_IS_FLIP_RESTATED", seg,
+                      "没点名违反时报哪个码")
 
 
 class TransmissionSourceTest(SkillDocTestCase):

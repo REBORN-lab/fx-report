@@ -4674,6 +4674,11 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     # 给出、报告逐字引用」只是 SKILL 里的散文,校验器对它零强制 —— 脚本算出的
     # 结论走到报告边界就没人看着了。本仓库为此栽过 13 次同型。
     "REVIEW_SENTENCE_NOT_QUOTED": "DISPOSITION_REVIEW_QUOTE",
+    # 2026-08-15 新增:表里「失效条件」格与宿主段「翻转指标」句**不得重合**。
+    # 它是被删掉的 FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP 的**反面** —— 那条码
+    # 之所以只能声明不能判定,是因为 SKILL 当时要求二者同源同字;A 案解耦
+    # 之后该要求没了,重合从"规定形态"变成违规形态。
+    "INVALIDATION_COLUMN_IS_FLIP_RESTATED": "DISPOSITION_INVALIDATION_COLUMN",
 }
 # 同一层的**声明码**(走 notes,不改退出码,因此不带处置)。
 NEW_LAYER_NOTE_CODES = frozenset({
@@ -4697,9 +4702,14 @@ NEW_LAYER_NOTE_CODES = frozenset({
     # 速览表解析的三态(缺表 / 列名不符 / 缺行),各带计数。
     "OVERVIEW_TABLE_SKIPPED", "OVERVIEW_TABLE_COLUMN_MISMATCH",
     "OVERVIEW_ROW_MISSING",
-    # 速览「失效条件」列与节内翻转指标同源同字(SKILL 第 181/278 行要求),
-    # 因此**不能**当 ② 的失效条件来源 —— 这一条把该事实打进 stdout。
-    "FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP",
+    # ---- 2026-08-15:FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP **已删** ----
+    # 它是一条只声明不判定的码,存在的全部理由是 SKILL 当时要求速览「失效
+    # 条件」格与该币种节的翻转指标**同源同字**(那样任何"两者不得相同"的
+    # 检查都会恒红,只能把事实打印出来)。SKILL 走 A 案解耦之后理由消失,
+    # 判定升级成违规码 INVALIDATION_COLUMN_IS_FLIP_RESTATED。
+    # **本表第二次减项**,与加项同规格,显式记一笔。
+    # 新增的正向回执与周报侧唯一的跳过态:
+    "INVALIDATION_COLUMN_CHECKED", "WEEKLY_INVALIDATION_COLUMN_SKIPPED",
     # 周报:数字归属结构性不适用 / 无 --digest 时 ③ 判不了锚点。
     "WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE",
     # 结构化字段之前登记的条目没有 `claim`,判不了也不该判红;但"没查"与
@@ -4768,7 +4778,12 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # 60 → 63(2026-08-14,复盘句逐字引用):REVIEW_SENTENCE_NOT_QUOTED
         # (违规)+ REVIEW_SENTENCE_CHECKED(回执)+
         # REVIEW_SENTENCE_SKIPPED_AMBIGUOUS(跳过态)。
-        self.assertEqual(len(want), 63, len(want))
+        # 63 → 65(2026-08-15,失效条件/翻转指标解耦):删 1 条只声明的
+        # FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP,加 3 条 ——
+        # INVALIDATION_COLUMN_IS_FLIP_RESTATED(违规)、
+        # INVALIDATION_COLUMN_CHECKED(回执)、
+        # WEEKLY_INVALIDATION_COLUMN_SKIPPED(周报侧取不到宿主时的跳过态)。
+        self.assertEqual(len(want), 65, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4865,6 +4880,21 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 check_report.main(argv)
             out.append(("review-quote", buf.getvalue()))
+        # 第六次:速览「失效条件」格照抄了该币种节的翻转指标。宿主同为速览表
+        # 那份报告,但它的币种节原本只有一句"正文。"、判不出翻转指标句 ——
+        # 必须补一个判断环进去,否则 INVALIDATION_COLUMN_IS_FLIP_RESTATED
+        # 只有映射、没有任何用例触发。
+        with tempfile.TemporaryDirectory() as tmp:
+            restated = OVERVIEW_REPORT.replace(
+                "## 美元(USD)\n正文。",
+                "## 美元(USD)\n**分歧与判断**:关键假设 60.843 未变。"
+                "替代解释乙。翻转指标:甲位回落(T+2)。")
+            argv, _ = daily_files(tmp, report_text=restated,
+                                  extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main(argv)
+            out.append(("invalidation-column", buf.getvalue()))
         return out
 
     def test_every_cli_usage_code_is_reachable_and_carries_no_disposition(self):
@@ -5041,27 +5071,192 @@ class FlipIndicatorReachabilityTest(unittest.TestCase):
         self.assertTrue(any("FLIP_INDICATOR_IS_INVALIDATION_RESTATED" in x
                             for x in v), v)
 
-    def test_overview_invalidation_column_is_declared_as_the_flip_itself(self):
-        """速览「失效条件」列**不是** ② 可用的失效条件来源。
 
-        判据(本轮实测,先跑后抄):`skills/fx-daily-report/SKILL.md:181-182`
-        与 `:273` 两处逐字要求速览「失效条件」那一格与该币种节判断环的
-        **翻转指标同源同字**。在 reports/daily/2026-08-10..14 五份产物上
-        逐条比对,两侧去标点后**逐字相同 20/20**(08-13 那一份的五个节没有
-        独立的翻转指标句,不计入)。
-        于是"从速览表取失效条件喂给 ②"= 拿翻转指标和它自己比,按构造
-        必然 25/25 全红,一条真缺陷都不代表。
-        这一条不判违规,只**带计数声明**,让"该列不能当来源"这件事出现在
-        stdout 里,而不是只留在某个人的汇报里。
-        """
+RING_BODY = "**分歧与判断**:关键假设甲。替代解释乙。翻转指标:丙位回落(T+2)。"
+
+
+class InvalidationColumnIsIndependentTest(unittest.TestCase):
+    """2026-08-15:表里「失效条件」格与宿主段「翻转指标」句**必须是两件事**。
+
+    ---- 这条码替换掉了什么 ----
+    旧码 `FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP` 是一条**只声明、不判定**的
+    notes 行:它把"该列在 N/M 个币种上与翻转指标逐字相同"打进 stdout,却
+    不改退出码。它之所以只能声明,是因为 SKILL 当时**要求**二者同源同字
+    —— 任何"两者不得相同"的检查都会恒红。
+    2026-08-15 SKILL 走 A 案解耦(失效条件 =「什么没发生就作废」、翻转指标
+    =「什么一旦出现就改判」,两处不得写成同一句),那条要求没了,声明存在的
+    理由随之没了。本码是旧要求的**反面**:重合即违规,退出码非 0。
+    它同时是"解耦有没有真落地"的判据 —— 报告第 4 列若还抄着翻转指标,
+    这条码当场红。
+
+    ---- 与 ② `FLIP_INDICATOR_IS_INVALIDATION_RESTATED` 的分工 ----
+    ② 比的是**同一段正文内两句**的关系(关键假设的「不成立/作废」半句 vs
+    翻转指标句),本码比的是**表格与正文之间**。两者判的不是同一对字符串,
+    所以不合并、也不互相取代。
+    """
+
+    def one(self, cell, bodies=(RING_BODY,), name="PHP", notes=None):
+        return check_report.check_invalidation_independent(
+            [(name, cell, list(bodies))],
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+
+    def test_a_column_identical_to_the_flip_is_a_violation(self):
+        v = self.one("丙位回落(T+2)")
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_punctuation_only_edits_do_not_get_past_it(self):
+        """去标点空白后比对 —— 换个括号/顿号不算改写。"""
+        v = self.one("丙位回落,T+2")
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_a_column_that_is_a_substring_of_the_flip_is_a_violation(self):
+        """互为子串也算重合:把翻转指标截半句填进表格是最省事的那条路。"""
+        v = self.one("丙位回落")
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_a_flip_that_is_a_substring_of_the_column_is_a_violation(self):
+        """反方向同判:表格里在翻转指标外面套一层壳,重合照旧。"""
+        v = self.one("丙位回落(T+2)且乙未出现")
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_an_independent_column_passes(self):
+        """「什么没发生就作废」写法:与「什么一旦出现就改判」不重合。"""
+        v = self.one("T+2 内丙位一次都没有被触及")
+        self.assertEqual(v, [], v)
+
+    def test_the_violation_line_quotes_both_sides_and_its_own_disposition(self):
+        line = self.one("丙位回落(T+2)")[0]
+        self.assertIn("丙位回落(T+2)", line)
+        self.assertTrue(line.endswith(check_report.DISPOSITION_INVALIDATION_COLUMN),
+                        line)
+
+    def test_the_receipt_counts_only_rows_where_both_sides_have_a_payload(self):
+        """「查过」与「没得查」必须可分辨:一行缺格、一行宿主里没有翻转指标句,
+        两行都不该算进分子,而分母是表里的全部行。"""
         notes = []
-        body = "**分歧与判断**:关键假设甲。替代解释乙。翻转指标:丙位回落(T+2)。"
-        check_report.check_overview_invalidation_column(
-            {"PHP": {check_report.OVERVIEW_COL_INVALIDATION: "丙位回落(T+2)"}},
-            {"PHP": body}, notes=notes)
+        v = check_report.check_invalidation_independent(
+            [("USD", "T+2 内甲位一次都没有被触及", [RING_BODY]),
+             ("EUR", "", [RING_BODY]),
+             ("PHP", "T+2 内丙位一次都没有被触及", ["**分歧与判断**:只有正文。"])],
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+        self.assertEqual(v, [], v)
         line = "\n".join(notes)
-        self.assertIn("FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP", line)
-        self.assertRegex(line, r"1/1")
+        self.assertIn("INVALIDATION_COLUMN_CHECKED", line)
+        self.assertRegex(line, r"1/3")
+
+    def test_the_declaration_only_predecessor_is_gone(self):
+        """旧码不许再**被打出去** —— 它与新码对同一对字符串给出相反口径:
+        一个说"相同是 SKILL 规定的形态,只声明不判定",一个说"相同即违规"。
+        两条同时在,stdout 上会一边放行一边判红。
+
+        判据取 `_emitted_codes`(AST 里以 `码:` 开头的字符串字面量),
+        **不是"全文零提及"**。这不是放宽:能改变退出码的只有被发出的码,
+        而删除本身必须在源码里留下一笔说明(与冻结表那两次减项同规格),
+        说明必然要点名被删的那个码 —— 拿全文子串当判据会逼着把理由删掉,
+        下一个人就只看得到"这里少了点什么"。
+        再发出它同时会被 `test_the_full_code_inventory_is_frozen` 抓住
+        (它不在任何一张冻结表里),两条互为独立防线。
+        """
+        self.assertNotIn("FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP",
+                         _emitted_codes(check_report.__file__))
+        self.assertFalse(hasattr(check_report,
+                                 "check_overview_invalidation_column"))
+
+    def test_the_judgement_has_exactly_one_implementation(self):
+        """码字面量只准出现在唯一那个函数里 —— 日报与周报两条路径都落到它上面。
+        判定复制两份后漂移是本仓库栽过的坑(与 `_check_one_ring` 同规格)。"""
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        hosts = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Constant)
+                        and isinstance(sub.value, str)
+                        and sub.value.startswith(
+                            "INVALIDATION_COLUMN_IS_FLIP_RESTATED:")):
+                    hosts.add(node.name)
+        self.assertEqual(hosts, {"check_invalidation_independent"}, hosts)
+
+
+class DailyInvalidationColumnTest(unittest.TestCase):
+    """日报整条路径:速览表第 4 列 → 该币种节的翻转指标。"""
+
+    def report_with(self, usd_cell, usd_flip):
+        rep = OVERVIEW_REPORT.replace("| 甲位回落(T+2) |", "| %s |" % usd_cell)
+        return rep.replace(
+            "## 美元(USD)\n正文。",
+            "## 美元(USD)\n**分歧与判断**:关键假设 60.843 未变。"
+            "替代解释乙。翻转指标:%s。" % usd_flip)
+
+    def run_cli(self, report):
+        with tempfile.TemporaryDirectory() as tmp:
+            argv, _ = daily_files(tmp, report_text=report,
+                                  extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main(argv)
+            return rc, buf.getvalue()
+
+    def test_copying_the_flip_into_the_column_fails_the_report(self):
+        rc, out = self.run_cli(
+            self.report_with("甲位回落(T+2)", "甲位回落(T+2)"))
+        self.assertIn("INVALIDATION_COLUMN_IS_FLIP_RESTATED", out)
+        self.assertNotEqual(rc, 0)
+
+    def test_an_independent_column_leaves_a_counted_receipt(self):
+        rc, out = self.run_cli(
+            self.report_with("T+2 内甲位一次都没有被触及", "甲位回落(T+2)"))
+        self.assertNotIn("INVALIDATION_COLUMN_IS_FLIP_RESTATED", out)
+        self.assertIn("INVALIDATION_COLUMN_CHECKED", out)
+
+
+class WeeklyInvalidationColumnTest(unittest.TestCase):
+    """周报侧同构:`## 各币种一周落点` 表的「失效条件」列 ↔ 归属主线的
+    `**翻转指标(T+N)**` 段。
+
+    宿主由表里的**「主线归属」列**指定,不靠猜:猜就是编造(与
+    `check_weekly_judgement_ring` 拒绝"凭标题猜该不该有判断环"同一条理由)。
+    """
+
+    def weekly(self, cell, belong="主线一"):
+        return weekly_landing(cell, belong)
+
+    def test_copying_the_theme_flip_into_the_column_is_a_violation(self):
+        v = check_report.check_weekly(
+            self.weekly("下一次定盘比索退回 60.9 之下"))
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_an_independent_column_passes_with_a_receipt(self):
+        notes = []
+        v = check_report.check_weekly(
+            self.weekly("T+3 内比索一次都没有退回 60.9 之下"), notes=notes)
+        self.assertEqual(
+            [x for x in v if "INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x], [])
+        self.assertIn("INVALIDATION_COLUMN_CHECKED", "\n".join(notes))
+
+    def test_the_host_is_the_theme_named_in_the_belonging_column(self):
+        """归属写的是主线二时,拿的就不该是主线一那一段的翻转指标 ——
+        否则"宿主由归属列指定"这句话没有分辨力。"""
+        v = check_report.check_weekly(
+            self.weekly("下一次定盘比索退回 60.9 之下", belong="主线二"))
+        self.assertEqual(
+            [x for x in v if "INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x], [])
+
+    def test_a_missing_landing_table_is_declared_with_counts(self):
+        """WEEKLY_RING 那份 fixture 写的是 `## 各币种一周归因`(散文,不是表)
+        —— 取不到宿主时必须出声,而不是裸 PASS。"""
+        notes = []
+        check_report.check_weekly(WEEKLY_RING, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("WEEKLY_INVALIDATION_COLUMN_SKIPPED", line)
+        self.assertRegex(line, r"\d")
 
 
 WEEKLY_RING = """# 外汇周报 2026-W33
@@ -5099,6 +5294,21 @@ USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%
 # 参考价,它们来自日报那一侧,所以测试必须把日报正文一并传入 —— 否则红的是
 # NUMBER_UNTRACEABLE,与本类要测的判断环无关。
 RING_DAILY = ["PHP 60.843 60.9", "THB 35.2"]
+
+
+def weekly_landing(cell, belong="主线一"):
+    """在 WEEKLY_RING 之上补一张 `## 各币种一周落点` 表。
+
+    单独建而不是往 WEEKLY_RING 里塞 `%s`:WEEKLY_RING 已经被 `%` 格式化过
+    一轮,正文里留着一个真实的 `%`(周涨跌),再套一层格式化会当场炸。
+    """
+    row = ("| PHP | %s | 周涨跌 -0.192%% | 若比索升破 60.9 → 关注甲(T+3) | %s |"
+           % (belong, cell))
+    table = "\n".join(("## 各币种一周落点", "",
+                       "| 币种 | 主线归属 | 周内价格落点 | 下周判断(时限)"
+                       " | 失效条件 |",
+                       "| --- | --- | --- | --- | --- |", row, "", ""))
+    return WEEKLY_RING.replace("## 复盘汇总", table + "## 复盘汇总")
 
 
 class WeeklyJudgementRingTest(unittest.TestCase):
