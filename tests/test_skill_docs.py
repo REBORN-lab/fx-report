@@ -779,9 +779,25 @@ class InvalidationAndFlipAreDecoupledTest(SkillDocTestCase):
         self.assertIn("什么没发生这条判断就作废", seg,
                       "速览第 4 列没写明语义是「什么没发生就作废」")
         self.assertIn("可观测量", seg, "速览第 4 列不再要求可观测量")
-        self.assertIn("`T+N`", seg, "速览第 4 列不再要求带 T+N")
+        # 2026-08-15 第二轮:时限口径由「并带 `T+N`」改成「`T+N` 或年历发布日」。
+        # 旧写法与 reports/daily/2026-08-14.md 附录 D 的年历规则(触发绑某期数据
+        # 发布时**不得写 T+N**)互斥,实测 30 格里 3 格写的正是年历日期。
+        self.assertIn("时限(`T+N`或年历发布日)", seg,   # seg 已去空白
+                      "速览第 4 列不再要求带时限,或仍把年历发布日排除在外")
         self.assertIn("两处不得写成同一句", seg,
                       "速览表模板段没写明它与翻转指标不得写成同一句")
+
+    def test_daily_overview_column_bans_the_two_machine_checked_forms(self):
+        """两条新码必须在**写作时读者眼睛落到的那一段**里点名 ——
+        判据在校验器里、规则却只写在别处,等于让作者靠猜。"""
+        seg = self.seg_or_fail(DAILY, D_OVERVIEW_TMPL_RE, "日报速览表模板段")
+        self.assertIn("INVALIDATION_COLUMN_VACUOUS", seg,
+                      "空洞占位那条码没在速览表模板段点名")
+        self.assertIn("INVALIDATION_COLUMN_MIRRORS_TRIGGER", seg,
+                      "机械否定那条码没在速览表模板段点名")
+        self.assertIn("机械否定", seg, "没写明第 4 列不得是第 2 列的机械否定")
+        for axis in ("可观测量", "时限"):
+            self.assertIn(axis, seg, "没写明两条轴里的「%s」轴" % axis)
 
     def test_daily_states_both_definitions_side_by_side(self):
         seg = self.seg_or_fail(DAILY, D_JUDGEMENT_RE, "日报判断环细则")
@@ -797,9 +813,26 @@ class InvalidationAndFlipAreDecoupledTest(SkillDocTestCase):
         seg = self.seg_or_fail(WEEKLY, W_LANDING_TMPL_RE, "周报落点表模板段")
         self.assertIn("什么没发生这条判断就作废", seg,
                       "落点表第 5 列没写明语义是「什么没发生就作废」")
-        self.assertIn("`T+N`", seg, "落点表第 5 列不再要求带 T+N")
+        self.assertIn("时限(`T+N`或年历发布日)", seg,   # seg 已去空白
+                      "落点表第 5 列不再要求带时限,或仍把年历发布日排除在外")
         self.assertIn("两处不得写成同一句", seg,
                       "落点表模板段没写明它与主线翻转指标不得写成同一句")
+
+    def test_weekly_landing_column_bans_the_two_machine_checked_forms(self):
+        seg = self.seg_or_fail(WEEKLY, W_LANDING_TMPL_RE, "周报落点表模板段")
+        self.assertIn("INVALIDATION_COLUMN_VACUOUS", seg,
+                      "空洞占位那条码没在落点表模板段点名")
+        self.assertIn("INVALIDATION_COLUMN_MIRRORS_TRIGGER", seg,
+                      "机械否定那条码没在落点表模板段点名")
+        self.assertIn("主线归属", seg,
+                      "落点表模板段没写明归属格必须命名真实主线")
+
+    def test_weekly_landing_requires_a_real_theme_in_the_belonging_column(self):
+        """归属格由报告自己写,修前全仓零检查 —— 被查方自选宿主。
+        校验器补了 `WEEKLY_THEME_ATTRIBUTION_UNKNOWN`,SKILL 必须同步点名。"""
+        seg = self.seg_or_fail(WEEKLY, W_LANDING_TMPL_RE, "周报落点表模板段")
+        self.assertIn("WEEKLY_THEME_ATTRIBUTION_UNKNOWN", seg,
+                      "归属格那条码没在落点表模板段点名")
 
     def test_weekly_states_both_definitions_side_by_side(self):
         seg = self.seg_or_fail(WEEKLY, W_INVALIDATION_RE, "周报两条定义并列段")

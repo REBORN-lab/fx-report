@@ -226,8 +226,27 @@ DISPOSITION_FLIP = ("处置:翻转指标写「什么一旦出现就改判」(可
                     "不得把后者换个说法当前者交差")
 DISPOSITION_INVALIDATION_COLUMN = (
     "处置:表里那一格改写成**这条判断的失效条件** —— 什么**没**发生它就作废"
-    "(该判断的保质期),必须是价格或指标的可观测量并带 T+N;"
+    "(该判断的保质期),必须是价格或指标的可观测量并带时限(T+N 或年历发布日);"
     "「什么一旦出现就改判」留给宿主段的翻转指标,两处不得写成同一句")
+DISPOSITION_INVALIDATION_VACUOUS = (
+    "处置:把占位词换成**这条判断的保质期** —— 哪一个价位/指标读数在哪个"
+    "期限内一次都没有出现,这一行就作废;数只准从快照与要点表里抄。"
+    "写不出保质期时要改的是判断本身,不是这一格")
+DISPOSITION_INVALIDATION_MIRROR = (
+    "处置:这一格要么带一个同行触发列(日报「条件方向」/周报「下周判断」)"
+    "没有的可核对量(区间另一端、"
+    "上一次定盘价、政策利率/CPI 当前值 —— 都得见于快照或要点表),"
+    "要么写出它**自己的**时限(年历上的发布日或议息日,与触发窗口不同长)。"
+    "**不必两样都有**,一样即可;两样都没有时这一格只是把触发条件取了个反,"
+    "读者拿它核对不出任何触发列以外的东西")
+DISPOSITION_FLIP_HOST = (
+    "处置:宿主段里补回**本判断自己的**翻转指标句(`翻转指标:…`)—— "
+    "替代解释括号里那句「其翻转指标」是替代解释的,不是本判断的,"
+    "两者不可互相顶替;补齐之前这一行的独立性判不了,按失败关闭")
+DISPOSITION_THEME_ATTRIBUTION = (
+    "处置:「主线归属」格必须逐字命名**本周报里真实存在的**主线段"
+    "(`### 主线N:…` 的段名);写一个不存在的名字等于让被查方自选宿主,"
+    "翻转指标的比对当场落空")
 DISPOSITION_ANCHOR = ("处置:在关键假设句里引一个来自快照或要点表的**当前值**;"
                       "不要写阈值 —— 阈值是尚未发生的前瞻价位、不在快照里,"
                       "写进去会被 NUMBER_UNTRACEABLE 当场拦下")
@@ -790,14 +809,86 @@ INVALIDATION_SCOPE_DAILY = "币种节"
 INVALIDATION_SCOPE_WEEKLY = "主线段"
 
 
+# ---- 「失效条件」格自身的两条判据(2026-08-15 第二轮补)----
+# 修前这一列除「不得与翻转指标重合」之外**零求值**,四路对抗证伪的实测读数
+# (先跑后抄,reports/daily/2026-08-14.md + 生产命令):
+#   col4 = col2 逐字复制                   → rc=0 / 5/5 / CHECK PASSED
+#   col4 = col2 去掉「→ 关注…」半句        → rc=0 / 5/5 / CHECK PASSED
+#   col4 = 「无」                           → rc=0 / 5/5 / CHECK PASSED
+#   col4 = 「若无新增信息、情况未变(T+3)」 → rc=0 / 5/5 / CHECK PASSED
+# 最后一种是 SKILL 速览表模板段**逐字禁止**的写法。闸门给的压力方向因此与
+# SKILL 要求的方向相反:让这一格变绿最省力的办法就是把它写空洞。
+#
+# **占位词表**与**空洞短语表**都是显式枚举,逐元素冻结在测试里。诚实边界:
+# 同义改写(「暂时看不出」)绕得过去 —— 它挡的是 SKILL 已逐字点名的那几种。
+VACUOUS_INVALIDATION_CELLS = ("", "无", "暂无", "不适用", "待定", "同上", "略")
+VACUOUS_INVALIDATION_PHRASES = ("若无新增信息", "无新增信息", "情况未变",
+                                "无重大变化", "维持现状", "视情况而定")
+# 时限串:`T+N` 与年历发布日两种写法都认。**两种都认**是 2026-08-15 的裁决 ——
+# SKILL 原先只写「并带 T+N」,而 reports/daily/2026-08-14.md 附录 D 的年历规则
+# 要求"触发绑某期数据发布时时限必须取年历发布日、不得写 T+N",两条互斥;
+# 实测 30 格里 3 格(08-13 USD、08-14 USD、weekly USD)写的正是年历日期。
+DEADLINE_RE = re.compile(r"T\+\d+|\d{4}-\d{2}-\d{2}")
+
+
+def _cell_quantities(text):
+    """一格里的**可核对量**:先剥掉时限串(它归时限轴管),再走 `numbers_in`。
+
+    不剥时限时 `T+3` 会留下一个 `3`,于是"两格时限相同"会被误读成
+    "可观测量轴上有共同项",两条轴就不独立了。
+    """
+    return numbers_in(DEADLINE_RE.sub(" ", text or ""))
+
+
+def _cell_deadlines(text):
+    return set(DEADLINE_RE.findall(text or ""))
+
+
+def _vacuous_invalidation(cell):
+    """这一格空洞的**理由串**;不空洞返回 `""`。判据在去标点空白之后比 ——
+    往禁用短语中缝插一个顿号就绕过去,那不叫改写。"""
+    s = _RING_STRIP_RE.sub("", cell or "")
+    if s in VACUOUS_INVALIDATION_CELLS:
+        return ("整格去掉标点空白后是「%s」,属占位词表 %s"
+                % (s, "/".join(x or "(空)" for x in VACUOUS_INVALIDATION_CELLS)))
+    for p in VACUOUS_INVALIDATION_PHRASES:
+        if p in s:
+            return "含 SKILL 逐字禁止的空洞措辞「%s」" % p
+    return ""
+
+
+# 替代解释自带的那一条翻转指标,写法是「其翻转指标」/「它自己的翻转指标」。
+# 判据取标签**紧邻的前缀**,冻结在测试里。
+ALT_FLIP_PREFIXES = ("其", "自己的")
+
+
 def _flip_payloads(body):
-    """该段正文里全部**带载荷**的翻转指标句载荷。载荷口径见 `_ring_payload`。"""
-    return [p for p in (_ring_payload(s, (FLIP_LABEL,))
-                        for s in split_sentences(body or "")
-                        if FLIP_LABEL in s) if p]
+    """该段正文里带载荷的翻转指标句载荷,分成 (主判断的, 替代解释自带的)。
+
+    ---- 为什么必须分开(2026-08-15 第二轮)----
+    修前这里把整段里**所有**含「翻转指标」四字的句子一起收进一个池子。实测:
+    reports/daily/2026-08-14.md 的 EUR 第 4 列抄回该节翻转指标、再把该节
+    `翻转指标:` 改成 `反转指标:`(只此一处),生产命令打出
+    `INVALIDATION_COLUMN_CHECKED: 5/5` + rc=0 —— 主判断那条离池之后池仍非空
+    (替代解释括号里那句还在),`checked += 1` 照走,回执于是宣称"与对应币种节
+    翻转指标比过了",而那东西此刻并不存在。
+    分开之后:主判断那条取不到即按失败关闭并出声,替代解释那条**仍留在比对
+    池里**(把它抄进表格与抄主判断那条是同一类错,不因本轮而放行)。
+    """
+    own, alt = [], []
+    for s in split_sentences(body or ""):
+        if FLIP_LABEL not in s:
+            continue
+        p = _ring_payload(s, (FLIP_LABEL,))
+        if not p:
+            continue
+        head = s[:s.rfind(FLIP_LABEL)]
+        (alt if head.endswith(ALT_FLIP_PREFIXES) else own).append(p)
+    return own, alt
 
 
-def check_invalidation_independent(pairs, scope, notes=None):
+def check_invalidation_independent(pairs, scope, notes=None,
+                                   trigger_label=OVERVIEW_COL_TRIGGER):
     """表里「失效条件」格与它宿主段的「翻转指标」句**必须是两件事**。重合即违规。
 
     ---- 这条码替换掉了什么(2026-08-15)----
@@ -832,27 +923,99 @@ def check_invalidation_independent(pairs, scope, notes=None):
     「退回」)绕得过去 —— 它挡的是最省事的那条路(原样搬过去),不是语义等价。
     语义判断做不了,不假装能做。
 
-    pairs : [(行名, 「失效条件」格原文, [宿主段正文, …])]。宿主可以有多段 ——
-            周报一行可归属多条主线,任一条的翻转指标与它重合都算。
-    scope : 打进违规行与声明里的宿主名(`INVALIDATION_SCOPE_*`)。
-    notes : **出参**,同 check_daily。恒打一条正向回执 —— 「查过且全过」与
-            「两侧取不到载荷、根本没得查」在返回值上完全同形。
+    ---- 本函数守的**三层**(2026-08-15 第二轮把后两层补上)----
+    ① 独立性:这一格 vs 宿主段的翻转指标(上面那两段说的就是它);
+    ② 自身不空洞:`INVALIDATION_COLUMN_VACUOUS` —— SKILL 逐字禁止的写法;
+    ③ 自身不是第 2 列的机械否定:`INVALIDATION_COLUMN_MIRRORS_TRIGGER`。
+    ②③ 与 ① 判的不是同一对字符串:① 比表↔节,②③ 比**这一格自己**与同行
+    「条件方向」格。修前只有 ①,于是把这一格写成「无」或写成第 2 列的逐字
+    复制,四道读数全是 `rc=0 / 5/5 / CHECK PASSED`(实测见 `_flip_payloads`
+    上面那段)—— 闸门给的压力方向与 SKILL 要求的方向正好相反。
 
-    **本函数是该码字面量的唯一产地**,日报与周报两条路径都落到它上面
+    ③ 的两条轴(**任一条上与同行第 2 列不同即通过**):
+      轴 A 可观测量:本格带一个第 2 列没有的可核对量(数字 token,时限先剥);
+      轴 B 时限    :本格时限非空、且与第 2 列的时限不同。
+    **刻意不写成"必须出现新数字"**:那会逼出编造的数(阈值类前瞻价位按定义
+    不在快照里,写进去当场撞 `NUMBER_UNTRACEABLE`,两条规则会互斥 —— 本仓
+    四个月前撞过一次)。轴 B 单独就能让一格通过:保质期与触发窗口不同长,
+    是这一列本来就该交付的信息,写出那个日期不需要任何新数字。
+
+    pairs : [(行名, 「失效条件」格原文, 同行「条件方向」格原文, [宿主段正文, …])]。
+            宿主可以有多段 —— 周报一行可归属多条主线,任一条的翻转指标与它
+            重合都算。格原文为 `None` = **这一行根本不存在**(表里缺行,已由
+            调用点的 `*_ROW_MISSING` 点名);空串 = 行在、格空着,那是 ② 的事。
+    scope : 打进违规行与声明里的宿主名(`INVALIDATION_SCOPE_*`)。
+    trigger_label : 同行那个"触发"列的**真名**。日报叫「条件方向」,周报叫
+            「下周判断」;写死一个会让另一侧的回执说一件不存在的事,而
+            「打印通过但守的不是它声称的东西」是本仓最贵的一类缺陷。
+    notes : **出参**,同 check_daily。恒打一条正向回执,且**两层各带一个分数** ——
+            「查过且全过」与「取不到载荷、根本没得查」在返回值上完全同形。
+
+    **本函数是这四条码字面量的唯一产地**,日报与周报两条路径都落到它上面
     (由 InvalidationColumnIsIndependentTest 的 AST 断言钉住)。
     """
-    v, checked = [], 0
-    for name, cell, bodies in pairs:
-        col = _RING_STRIP_RE.sub("", cell or "")
-        pays = []
+    v, checked, self_checked, self_total = [], 0, 0, 0
+    for name, cell, trigger, bodies in pairs:
+        if cell is None:
+            continue            # 这一行不存在,由调用点的 *_ROW_MISSING 负责
+        self_total += 1
+        # ---- ② 空洞 ----
+        why = _vacuous_invalidation(cell)
+        if why:
+            v.append("INVALIDATION_COLUMN_VACUOUS: %s 的「%s」格是空洞占位"
+                     "(%s);原文:「%s」;%s"
+                     % (name, OVERVIEW_COL_INVALIDATION, why, cell,
+                        DISPOSITION_INVALIDATION_VACUOUS))
+        elif trigger is None:
+            pass                # 同行「条件方向」格取不到,③ 判不了,不算分子
+        else:
+            # ---- ③ 机械否定 ----
+            self_checked += 1
+            own_q = _cell_quantities(cell) - _cell_quantities(trigger)
+            dl, tdl = _cell_deadlines(cell), _cell_deadlines(trigger)
+            if not own_q and not (dl and dl != tdl):
+                v.append("INVALIDATION_COLUMN_MIRRORS_TRIGGER: %s 的「%s」格是"
+                         "同行「%s」格的机械否定 —— 两条轴上都没有差异:"
+                         "可观测量轴,本格的 %d 个可核对量(%s)一个都不出"
+                         "「%s」格的 %d 个(%s)之外;时限轴,本格时限 %s 与"
+                         "「%s」格的时限 %s 相同或本格没写时限。"
+                         "「%s」格原文:「%s」;「%s」格原文:「%s」;%s"
+                         % (name, OVERVIEW_COL_INVALIDATION,
+                            trigger_label,
+                            len(_cell_quantities(cell)),
+                            "、".join(sorted(_cell_quantities(cell))) or "无",
+                            trigger_label,
+                            len(_cell_quantities(trigger)),
+                            "、".join(sorted(_cell_quantities(trigger))) or "无",
+                            "、".join(sorted(dl)) or "无",
+                            trigger_label,
+                            "、".join(sorted(tdl)) or "无",
+                            OVERVIEW_COL_INVALIDATION, cell,
+                            trigger_label, trigger,
+                            DISPOSITION_INVALIDATION_MIRROR))
+        # ---- ① 独立性 ----
+        col = _RING_STRIP_RE.sub("", cell)
+        own, alt = [], []
         for body in bodies:
-            pays.extend(_flip_payloads(body))
-        # 两侧都得有载荷才比得起来。空载荷不比:`"" in x` 恒真,会把"这一格
-        # 空着"误判成"照抄了翻转指标" —— 两件事不同因不同果,不得同判。
-        if not col or not pays:
+            o, a = _flip_payloads(body)
+            own.extend(o)
+            alt.extend(a)
+        if not bodies:
+            continue            # 宿主一段都没有:周报侧由归属码负责出声
+        if not own:
+            # 主判断那条取不到 → **按失败关闭**。修前这里靠"池非空"就
+            # `checked += 1`,替代解释自带的那句足以把池喂饱,回执照印 5/5。
+            v.append("INVALIDATION_COLUMN_FLIP_HOST_MISSING: %s 的宿主%s里"
+                     "取不到**本判断自己的**翻转指标句(替代解释自带的"
+                     "「其翻转指标」%d 句不算),这一行的独立性未校验;%s"
+                     % (name, scope, len(alt), DISPOSITION_FLIP_HOST))
+            continue
+        # 空载荷不比:`"" in x` 恒真,会把"这一格空着"误判成"照抄了翻转指标"
+        # —— 两件事不同因不同果,不得同判(空着已由 ② 判掉)。
+        if not col:
             continue
         checked += 1
-        for p in pays:
+        for p in own + alt:
             if col == p or col in p or p in col:
                 v.append("INVALIDATION_COLUMN_IS_FLIP_RESTATED: %s 的「%s」格与"
                          "该%s的翻转指标去掉标点与空白后重复(逐字相同或互为"
@@ -862,9 +1025,12 @@ def check_invalidation_independent(pairs, scope, notes=None):
                             DISPOSITION_INVALIDATION_COLUMN))
                 break               # 同一格已判红,不按宿主段数叠红
     if notes is not None:
-        notes.append("INVALIDATION_COLUMN_CHECKED: %d/%d 行的「%s」格与对应%s"
-                     "翻转指标的独立性已校验(两侧都取得到载荷的行才算分子)"
-                     % (checked, len(pairs), OVERVIEW_COL_INVALIDATION, scope))
+        notes.append("INVALIDATION_COLUMN_CHECKED: 独立性 %d/%d 行的「%s」格与"
+                     "对应%s翻转指标已比对(两侧都取得到载荷的行才算分子);"
+                     "自身判据 %d/%d 行(空洞 / 机械否定;同行取得到「%s」格、"
+                     "且本格非空洞的行才算分子)"
+                     % (checked, len(pairs), OVERVIEW_COL_INVALIDATION, scope,
+                        self_checked, self_total, trigger_label))
     return v
 
 
@@ -1589,28 +1755,54 @@ def theme_subsections(secs):
 # 路刻意不选,猜就是编造(与 check_weekly_judgement_ring 拒绝猜同一条理由)。
 WEEKLY_LANDING_SECTION_KEY = "各币种一周落点"
 WEEKLY_COL_THEME = "主线归属"
+WEEKLY_COL_TRIGGER = "下周判断"
 WEEKLY_LANDING_COLUMNS = (OVERVIEW_COL_CURRENCY, WEEKLY_COL_THEME,
-                          OVERVIEW_COL_INVALIDATION)
+                          WEEKLY_COL_TRIGGER, OVERVIEW_COL_INVALIDATION)
 
 
 def theme_names(secs):
-    """主线段 → [(段名, 正文)]。段名取标题里冒号之前那一截,与
-    `check_weekly_judgement_ring` 的取名口径**同一处来源**,不另抄一份。"""
+    """主线段 → [(段名, 正文)]。段名取标题里冒号之前那一截。
+
+    **本函数是段名判据的唯一产地**:`check_weekly_judgement_ring` 与
+    `weekly_invalidation_pairs` 都调它,谁都不另抄一份。
+    2026-08-15 之前这句话是**假的** —— 前者里另有一份逐字拷贝,而这条
+    docstring 声称二者同源。实测漂移后果:把这里改成 `h.strip() or h`,
+    生产闸门打出 `INVALIDATION_COLUMN_CHECKED: 0/5` 而 **rc=0 全绿**
+    (归属列写「主线二」,段名却变成整条标题,`n in belong` 全不成立),
+    只有单测拦得住。由 ThemeNamingSingleSourceTest 的 AST 断言 + 一条行为
+    断言钉住(与 `_check_one_ring` 同规格)。
+    """
     return [(re.split(r"[::]", h, 1)[0].strip() or h, b)
             for h, b in theme_subsections(secs)]
 
 
-def weekly_invalidation_pairs(secs):
-    """周报落点表 → `check_invalidation_independent` 要的 pairs;取不到返回 None。
+def weekly_invalidation_pairs(secs, notes=None):
+    """周报落点表 → (`check_invalidation_independent` 要的 pairs, 违规行)。
 
-    返回 None 的三态(调用点统一打一条带计数的跳过声明):没有落点表 /
-    表头三列不是恰好各一列(**失败关闭**,少一列时按剩下的列硬取就是错位) /
+    pairs 为 None 的三态(调用点统一打一条带计数的跳过声明):没有落点表 /
+    表头四列不是恰好各一列(**失败关闭**,少一列时按剩下的列硬取就是错位) /
     没有主线段。
+
+    ---- 分母口径对齐日报侧(2026-08-15 第二轮)----
+    修前这里对短行与币种格不在 `CURRENCIES` 的行直接 `continue`,而调用点的
+    分母是 `len(pairs)` —— 两头都不进。实测(reports/weekly/2026-W33.md):
+      BRL 第 5 列抄主线二翻转指标(对照)  rc=1  INVALIDATION_COLUMN_IS_FLIP_RESTATED
+      同上 + 币种格写成 BRLX              rc=0  INVALIDATION_COLUMN_CHECKED: 4/4
+      同上 + BRL 行少一格(短行)         rc=0  INVALIDATION_COLUMN_CHECKED: 4/4
+    抄袭那一行把自己从分母里抹掉,回执于是把 4 行印成"全查过了"。日报侧同型
+    事故的读数完全不同(`OVERVIEW_ROW_MISSING: 速览表缺少 1/5 …` + `4/5`),
+    差别只在调用点怎么造 pairs。本函数改用**应有的行集合**(五个币种)当分母,
+    丢行由 `WEEKLY_LANDING_ROW_MISSING` 点名。
+
+    ---- 归属格必须命名真实主线 ----
+    「主线归属」格由报告自己写,修前全仓没有任何检查要求它命名一条真实存在
+    的主线 —— 归属写成「主线九」时 hosts 为空,①③ 一起落空而回执只少一分。
+    本函数为它出 `WEEKLY_THEME_ATTRIBUTION_UNKNOWN`(违规,前置码)。
     """
     sec = find_section(secs, WEEKLY_LANDING_SECTION_KEY)
     rows = _pipe_rows(sec[1]) if sec else []
     if not rows:
-        return None
+        return None, []
     header = rows[0]
     idx = {}
     for key in WEEKLY_LANDING_COLUMNS:
@@ -1618,11 +1810,11 @@ def weekly_invalidation_pairs(secs):
         if len(hits) == 1:
             idx[key] = hits[0]
     if len(idx) != len(WEEKLY_LANDING_COLUMNS):
-        return None
+        return None, []
     named = theme_names(secs)
     if not named:
-        return None
-    out = []
+        return None, []
+    v, by_cur = [], {}
     for cells in rows[1:]:
         if max(idx.values()) >= len(cells):
             continue
@@ -1631,8 +1823,25 @@ def weekly_invalidation_pairs(secs):
             continue
         belong = cells[idx[WEEKLY_COL_THEME]]
         hosts = [b for n, b in named if n and n in belong]
-        out.append((cur, cells[idx[OVERVIEW_COL_INVALIDATION]], hosts))
-    return out
+        if not hosts:
+            v.append("WEEKLY_THEME_ATTRIBUTION_UNKNOWN: %s 行的「%s」格"
+                     "「%s」没有命名本周报里任何一条真实主线(现有 %d 条:%s),"
+                     "这一行的「%s」格与翻转指标的独立性因此无处可比;%s"
+                     % (cur, WEEKLY_COL_THEME, belong, len(named),
+                        "、".join(n for n, _ in named),
+                        OVERVIEW_COL_INVALIDATION,
+                        DISPOSITION_THEME_ATTRIBUTION))
+        by_cur[cur] = (cells[idx[OVERVIEW_COL_INVALIDATION]],
+                       cells[idx[WEEKLY_COL_TRIGGER]], hosts)
+    absent = [c for c in CURRENCIES if c not in by_cur]
+    if absent and notes is not None:
+        notes.append("WEEKLY_LANDING_ROW_MISSING: 「%s」表缺少 %d/%d 个币种的"
+                     "可解析行(%s;短行与币种格写坏都算),这些币种的「%s」格"
+                     "一条判据都未校验"
+                     % (WEEKLY_LANDING_SECTION_KEY, len(absent),
+                        len(CURRENCIES), "、".join(absent),
+                        OVERVIEW_COL_INVALIDATION))
+    return [(c,) + by_cur.get(c, (None, None, [])) for c in CURRENCIES], v
 
 
 def check_weekly_judgement_ring(secs, report, allowed, notes=None):
@@ -1677,10 +1886,12 @@ def check_weekly_judgement_ring(secs, report, allowed, notes=None):
                      "ASSUMPTION_UNANCHORED 未校验(另两码照常执行)"
                      % len(themes))
     unreachable = []
-    for heading, body in themes:
-        # 段名取标题里冒号之前那一截(`主线一:…` → `主线一`),违规行要靠它
-        # 定位到具体哪一段;整条标题太长,打出来读者反而找不到重点
-        name = re.split(r"[::]", heading, 1)[0].strip() or heading
+    # 段名取标题里冒号之前那一截(`主线一:…` → `主线一`),违规行要靠它定位到
+    # 具体哪一段;整条标题太长,打出来读者反而找不到重点。判据只有 `theme_names`
+    # 一份 —— 2026-08-15 之前这里是它的**第二份逐字拷贝**,而 `theme_names` 的
+    # docstring 却写着"同一处来源,不另抄一份"。漂移实测:改动其中一份,生产
+    # 闸门打 `INVALIDATION_COLUMN_CHECKED: 0/5` 而 rc=0 全绿。
+    for name, body in theme_names(secs):
         found, flip_unreachable = _check_one_ring(name, body, allowed)
         v.extend(found)
         if flip_unreachable:
@@ -1940,6 +2151,7 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
         bodies = {c: find_section(secs, c)[1] for c in sorted(covered)}
         v.extend(check_invalidation_independent(
             [(c, (rows.get(c) or {}).get(OVERVIEW_COL_INVALIDATION),
+              (rows.get(c) or {}).get(OVERVIEW_COL_TRIGGER),
               [bodies.get(c)]) for c in sorted(covered)],
             INVALIDATION_SCOPE_DAILY, notes=notes))
         if decision_entries is not None:
@@ -2350,7 +2562,8 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
     v.extend(check_weekly_judgement_ring(secs, report, allowed, notes=notes))
     # 落点表「失效条件」列与归属主线翻转指标的独立性。日报侧的同构检查在
     # check_daily 里,两侧共用 `check_invalidation_independent` —— 判定只有一份。
-    pairs = weekly_invalidation_pairs(secs)
+    pairs, pair_v = weekly_invalidation_pairs(secs, notes=notes)
+    v.extend(pair_v)
     if pairs is None:
         if notes is not None:
             notes.append("WEEKLY_INVALIDATION_COLUMN_SKIPPED: 周报取不到"
@@ -2362,7 +2575,8 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
                             len(CURRENCIES), OVERVIEW_COL_INVALIDATION))
     else:
         v.extend(check_invalidation_independent(
-            pairs, INVALIDATION_SCOPE_WEEKLY, notes=notes))
+            pairs, INVALIDATION_SCOPE_WEEKLY, notes=notes,
+            trigger_label=WEEKLY_COL_TRIGGER))
     if isinstance(digest, dict):
         # 与日报的 GAP_OMITTED 对称:聚合出的每个缺漏源都必须在缺漏汇总里出现
         by_source = digest.get("gaps_by_source")

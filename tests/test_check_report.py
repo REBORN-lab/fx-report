@@ -4679,6 +4679,19 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     # 之所以只能声明不能判定,是因为 SKILL 当时要求二者同源同字;A 案解耦
     # 之后该要求没了,重合从"规定形态"变成违规形态。
     "INVALIDATION_COLUMN_IS_FLIP_RESTATED": "DISPOSITION_INVALIDATION_COLUMN",
+    # ---- 2026-08-15 第二轮:第 4 列此前除「不得与翻转指标重合」外**零求值** ----
+    # 四路对抗证伪实测,四种写法全是 rc=0 / 5/5 / CHECK PASSED,其中
+    # 「若无新增信息、情况未变(T+3)」是 SKILL 速览表模板段逐字禁止的。
+    # 闸门给的压力方向因此与 SKILL 要求的方向相反 —— 把这格写空洞最省力。
+    "INVALIDATION_COLUMN_VACUOUS": "DISPOSITION_INVALIDATION_VACUOUS",
+    "INVALIDATION_COLUMN_MIRRORS_TRIGGER": "DISPOSITION_INVALIDATION_MIRROR",
+    # 修前 `_flip_payloads` 不区分「本判断的翻转指标」与「替代解释自带的
+    # 其翻转指标」:把本判断那句的标签改两个字,池仍非空,`checked += 1`
+    # 照走,回执宣称与该币种节翻转指标比过了 —— 而那东西此刻不存在。
+    "INVALIDATION_COLUMN_FLIP_HOST_MISSING": "DISPOSITION_FLIP_HOST",
+    # 「主线归属」格由报告自己写,修前全仓没有任何检查要求它命名一条真实
+    # 存在的主线 —— 被查方自选宿主,归属写歪时比对当场落空而只少一分。
+    "WEEKLY_THEME_ATTRIBUTION_UNKNOWN": "DISPOSITION_THEME_ATTRIBUTION",
 }
 # 同一层的**声明码**(走 notes,不改退出码,因此不带处置)。
 NEW_LAYER_NOTE_CODES = frozenset({
@@ -4710,6 +4723,9 @@ NEW_LAYER_NOTE_CODES = frozenset({
     # **本表第二次减项**,与加项同规格,显式记一笔。
     # 新增的正向回执与周报侧唯一的跳过态:
     "INVALIDATION_COLUMN_CHECKED", "WEEKLY_INVALIDATION_COLUMN_SKIPPED",
+    # 2026-08-15 第二轮:周报落点表的丢行声明。分母口径改成**应有的行集合**
+    # (五个币种)之后,"少一行"不再是从分母里消失,而是这条带计数的点名。
+    "WEEKLY_LANDING_ROW_MISSING",
     # 周报:数字归属结构性不适用 / 无 --digest 时 ③ 判不了锚点。
     "WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE",
     # 结构化字段之前登记的条目没有 `claim`,判不了也不该判红;但"没查"与
@@ -4783,7 +4799,11 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # INVALIDATION_COLUMN_IS_FLIP_RESTATED(违规)、
         # INVALIDATION_COLUMN_CHECKED(回执)、
         # WEEKLY_INVALIDATION_COLUMN_SKIPPED(周报侧取不到宿主时的跳过态)。
-        self.assertEqual(len(want), 65, len(want))
+        # 65 → 70(2026-08-15 第二轮,第 4 列从零求值到有判据):加 4 条违规
+        # (INVALIDATION_COLUMN_VACUOUS / …_MIRRORS_TRIGGER /
+        #  …_FLIP_HOST_MISSING / WEEKLY_THEME_ATTRIBUTION_UNKNOWN)
+        # 与 1 条声明(WEEKLY_LANDING_ROW_MISSING)。
+        self.assertEqual(len(want), 70, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4885,16 +4905,53 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # 必须补一个判断环进去,否则 INVALIDATION_COLUMN_IS_FLIP_RESTATED
         # 只有映射、没有任何用例触发。
         with tempfile.TemporaryDirectory() as tmp:
+            # 2026-08-15 第二轮起 OVERVIEW_REPORT 的第 4 列本身已是合规形态
+            # (带自己的时限),所以这里要**把它改回抄袭形态**才钓得到这条码。
             restated = OVERVIEW_REPORT.replace(
+                "| 甲一次都没有升破 60.843(时限:2026-08-27) |",
+                "| 甲位回落 60.843(T+3) |").replace(
                 "## 美元(USD)\n正文。",
                 "## 美元(USD)\n**分歧与判断**:关键假设 60.843 未变。"
-                "替代解释乙。翻转指标:甲位回落(T+2)。")
+                "替代解释乙。翻转指标:甲位回落 60.843(T+3)。")
             argv, _ = daily_files(tmp, report_text=restated,
                                   extra=("--mode", "daily"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 check_report.main(argv)
             out.append(("invalidation-column", buf.getvalue()))
+        # 第七/八/九次:2026-08-15 第二轮补的三条日报侧码。三条的宿主都是
+        # 速览表那份报告,但触发形态互不相同 —— 空洞占位 / 第 2 列的机械否定 /
+        # 宿主段取不到本判断的翻转指标,所以各喂一份。
+        for label, cell, usd_section in (
+                ("invalidation-vacuous", "无", None),
+                ("invalidation-mirror", "若 A 升破 60.843 → 关注甲(T+2)", None),
+                ("invalidation-flip-host", "丁位升破 61.1",
+                 "## 美元(USD)\n**分歧与判断**:关键假设 60.843 未变。"
+                 "替代解释乙(其翻转指标:丁位升破 61.1)。"
+                 "反转指标:甲位回落(T+2)。")):
+            rep = OVERVIEW_REPORT.replace(
+                "| 甲一次都没有升破 60.843(时限:2026-08-27) |", "| %s |" % cell)
+            if usd_section:
+                rep = rep.replace("## 美元(USD)\n正文。", usd_section)
+            with tempfile.TemporaryDirectory() as tmp:
+                argv, _ = daily_files(tmp, report_text=rep,
+                                      extra=("--mode", "daily"))
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    check_report.main(argv)
+                out.append((label, buf.getvalue()))
+        # 第十次:周报侧那一条(落点表「主线归属」写了一条不存在的主线)。
+        # 它是本表里**唯一**走周报 CLI 的码 —— 日报没有主线段。
+        with tempfile.TemporaryDirectory() as tmp:
+            wp = os.path.join(tmp, "w.md")
+            with open(wp, "w", encoding="utf-8") as f:
+                f.write(weekly_landing(
+                    "T+3 内比索一次都没有退回 60.75 一侧(时限:2026-08-27)",
+                    belong="主线九"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main([wp, "--mode", "weekly"])
+            out.append(("weekly-theme-attribution", buf.getvalue()))
         return out
 
     def test_every_cli_usage_code_is_reachable_and_carries_no_disposition(self):
@@ -4949,11 +5006,11 @@ OVERVIEW_REPORT = """# 外汇日报 2026-08-10
 
 | 币种 | 条件方向(时限) | 核心依据 | 失效条件 |
 | --- | --- | --- | --- |
-| USD | 若 A 升破 60.843 → 关注甲(T+2) | 依据甲 | 甲位回落(T+2) |
-| EUR | 若 B 升破 0.921 → 关注乙(T+2) | 依据乙 | 乙位回落(T+2) |
-| PHP | 若 C 升破 60.9 → 关注丙(T+2) | 依据丙 | 丙位回落(T+2) |
-| THB | 若 D 升破 35.2 → 关注丁(T+2) | 依据丁 | 丁位回落(T+2) |
-| BRL | 若 E 升破 5.43 → 关注戊(T+2) | 依据戊 | 戊位回落(T+2) |
+| USD | 若 A 升破 60.843 → 关注甲(T+2) | 依据甲 | 甲一次都没有升破 60.843(时限:2026-08-27) |
+| EUR | 若 B 升破 0.921 → 关注乙(T+2) | 依据乙 | 乙一次都没有升破 0.921(时限:2026-08-27) |
+| PHP | 若 C 升破 60.9 → 关注丙(T+2) | 依据丙 | 丙一次都没有升破 60.9(时限:2026-08-27) |
+| THB | 若 D 升破 35.2 → 关注丁(T+2) | 依据丁 | 丁一次都没有升破 35.2(时限:2026-08-27) |
+| BRL | 若 E 升破 5.43 → 关注戊(T+2) | 依据戊 | 戊一次都没有升破 5.43(时限:2026-08-27) |
 
 ## 美元(USD)
 正文。
@@ -4985,19 +5042,20 @@ class OverviewTableParseTest(unittest.TestCase):
         self.assertEqual(rows["PHP"][check_report.OVERVIEW_COL_TRIGGER],
                          "若 C 升破 60.9 → 关注丙(T+2)")
         self.assertEqual(rows["PHP"][check_report.OVERVIEW_COL_INVALIDATION],
-                         "丙位回落(T+2)")
+                         "丙一次都没有升破 60.9(时限:2026-08-27)")
 
     def test_column_order_change_is_followed_not_mis_indexed(self):
         """把「核心依据」与「失效条件」两列**对调**(表头与数据行一起调):
         按列名解析必须仍然取到失效条件那一格;按序号硬取则会取到依据。"""
+        cell = "丙一次都没有升破 60.9(时限:2026-08-27)"
         swapped = OVERVIEW_REPORT.replace(
             "| 币种 | 条件方向(时限) | 核心依据 | 失效条件 |",
             "| 币种 | 条件方向(时限) | 失效条件 | 核心依据 |")
-        swapped = swapped.replace("| 依据丙 | 丙位回落(T+2) |",
-                                  "| 丙位回落(T+2) | 依据丙 |")
+        swapped = swapped.replace("| 依据丙 | %s |" % cell,
+                                  "| %s | 依据丙 |" % cell)
         rows = check_report.overview_rows(check_report.sections(swapped))
         self.assertEqual(rows["PHP"][check_report.OVERVIEW_COL_INVALIDATION],
-                         "丙位回落(T+2)")
+                         cell)
 
     def test_missing_column_declares_with_a_count(self):
         broken = OVERVIEW_REPORT.replace("| 核心依据 | 失效条件 |",
@@ -5096,8 +5154,12 @@ class InvalidationColumnIsIndependentTest(unittest.TestCase):
     """
 
     def one(self, cell, bodies=(RING_BODY,), name="PHP", notes=None):
+        # 第 3 位是同行「条件方向」格 —— 2026-08-15 第二轮补进 pairs,
+        # ②③ 两条自身判据要拿它作参照(见 check_invalidation_independent)。
+        # 这里给一个与各用例的 cell 无关的触发条件:本类只测 ①。
         return check_report.check_invalidation_independent(
-            [(name, cell, list(bodies))],
+            [(name, cell, "若 Z 升破 99.9 → 关注癸(时限:2026-08-27)",
+              list(bodies))],
             check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
 
     def test_a_column_identical_to_the_flip_is_a_violation(self):
@@ -5138,15 +5200,25 @@ class InvalidationColumnIsIndependentTest(unittest.TestCase):
         """「查过」与「没得查」必须可分辨:一行缺格、一行宿主里没有翻转指标句,
         两行都不该算进分子,而分母是表里的全部行。"""
         notes = []
+        trig = "若 Z 升破 99.9 → 关注癸(时限:2026-08-27)"
         v = check_report.check_invalidation_independent(
-            [("USD", "T+2 内甲位一次都没有被触及", [RING_BODY]),
-             ("EUR", "", [RING_BODY]),
-             ("PHP", "T+2 内丙位一次都没有被触及", ["**分歧与判断**:只有正文。"])],
+            [("USD", "T+2 内甲位一次都没有被触及", trig, [RING_BODY]),
+             ("EUR", "", trig, [RING_BODY]),
+             ("PHP", "T+2 内丙位一次都没有被触及", trig,
+              ["**分歧与判断**:只有正文。"])],
             check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
-        self.assertEqual(v, [], v)
+        # EUR 那一行空着 —— 2026-08-15 第二轮起它不再是"没得查"的静默态,
+        # 而是 ② 的违规形态(空洞占位);① 仍然不算它的分子。
+        # PHP 那一行取不到本判断的翻转指标 —— 同样由静默态改成响亮的失败关闭。
+        self.assertEqual(sorted(x.split(":")[0] for x in v),
+                         ["INVALIDATION_COLUMN_FLIP_HOST_MISSING",
+                          "INVALIDATION_COLUMN_VACUOUS"], v)
         line = "\n".join(notes)
         self.assertIn("INVALIDATION_COLUMN_CHECKED", line)
-        self.assertRegex(line, r"1/3")
+        self.assertRegex(line, r"独立性 1/3")
+        # PHP 那一行的宿主里一句翻转指标都没有 → ① 判不了(FLIP_HOST_MISSING),
+        # 但 ②③ 与宿主无关,照判 —— 两层的分子因此不同。
+        self.assertRegex(line, r"自身判据 2/3")
 
     def test_the_declaration_only_predecessor_is_gone(self):
         """旧码不许再**被打出去** —— 它与新码对同一对字符串给出相反口径:
@@ -5188,7 +5260,8 @@ class DailyInvalidationColumnTest(unittest.TestCase):
     """日报整条路径:速览表第 4 列 → 该币种节的翻转指标。"""
 
     def report_with(self, usd_cell, usd_flip):
-        rep = OVERVIEW_REPORT.replace("| 甲位回落(T+2) |", "| %s |" % usd_cell)
+        rep = OVERVIEW_REPORT.replace(
+            "| 甲一次都没有升破 60.843(时限:2026-08-27) |", "| %s |" % usd_cell)
         return rep.replace(
             "## 美元(USD)\n正文。",
             "## 美元(USD)\n**分歧与判断**:关键假设 60.843 未变。"
@@ -5211,7 +5284,8 @@ class DailyInvalidationColumnTest(unittest.TestCase):
 
     def test_an_independent_column_leaves_a_counted_receipt(self):
         rc, out = self.run_cli(
-            self.report_with("T+2 内甲位一次都没有被触及", "甲位回落(T+2)"))
+            self.report_with("甲一次都没有升破 60.843(时限:2026-08-27)",
+                             "甲位回落(T+2)"))
         self.assertNotIn("INVALIDATION_COLUMN_IS_FLIP_RESTATED", out)
         self.assertIn("INVALIDATION_COLUMN_CHECKED", out)
 
@@ -5987,3 +6061,372 @@ class DailyModeRequiresTheStrongFormTest(unittest.TestCase):
                                   "--mode", "weekly"])
         self.assertEqual(rc, 0, out + err)
         self.assertIn("CHECK PASSED", out)
+
+
+# ============ 2026-08-15 第二轮:第 4 列从「零求值」变成有判据 ==============
+#
+# 上一轮(8ee5e1e)把「失效条件」与「翻转指标」解耦,规则改对了、内容改砸了:
+# 四路对抗证伪实测,第 4 列除「不得与翻转指标重合」之外**零求值** ——
+#   col4 = col2 逐字复制                   → rc=0 / 5/5 / CHECK PASSED
+#   col4 = col2 去掉「→ 关注…」半句        → rc=0 / 5/5 / CHECK PASSED
+#   col4 = 「无」                           → rc=0 / 5/5 / CHECK PASSED
+#   col4 = 「若无新增信息、情况未变(T+3)」 → rc=0 / 5/5 / CHECK PASSED
+# 最后一行是 SKILL 逐字禁止的写法,校验器照样放行。闸门给的压力方向因此与
+# SKILL 要求的方向**相反**:让这格变绿最省力的办法就是把它写空洞。
+# 本轮补两条码把标准变成机器判据(空洞 / 机械否定),另修三处回执说谎。
+
+MIRROR_TRIGGER = "若 C 升破 60.9 → 关注丙(T+2)"
+# 主判断的翻转指标 + 替代解释自带的那一个,两条都在同一段里 —— 必须修 7 的
+# 全部要害就是"这两者此前不分"。
+RING_BODY_TWO_FLIPS = ("**分歧与判断**:关键假设甲。"
+                       "替代解释乙(其翻转指标:丁位升破 61.1)。"
+                       "翻转指标:丙位回落(T+2)。")
+# 只有替代解释那一条(把主判断那句的标签改两个字就是这个形态)
+RING_BODY_ALT_FLIP_ONLY = ("**分歧与判断**:关键假设甲。"
+                           "替代解释乙(其翻转指标:丁位升破 61.1)。"
+                           "反转指标:丙位回落(T+2)。")
+
+
+def inval_pairs(cell, trigger=MIRROR_TRIGGER, bodies=(RING_BODY,), name="PHP"):
+    return [(name, cell, trigger, list(bodies))]
+
+
+class InvalidationColumnVacuousTest(unittest.TestCase):
+    """`INVALIDATION_COLUMN_VACUOUS` —— SKILL 逐字禁止的空洞写法,做成可判定。
+
+    判据来源:`skills/fx-daily-report/SKILL.md` 速览表模板段那一句
+    「必须是价格或指标的**可观测量**并带时限,**不得是"若无新增信息"一类**」。
+    修前它只是散文:实测把五格全写成「若无新增信息、情况未变(T+3)」,
+    生产命令 rc=0、回执照打 `INVALIDATION_COLUMN_CHECKED: 5/5`。
+
+    **诚实边界**:占位词与空洞短语都是**枚举**(两张冻结表),同义改写绕得过去。
+    它挡的是 SKILL 已经逐字点名的那几种,不是"语义空洞"的通用判定。
+    """
+
+    def one(self, cell, notes=None, **kw):
+        return check_report.check_invalidation_independent(
+            inval_pairs(cell, **kw), check_report.INVALIDATION_SCOPE_DAILY,
+            notes=notes)
+
+    def test_an_empty_cell_is_a_violation(self):
+        v = self.one("")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_a_whitespace_only_cell_is_a_violation(self):
+        v = self.one("  ")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_a_bare_placeholder_word_is_a_violation(self):
+        v = self.one("无")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_the_phrase_the_skill_bans_verbatim_is_a_violation(self):
+        v = self.one("若无新增信息、情况未变(T+3)")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_punctuation_inserted_into_the_banned_phrase_does_not_get_past_it(self):
+        """判据在去标点空白之后比 —— 顿号/括号不是改写。"""
+        v = self.one("若无、新增,信息(T+3)")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_a_concrete_cell_passes(self):
+        v = self.one("比索一次都没有回到 60.75 一侧(时限:2026-08-27)")
+        self.assertEqual(v, [], v)
+
+    def test_a_vacuous_cell_is_not_counted_as_judged(self):
+        """空洞的那一格**不算查过**:算进分子等于把"没得判"印成"判过了"。"""
+        notes = []
+        self.one("无", notes=notes)
+        self.assertRegex("\n".join(notes), r"自身判据 0/1")
+
+    def test_the_placeholder_and_phrase_tables_are_frozen(self):
+        """逐元素冻结:少一项就是悄悄放行,多一项就是悄悄收紧。"""
+        self.assertEqual(check_report.VACUOUS_INVALIDATION_CELLS,
+                         ("", "无", "暂无", "不适用", "待定", "同上", "略"))
+        self.assertEqual(check_report.VACUOUS_INVALIDATION_PHRASES,
+                         ("若无新增信息", "无新增信息", "情况未变",
+                          "无重大变化", "维持现状", "视情况而定"))
+
+
+class InvalidationColumnMirrorsTriggerTest(unittest.TestCase):
+    """`INVALIDATION_COLUMN_MIRRORS_TRIGGER` —— 第 4 列不得是第 2 列的机械否定。
+
+    ---- 判据怎么定的,以及为什么不是"必须出现新数字" ----
+    两条轴,**任一条上与同行第 2 列不同即通过**:
+      轴 A「可观测量」:第 4 列带一个第 2 列没有的可核对量(数字 token,
+                        时限串先剥掉,由轴 B 管);
+      轴 B「时限」    :第 4 列自己的时限非空、且与第 2 列的时限不同。
+    两轴都没有差异 = 这一格没有交付任何第 2 列之外的信息,它只是把触发条件
+    取了个反 —— 那正是四路证伪里 `col4 = col2` 与 `col4 = col2 去掉后半句`
+    两种写法能全绿的原因。
+
+    **刻意不写成"必须出现新数字"**:那会逼出编造的数(而阈值类前瞻价位按
+    定义不在快照里,写进去当场撞 NUMBER_UNTRACEABLE,两条规则会互斥 ——
+    本仓四个月前撞过一次)。轴 B 单独就能让一格通过:保质期与触发窗口不同长
+    是这一列本来就该交付的信息(触发等三个运行日,判断本身可以活到下一次
+    议息),写出那个日期不需要任何新数字。
+
+    **诚实边界**:只比数字 token 与时限串,不做语义判断。把 60.9 换算成
+    别的单位、或用文字复述同一个价位,绕得过去。
+    """
+
+    def one(self, cell, trigger=MIRROR_TRIGGER, notes=None):
+        return check_report.check_invalidation_independent(
+            inval_pairs(cell, trigger=trigger),
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+
+    def codes(self, v):
+        return [x for x in v if "INVALIDATION_COLUMN_MIRRORS_TRIGGER" in x]
+
+    def test_a_verbatim_copy_of_the_trigger_is_a_violation(self):
+        self.assertTrue(self.codes(self.one(MIRROR_TRIGGER)),
+                        "col4 = col2 逐字复制照样绿")
+
+    def test_dropping_the_watch_half_is_still_a_violation(self):
+        self.assertTrue(self.codes(self.one("若 C 升破 60.9")),
+                        "col4 = col2 去掉「→ 关注…」半句照样绿")
+
+    def test_the_plain_negation_of_the_trigger_is_a_violation(self):
+        self.assertTrue(self.codes(self.one("T+2 内 C 一次都没有升破 60.9")),
+                        "把触发条件取个反、时限照抄,这一格没交付任何信息")
+
+    def test_a_cell_without_any_deadline_is_a_violation(self):
+        self.assertTrue(self.codes(self.one("C 一次都没有升破 60.9")))
+
+    def test_a_different_deadline_alone_passes(self):
+        """轴 B 单独成立即通过 —— 这条钉的就是"不逼出新数字"。"""
+        self.assertEqual(
+            self.codes(self.one("C 一次都没有升破 60.9(时限:2026-08-27)")), [])
+
+    def test_a_new_observable_alone_passes(self):
+        """轴 A 单独成立即通过 —— 时限与触发同长是允许的,只要这一格
+        自己带一个可核对量。"""
+        self.assertEqual(self.codes(self.one(
+            "C 一次都没有升破 60.9,60.75 那一端也一次都没有被触及(T+2)")), [])
+
+    def test_the_violation_line_states_both_axes_with_their_values(self):
+        line = self.codes(self.one("T+2 内 C 一次都没有升破 60.9"))[0]
+        self.assertIn("可观测量", line)
+        self.assertIn("时限", line)
+        self.assertIn("60.9", line)
+        self.assertTrue(
+            line.endswith(check_report.DISPOSITION_INVALIDATION_MIRROR), line)
+
+    def test_a_row_without_a_trigger_cell_is_not_counted_as_judged(self):
+        notes = []
+        check_report.check_invalidation_independent(
+            [("PHP", "T+2 内 C 一次都没有升破 60.9", None, [RING_BODY])],
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+        self.assertRegex("\n".join(notes), r"自身判据 0/1")
+
+    def test_the_judgement_has_exactly_one_implementation(self):
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        hosts = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Constant)
+                        and isinstance(sub.value, str)
+                        and sub.value.startswith(
+                            "INVALIDATION_COLUMN_MIRRORS_TRIGGER:")):
+                    hosts.add(node.name)
+        self.assertEqual(hosts, {"check_invalidation_independent"}, hosts)
+
+
+class InvalidationColumnFlipHostTest(unittest.TestCase):
+    """必须修 7:主判断的翻转指标 与 替代解释自带的「其翻转指标」必须分开。
+
+    ---- 修前实测(先跑后抄)----
+    reports/daily/2026-08-14.md 的 EUR 第 4 列抄回该节翻转指标、再把该节
+    `翻转指标:` 改成 `反转指标:`(只此一处),生产命令打出:
+      `JUDGEMENT_RING_CHECKED: 5/5` + `INVALIDATION_COLUMN_CHECKED: 5/5` + rc=0
+    机制:`_flip_payloads` 把整节里所有含「翻转指标」四字的句子一起收进池子,
+    不区分「本判断的翻转指标」与「替代解释自带的其翻转指标」。标签一改,
+    本判断那条离池,池仍非空 → `checked += 1` 照走,回执于是宣称"与对应
+    币种节翻转指标比过了",而那东西此刻并不存在。
+
+    ---- 修法 ----
+    取不到**主判断**那一条时按失败关闭并出声(`INVALIDATION_COLUMN_FLIP_HOST_MISSING`),
+    且不计入分子。替代解释自带的那一条**仍留在比对池里** —— 把它抄进表格
+    与抄主判断那条是同一类错,不因本轮而放行。
+    """
+
+    def one(self, cell, bodies, notes=None):
+        return check_report.check_invalidation_independent(
+            inval_pairs(cell, bodies=bodies),
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+
+    def test_a_host_with_only_the_alternatives_flip_is_loud(self):
+        v = self.one("比索一次都没有回到 60.75 一侧(时限:2026-08-27)",
+                     [RING_BODY_ALT_FLIP_ONLY])
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_FLIP_HOST_MISSING" in x for x in v), v)
+
+    def test_that_host_is_not_counted_as_judged(self):
+        notes = []
+        self.one("比索一次都没有回到 60.75 一侧(时限:2026-08-27)",
+                 [RING_BODY_ALT_FLIP_ONLY], notes=notes)
+        self.assertRegex("\n".join(notes), r"独立性 0/1")
+
+    def test_the_alternatives_flip_is_still_a_comparison_target(self):
+        """替代解释那一条照旧参与比对 —— 抄它和抄主判断那条是同一类错。"""
+        v = self.one("丁位升破 61.1", [RING_BODY_TWO_FLIPS])
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_a_host_with_a_main_flip_is_counted(self):
+        notes = []
+        v = self.one("比索一次都没有回到 60.75 一侧(时限:2026-08-27)",
+                     [RING_BODY_TWO_FLIPS], notes=notes)
+        self.assertEqual(v, [], v)
+        self.assertRegex("\n".join(notes), r"独立性 1/1")
+
+    def test_relabelling_the_main_flip_does_not_turn_a_copied_column_green(self):
+        """整条 CLI 路径:改两个字 + 抄翻转指标,退出码必须非 0。"""
+        report = OVERVIEW_REPORT.replace(
+            "| USD | 若 A 升破 60.843 → 关注甲(T+2) | 依据甲 | 甲位回落(T+2) |",
+            "| USD | 若 A 升破 60.843 → 关注甲(T+2) | 依据甲 | 丁位升破 61.1 |")
+        report = report.replace(
+            "## 美元(USD)\n正文。",
+            "## 美元(USD)\n**分歧与判断**:关键假设 60.843 未变。"
+            "替代解释乙(其翻转指标:丁位升破 61.1)。反转指标:甲位回落(T+2)。")
+        with tempfile.TemporaryDirectory() as tmp:
+            argv, _ = daily_files(tmp, report_text=report,
+                                  extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = check_report.main(argv)
+        out = buf.getvalue()
+        self.assertIn("INVALIDATION_COLUMN_FLIP_HOST_MISSING", out)
+        self.assertNotEqual(rc, 0, out)
+
+
+class WeeklyLandingRowCoverageTest(unittest.TestCase):
+    """必须修 8:周报侧丢整行,回执把 5 行的表印成「4/4」。
+
+    ---- 修前实测(先跑后抄,reports/weekly/2026-W33.md)----
+      BRL 第 5 列抄主线二翻转指标(对照)   rc=1  INVALIDATION_COLUMN_IS_FLIP_RESTATED
+      同上 + 币种格写成 BRLX               rc=0  INVALIDATION_COLUMN_CHECKED: 4/4
+      同上 + BRL 行少一格(短行)          rc=0  INVALIDATION_COLUMN_CHECKED: 4/4
+      同上 + 主线归属 主线二→主线九        rc=0  INVALIDATION_COLUMN_CHECKED: 4/5
+    分母是 `len(pairs)`,而 `continue` 掉的行两头都不进 —— 抄袭那一行被自己
+    抹掉之后,回执把 4 行印成"全查过了"。日报侧同型事故的读数完全不同
+    (`OVERVIEW_ROW_MISSING: 速览表缺少 1/5 …` + `4/5`),差别只在调用点怎么
+    造 pairs。本轮把分母口径对齐日报侧:**应有的行集合**(五个币种)当分母,
+    丢行点名出声。
+    """
+
+    def notes_for(self, report):
+        notes = []
+        v = check_report.check_weekly(report, notes=notes)
+        return v, "\n".join(notes)
+
+    def test_the_denominator_is_the_five_currencies(self):
+        v, line = self.notes_for(
+            weekly_landing("T+3 内比索一次都没有退回 60.75 一侧(时限:2026-08-27)"))
+        self.assertRegex(line, r"独立性 1/5")
+
+    def test_missing_rows_are_named_with_counts(self):
+        v, line = self.notes_for(
+            weekly_landing("T+3 内比索一次都没有退回 60.75 一侧(时限:2026-08-27)"))
+        self.assertIn("WEEKLY_LANDING_ROW_MISSING", line)
+        for c in ("USD", "EUR", "THB", "BRL"):
+            self.assertIn(c, line)
+
+    def test_a_broken_currency_cell_does_not_shrink_the_denominator(self):
+        rep = weekly_landing(
+            "T+3 内比索一次都没有退回 60.75 一侧(时限:2026-08-27)")
+        rep = rep.replace("| PHP | 主线一 |", "| PHPX | 主线一 |")
+        v, line = self.notes_for(rep)
+        self.assertRegex(line, r"独立性 0/5")
+        self.assertIn("PHP", line)
+
+    def test_an_unknown_theme_attribution_is_a_violation(self):
+        rep = weekly_landing(
+            "T+3 内比索一次都没有退回 60.75 一侧(时限:2026-08-27)",
+            belong="主线九")
+        v, _ = self.notes_for(rep)
+        self.assertTrue(
+            any("WEEKLY_THEME_ATTRIBUTION_UNKNOWN" in x for x in v), v)
+
+    def test_a_real_theme_attribution_passes(self):
+        rep = weekly_landing(
+            "T+3 内比索一次都没有退回 60.75 一侧(时限:2026-08-27)")
+        v, _ = self.notes_for(rep)
+        self.assertEqual(
+            [x for x in v if "WEEKLY_THEME_ATTRIBUTION_UNKNOWN" in x], [])
+
+
+class ThemeNamingSingleSourceTest(unittest.TestCase):
+    """必须修 9:`theme_names` 的注释断言与代码相反,而且它是第二份拷贝。
+
+    修前 `theme_names` 的 docstring 写「与 `check_weekly_judgement_ring` 的
+    取名口径**同一处来源**,不另抄一份」,而后者根本不调用它 ——
+    `check_weekly_judgement_ring` 里那一行 `re.split(r"[::]", heading, 1)`
+    是第二份逐字拷贝。实测漂移后果:把 `theme_names` 那一份改成
+    `h.strip() or h`,生产闸门打出 `INVALIDATION_COLUMN_CHECKED: 0/5` 而
+    **rc=0 全绿**,只有单测拦得住。
+    """
+
+    def test_the_theme_naming_has_exactly_one_implementation(self):
+        """段名判据(`[::]` 那条 split)只准出现在一个函数里。"""
+        with open(check_report.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        hosts = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Constant)
+                        and isinstance(sub.value, str)
+                        and sub.value == "[::]"):
+                    hosts.add(node.name)
+        self.assertEqual(hosts, {"theme_names"}, hosts)
+
+    def test_the_ring_path_reads_the_names_from_theme_names(self):
+        """行为断言(不是只看 AST):换掉 `theme_names`,判断环那条路径打出的
+        段名必须跟着换 —— 不跟着换就说明它另有一份拷贝。"""
+        broken = WEEKLY_RING.replace(
+            "**替代解释**:承接厚度(它自己的翻转指标:下一次定盘次序翻过来)。\n", "")
+        with mock.patch.object(
+                check_report, "theme_names",
+                lambda secs: [("段名哨兵", b)
+                              for _, b in check_report.theme_subsections(secs)]):
+            v = check_report.check_weekly(broken, DIGEST, RING_DAILY)
+        self.assertTrue(any("JUDGEMENT_RING_INCOMPLETE" in x and "段名哨兵" in x
+                            for x in v), v)
+
+
+class InvalidationReceiptNamesTheRightColumnTest(unittest.TestCase):
+    """回执与违规行里的**列名**必须是被查的那一列的真名。
+
+    日报第 2 列叫「条件方向」,周报第 4 列叫「下周判断」;两侧共用同一个判定
+    函数,列名若写死成日报那一个,周报的回执就在说一件不存在的事 ——
+    「打印通过但守的不是它声称的东西」在本仓库是最贵的一类缺陷。
+    """
+
+    def test_the_weekly_receipt_names_the_weekly_trigger_column(self):
+        notes = []
+        check_report.check_weekly(
+            weekly_landing("T+3 内比索一次都没有退回 60.75 一侧(时限:2026-08-27)"),
+            notes=notes)
+        line = [x for x in notes if "INVALIDATION_COLUMN_CHECKED" in x][0]
+        self.assertIn(check_report.WEEKLY_COL_TRIGGER, line)
+        self.assertNotIn(check_report.OVERVIEW_COL_TRIGGER, line)
+
+    def test_the_daily_receipt_names_the_daily_trigger_column(self):
+        notes = []
+        check_report.check_invalidation_independent(
+            inval_pairs("比索一次都没有回到 60.75 一侧(时限:2026-08-27)"),
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+        line = [x for x in notes if "INVALIDATION_COLUMN_CHECKED" in x][0]
+        self.assertIn(check_report.OVERVIEW_COL_TRIGGER, line)
+
+    def test_the_weekly_mirror_violation_names_the_weekly_trigger_column(self):
+        v = check_report.check_weekly(
+            weekly_landing("比索一次都没有升破 60.9(T+3)"))
+        line = [x for x in v
+                if "INVALIDATION_COLUMN_MIRRORS_TRIGGER" in x][0]
+        self.assertIn(check_report.WEEKLY_COL_TRIGGER, line)
