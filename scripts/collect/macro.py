@@ -1,8 +1,21 @@
-"""宏观指标采集:BIS 直连主体 + BLS 美国 CPI 主源 + DBnomics 回落 + FRED 可选增强。
+"""宏观指标采集:三个官方 SDMX/JSON 直连源 + FRED 可选增强。
 
-来源优先级 BLS > BIS > DBnomics。DBnomics 是 IMF/BIS 的**镜像**,实测滞后
-8–17 个月且政策利率给出过期值(2026-08-11 实测五个经济体全错),故对它上游
-本来就是 BIS 的那些序列改为直连——这是去掉中间商,不是换源。
+- 美国 CPI 同比 → BLS 公共 API(主源,零 key)
+- CPI 同比 / 政策利率 → BIS Stats SDMX
+- 经常账户 → IMF 官方 SDMX
+
+**没有回落层。** 曾经的 DBnomics 回落已整只删除:该镜像的 **API 域**
+(api 子域)的 robots.txt 是 `User-agent: *` / `Disallow: /`(2026-08-16 实测
+HTTP 200,26 字节),整站禁爬。仓库对 BSP、CME 用的是同一把尺子,不能一边把
+它们剔掉、一边每天打这个域。(它的网页域是放行的,被禁的正是我们在打的 API 域。)
+本文件刻意不写出那个主机名,好让"全仓 grep 主机名"这条合规检查保持零命中。
+
+删的是路径本身,不是"默认关闭的开关"——陈旧调用点会静默地什么都不做,而
+grep 仍看得见它,复核者以为还在用。
+
+去掉回落意味着"取不到就没有这一行"成了常态路径,于是有了一条硬不变量:
+**每个被跟踪的指标,要么产出一行,要么产出一条定位到它的缺漏**(见 collect)。
+否则"整块消失"与"这个季度确实没发布"在快照里同形,下游结论句会把前者说成后者。
 """
 import csv
 import io
@@ -13,9 +26,6 @@ from . import util
 
 PERIOD_RE = re.compile(r"^(\d{4})-(\d{2})")
 US_CPI = ("US", "CPI 同比")
-
-
-BIS_REQUIRED_COLS = ("REF_AREA", "TIME_PERIOD", "OBS_VALUE")
 
 
 def _obs_value(raw):
@@ -37,24 +47,28 @@ def _obs_value(raw):
     return v if math.isfinite(v) else None
 
 
-def _bis_parse(text):
-    """BIS CSV → {REF_AREA: [(period, value), ...]},按 period 升序。
+def _sdmx_parse(text, area_col="REF_AREA"):
+    """SDMX-CSV → {地区码: [(period, value), ...]},按 period 升序。
 
-    按列名取,不按位置:两个 dataflow 的列集合本就不同(CPI 多 UNIT_MEASURE),
-    且 SDMX 版本升级改列序时按位置取不会报错,只会静默取错列。
+    一套解析伺候三个 dataflow。地区维度的**列名**因源而异(BIS 叫 REF_AREA,
+    IMF BOP 叫 COUNTRY),其余形状一致,故只把列名参数化,不另写一套。
+
+    按列名取,不按位置:三个 dataflow 的列集合差得很远(BIS CPI 多
+    UNIT_MEASURE,IMF BOP 实测 53 列),且 SDMX 版本升级改列序时按位置取
+    不会报错,只会静默取错列。
     """
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     cols = reader.fieldnames or []
-    missing = [c for c in BIS_REQUIRED_COLS if c not in cols]
+    missing = [c for c in (area_col, "TIME_PERIOD", "OBS_VALUE") if c not in cols]
     if missing:
-        raise ValueError("BIS CSV 缺列 %s(实际:%s)"
+        raise ValueError("SDMX CSV 缺列 %s(实际:%s)"
                          % (",".join(missing), ",".join(cols)))
     out = {}
     for row in reader:
         value = _obs_value(row.get("OBS_VALUE"))
         if value is None:
             continue
-        area, period = row.get("REF_AREA"), row.get("TIME_PERIOD")
+        area, period = row.get(area_col), row.get("TIME_PERIOD")
         if not (isinstance(area, str) and area and isinstance(period, str) and period):
             continue
         out.setdefault(area, []).append((period, value))
@@ -91,26 +105,34 @@ def _latest_and_prev_distinct(obs):
     return value, period, None, None
 
 
-# BIS 用 XM 表示欧元区,仓库内部用 EA。写死映射,不做字符串启发式。
+# 地区码映射一律写死,不做字符串启发式。两个源对同一个经济体的写法都不一样:
+# BIS 用 XM 表示欧元区;IMF BOP 用 ISO3,欧元区是 **G163**(2026-08-16 实测
+# CL_COUNTRY codelist 名称 "Euro Area (EA)";U2 / XM / EA 在该 dataflow 里都
+# 查无此码,写错不会报错,只会让欧元区整条缺席)。
 BIS_AREA = {"US": "US", "EA": "XM", "PH": "PH", "TH": "TH", "BR": "BR"}
-# (指标名, 端点配置键, dataflow 名, 频率)。频率同时决定两件事:前值口径,
-# 以及"什么算新发布"——见 _latest_and_prev_* 与 _is_new_level。
-BIS_DATAFLOWS = (
-    ("政策利率", "bis_cbpol_url", "WS_CBPOL", "D"),
-    ("CPI 同比", "bis_cpi_url", "WS_LONG_CPI", "M"),
+IMF_AREA = {"US": "USA", "EA": "G163", "PH": "PHL", "TH": "THA", "BR": "BRA"}
+
+# api.imf.org 实测**无视** `?format=csv`,只认 Accept 头;不发这个头拿回来的是
+# SDMX-ML,解析器只会抛"缺列",看不出真实原因。
+SDMX_CSV_ACCEPT = "application/vnd.sdmx.data+csv;version=1.0.0"
+
+# (指标名, 端点配置键, source, dataflow 名, 地区列名, 地区映射, 频率, Accept 头)
+# 频率同时决定两件事:前值口径,以及"什么算新发布"——见 _latest_and_prev_*
+# 与 _is_new_level。日频("D")比水平,其余比期号。
+SDMX_SOURCES = (
+    ("政策利率", "bis_cbpol_url", "bis", "WS_CBPOL", "REF_AREA", BIS_AREA, "D", None),
+    ("CPI 同比", "bis_cpi_url", "bis", "WS_LONG_CPI", "REF_AREA", BIS_AREA, "M", None),
+    ("经常账户", "imf_bop_url", "imf", "BOP", "COUNTRY", IMF_AREA, "Q", SDMX_CSV_ACCEPT),
 )
 
 
-def _bis_table(cfg, gaps):
-    """返回 {(economy, indicator): row}。
+def _sdmx_table(cfg, gaps):
+    """三个 SDMX 源统一取数,返回 {(economy, indicator): row}。
 
-    批量取数(两次 GET 覆盖五经济体)但**逐指标**可缺席:某经济体没进表,
-    调用方查不到就自然回落 DBnomics。
-
-    三条降级路径(整体失败 / 缺必需列 / 缺某经济体)都必须**记 gap**:回落
-    拿到的是 DBnomics 陈值(实测滞后 8–17 个月),在快照里与正常取数完全同形;
-    上一日若也是 dbnomics 则连 source_changed_from 都没有,不记缺漏就没有任何
-    字段能让报告层察觉降级,禁令 3(缺漏节列出的数据正文禁止引用)永不触发。
+    批量取数(每个源一次 GET 覆盖五经济体)但**逐指标**可缺席。没有回落层了,
+    所以"缺席"就是真的没有这一行——两条降级路径(整体失败 / 缺某经济体)
+    都必须记 gap,且 scope **定位到具体指标**(经济体/指标),不能只记到
+    dataflow 一级:报告层要知道该对哪一条打折扣,而不是知道"某个源出过事"。
 
     只为**被跟踪的**(经济体, 指标)取数与记 gap:没人跟踪的指标缺席不是缺漏,
     与 BLS「没跟踪就别打这一枪」同约定,否则缺漏节会被无人关心的条目淹没。
@@ -121,32 +143,38 @@ def _bis_table(cfg, gaps):
     endpoints = endpoints if isinstance(endpoints, dict) else {}
     tracked = {(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]}
     out = {}
-    for indicator, key, dataflow, freq in BIS_DATAFLOWS:
-        wanted = [(e, a) for e, a in BIS_AREA.items() if (e, indicator) in tracked]
+    for indicator, key, source, dataflow, area_col, area_map, freq, accept in SDMX_SOURCES:
+        wanted = [(e, a) for e, a in area_map.items() if (e, indicator) in tracked]
         if not wanted:
             continue        # 该指标一个经济体都没跟踪 → 不发这次 GET,也不记 gap
         url = endpoints.get(key)
         if not isinstance(url, str) or not url:
             continue        # 未配置 = 有意停用(与 feeds.py 同约定),删 URL 即回滚
         try:
-            by_area = _bis_parse(util.fetch_text(url, cfg["timeout_s"]))
+            text = util.fetch_text(url, cfg["timeout_s"],
+                                   {"Accept": accept} if accept else None)
+            by_area = _sdmx_parse(text, area_col)
         except Exception as e:
-            gaps.append(util.make_gap("bis", dataflow,
-                                      "%s: %s" % (type(e).__name__, e)))
+            # 整体失败也逐指标记:受影响的是这几条,不是"一个 dataflow"
+            for economy, _area in wanted:
+                gaps.append(util.make_gap(
+                    source, "%s/%s" % (economy, indicator),
+                    "%s %s 取数失败(%s: %s),该指标本次无观测"
+                    % (source.upper(), dataflow, type(e).__name__, e)))
             continue
         pick = _latest_and_prev_distinct if freq == "D" else _latest_and_prev_observation
         for economy, area in wanted:
             value, period, prev, prev_period = pick(by_area.get(area) or [])
-            if value is None:   # 该经济体缺席或全 NaN → 只有它回落,但要说出来
+            if value is None:   # 该经济体缺席或全 NaN → 没有这一行,必须说出来
                 gaps.append(util.make_gap(
-                    "bis", "%s/%s" % (economy, indicator),
-                    "BIS %s 响应中 REF_AREA=%s 无可用观测,该指标回落 DBnomics"
-                    % (dataflow, area)))
+                    source, "%s/%s" % (economy, indicator),
+                    "%s %s 响应中 %s=%s 无可用观测,该指标本次无观测"
+                    % (source.upper(), dataflow, area_col, area)))
                 continue
-            series_id = "BIS/%s/%s" % (dataflow, area)
+            series_id = "%s/%s/%s" % (source.upper(), dataflow, area)
             out[(economy, indicator)] = {
                 "value": value, "prev": prev, "period": period,
-                "prev_period": prev_period, "source": "bis",
+                "prev_period": prev_period, "source": source,
                 "series_id": series_id,
                 # 判据随频率变:日频序列每天追加一行,期号推进说明的是管道刷新,
                 # 只有水平变了才是央行发布。判定留在这里而不是 collect(),
@@ -162,15 +190,13 @@ def collect(cfg):
     tracked = [(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]]
     # 没跟踪美国 CPI 就别打 BLS 这一枪(也就不会为未跟踪指标记 gap)
     bls_row = _bls_us_cpi(cfg, gaps) if US_CPI in tracked else None
-    # 批量取数放在循环之前:两次 GET 覆盖五经济体,循环内只查表。
-    # BIS 整体失败时表为空 → 全部未命中 → 全部走 DBnomics,
-    # 「逐指标回落」因此不需要任何额外分支。
-    bis_table = _bis_table(cfg, gaps)
+    # 批量取数放在循环之前:每个源一次 GET 覆盖五经济体,循环内只查表。
+    table = _sdmx_table(cfg, gaps)
     for ind in cfg["indicators"]:
-        if bls_row is not None and (ind["economy"], ind["indicator"]) == US_CPI:
-            # BLS 比 DBnomics 镜像新约 11 个月(2026-08-11 实测),优先用它;
-            # 拿到就不再打 DBnomics 这一枪。series_id 写 BLS 的真实出处——
-            # 它是快照里唯一可回溯到源的字段,写成 IMF 的 id 会让复核者拿到
+        key = (ind.get("economy"), ind.get("indicator"))
+        if bls_row is not None and key == US_CPI:
+            # BLS 是美国 CPI 的主源,优先于 BIS。series_id 写 BLS 的真实出处——
+            # 它是快照里唯一可回溯到源的字段,写成别人的 id 会让复核者拿到
             # 完全不同的数,反而像脚本算错了。
             row = dict(bls_row, economy=ind["economy"], indicator=ind["indicator"],
                        is_new_release=_is_new(cfg, bls_row["series_id"],
@@ -178,34 +204,41 @@ def collect(cfg):
                        lag_months=lag_months(bls_row["period"], cfg["date"]))
             indicators.append(_mark_source_change(cfg, ind, row))
             continue
-        bis = bis_table.get((ind["economy"], ind["indicator"]))
-        if bis is not None:
-            # is_new_release 已由 _bis_table 按频率判好(日频比水平、月频比期号),
+        hit = table.get(key)
+        if hit is not None:
+            # is_new_release 已由 _sdmx_table 按频率判好(日频比水平、其余比期号),
             # 这里不得覆写成统一的期号比对。
-            row = dict(bis, economy=ind["economy"], indicator=ind["indicator"],
-                       lag_months=lag_months(bis["period"], cfg["date"]))
+            row = dict(hit, economy=ind["economy"], indicator=ind["indicator"],
+                       lag_months=lag_months(hit["period"], cfg["date"]))
             indicators.append(_mark_source_change(cfg, ind, row))
             continue
-        try:
-            url = cfg["endpoints"]["dbnomics_series_url"].format(series_id=ind["series_id"])
-            doc = util.fetch_json(url, cfg["timeout_s"])
-            value, prev, period = _last_two(doc)
-            indicators.append(_mark_source_change(cfg, ind, {
-                "economy": ind["economy"], "indicator": ind["indicator"],
-                "series_id": ind["series_id"], "value": value, "prev": prev,
-                "period": period, "source": "dbnomics",
-                "is_new_release": _is_new(cfg, ind["series_id"], period),
-                "lag_months": lag_months(period, cfg["date"]),
-            }))
-        except Exception as e:
-            gaps.append(util.make_gap("dbnomics", ind["series_id"],
-                                      "%s: %s" % (type(e).__name__, e)))
+        _record_no_observation(gaps, key)
     return {"indicators": indicators, "us_release_dates": _fred(cfg, gaps)}, gaps
 
 
+def _record_no_observation(gaps, key):
+    """兜底不变量:被跟踪的指标没产出行,就一定要有一条定位到它的缺漏。
+
+    回落层删掉之后,"没有这一行"成了常态路径。上游(BLS / _sdmx_table)通常
+    已经记了带原因的那一条,此时不重复——缺漏节被同一件事刷屏,读者就会开始
+    跳过它。上游一条都没记的情况只有一种:该指标压根没落在任何已配置的源上
+    (端点被删、或 config 里躺着一条谁也不取的指标)。那也必须说出来,否则
+    整块数据无声消失,与"这一期确实没有发布"在快照里完全同形。
+    """
+    scope = "%s/%s" % key
+    if any(g.get("scope") == scope for g in gaps):
+        return
+    gaps.append(util.make_gap(
+        "macro", scope, "没有任何已配置来源提供该指标(BLS / BIS / IMF 均未覆盖"
+                        "或端点未配置),本次无观测"))
+
+
 def lag_months(period, date_str):
-    """期号相对快照日期的滞后月数。滞后不披露就等于隐形——DBnomics 镜像实测
-    滞后 219–498 天,报告却把它当"最新值"引用。无法解析(如季度期号)→ None,不猜。"""
+    """期号相对快照日期的滞后月数。滞后不披露就等于隐形——曾经的镜像源实测
+    滞后 219–498 天,报告却把它当"最新值"引用。无法解析(如季度期号)→ None,不猜。
+
+    经常账户是季频("2026-Q1"),PERIOD_RE 匹配不上 → 恒为 None。这是"不猜",
+    不是"没滞后":读者从 period 本身就能看出是哪个季度。"""
     m = PERIOD_RE.match(period) if isinstance(period, str) else None
     d = PERIOD_RE.match(date_str) if isinstance(date_str, str) else None
     if m is None or d is None:
@@ -221,7 +254,8 @@ def _bls_us_cpi(cfg, gaps):
     """美国 CPI 走 BLS 公共 API(零 key)。返回的是指数点位,同比由本函数
     按**同月同比**确定性计算——相邻月份近似会得出可信但错误的同比,禁用。
 
-    未配置端点 → 静默走 DBnomics(有意停用,非缺漏);配置了但失败 → 记 gap 后回落。
+    未配置端点 → 静默交给 BIS(有意停用,非缺漏);配置了但失败 → 记 gap 后
+    由 BIS 接手,BIS 也没有则该指标本次无观测(由 collect 的兜底不变量记缺漏)。
     """
     endpoints = cfg.get("endpoints")
     url = endpoints.get("bls_timeseries_url") if isinstance(endpoints, dict) else None
@@ -306,8 +340,11 @@ def _bls_series_id(url):
 
 def _mark_source_change(cfg, ind, row):
     """换源当日期号会跳变,与前值不可比;不标出来,报告会把口径切换叙述成
-    "通胀升高"(2026-08-11 实际发生过)。两个方向都要标——BLS 挂掉回落
-    DBnomics 是更常见的那个方向,漏标即同型事故。"""
+    "通胀升高"(2026-08-11 实际发生过)。两个方向都要标,漏标即同型事故。
+
+    经常账户从旧镜像切到 IMF 直连是眼下最刺眼的一例:**计价单位都不同**
+    (镜像是百万美元,直连是美元),PH 会从 -4247 跳到 -5663843363。
+    这个标记是唯一让报告层看出"这两个数不可比"的字段。"""
     changed_from = _source_changed_from(cfg, ind, row.get("source"))
     if changed_from is not None:
         row["source_changed_from"] = changed_from
@@ -338,38 +375,6 @@ def _bls_latest(by_key):
     if not monthly:
         return None
     return max(monthly, key=lambda kv: (kv[0][0], kv[0][1]))
-
-
-def _last_two(doc):
-    """解析 DBnomics series.docs[0].period/value 平行数组(形态经 Task 5 探针实测)。
-
-    形态不符时抛 ValueError,由 collect() 捕获转该 series 的 dbnomics gap。
-    外部数据每次取值前过 isinstance 门(仓库约定,禁止 `or {}` 惯用法)。
-    """
-    if not isinstance(doc, dict):
-        raise ValueError("unexpected response shape: %s" % type(doc).__name__)
-    series = doc.get("series")
-    if not isinstance(series, dict):
-        raise ValueError("unexpected 'series' shape: %s" % type(series).__name__)
-    docs = series.get("docs")
-    if not isinstance(docs, list) or not docs:
-        raise ValueError("'series.docs' missing or empty")
-    d = docs[0]
-    if not isinstance(d, dict):
-        raise ValueError("unexpected doc shape: %s" % type(d).__name__)
-    periods, values = d.get("period"), d.get("value")
-    if not isinstance(periods, list) or not isinstance(values, list):
-        raise ValueError("'period'/'value' are not parallel arrays")
-    if len(periods) != len(values):
-        raise ValueError("'period'/'value' length mismatch: %d vs %d"
-                         % (len(periods), len(values)))
-    pairs = [(p, v) for p, v in zip(periods, values)
-             if isinstance(v, (int, float)) and not isinstance(v, bool)]
-    if not pairs:
-        raise ValueError("series has no numeric observations")
-    period, value = pairs[-1]
-    prev = pairs[-2][1] if len(pairs) >= 2 else None
-    return value, prev, period
 
 
 def _is_new_level(cfg, series_id, value):

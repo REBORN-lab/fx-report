@@ -4,7 +4,10 @@ import json
 import urllib.request
 from datetime import datetime, timezone
 
-DEFAULT_UA = "macro-fx-collector/0.1"
+# 自报家门:项目名 + 可联系的出处。**永不**写 Mozilla/... 或 Googlebot ——
+# 伪装成浏览器或搜索引擎爬虫,是在规避源站按 UA 作出的准入判断,与"尊重
+# robots.txt、不绕过封锁"是同一条纪律。源站要能查到我们是谁、找谁反映。
+DEFAULT_UA = "fx-macro-report/1.0 (+https://github.com/REBORN-lab/macro)"
 
 
 def now_iso():

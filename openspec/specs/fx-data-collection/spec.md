@@ -31,15 +31,25 @@ TBD - created by archiving change fx-daily-report-skill. Update Purpose after ar
 - **THEN** `prev_ref_date` 记为 null,采集与后续比对退回按数值比较的既有行为
 
 ### Requirement: 宏观数据增量采集
-系统 SHALL 采集五经济体关键宏观指标的最新值与前值,来源优先级为 **BLS > BIS > DBnomics**。
+系统 SHALL 采集五经济体关键宏观指标的最新值与前值,全部取自官方直连源:美国 CPI 走 **BLS**(优先于 BIS),CPI 同比与政策利率走 **BIS**,经常账户走 **IMF**。系统 MUST NOT 保留任何镜像回落层。
 
-美国 CPI SHALL 优先取自 BLS 公共 API(零 key);该 API 返回指数点位时,同比 SHALL 由采集脚本按同月同比确定性计算,MUST NOT 用相邻月份近似替代;上月同比 SHALL 由同一份响应算出作为 `prev`(基期缺失时记 null),使报告不必自找比较基准;BLS 路径失败或同月基期缺失时 SHALL 回落后续来源并记入缺漏。BIS MUST NOT 覆盖已由 BLS 取得的美国 CPI。
+系统 SHALL 保证:每个被 `config/indicators.json` 跟踪的(经济体, 指标),要么在快照中产出一行,要么产出至少一条 scope 定位到它(`经济体/指标`)的缺漏。MUST NOT 让被跟踪的指标既无观测行、又无缺漏——两者同时缺席时,"整块数据消失"与"这一期确实没有发布"在快照里完全同形,下游结论句会把前者说成后者。
 
-五经济体的 CPI 同比与政策利率 SHALL 直连 BIS Stats API 取得(`WS_LONG_CPI` 与 `WS_CBPOL`),MUST NOT 经由 DBnomics 镜像——实测该镜像滞后 8–17 个月且政策利率给出过期值。BIS 响应 SHALL 按列名解析(`REF_AREA` / `TIME_PERIOD` / `OBS_VALUE`),MUST NOT 按列位置索引。BIS 整体不可达、缺少必需列、或缺少某经济体时,受影响的指标 SHALL **逐条**回落 DBnomics 并记入缺漏,未受影响的指标保持 BIS 来源。缺漏的 scope SHALL 定位到受影响的**具体指标**(经济体/指标),MUST NOT 只记到 dataflow 一级——回落取到的是滞后 8–17 个月的镜像陈值,在快照里与正常取数同形,缺漏不落到指标上,报告层无从知道该对哪一条打折扣。
+美国 CPI SHALL 优先取自 BLS 公共 API(零 key);该 API 返回指数点位时,同比 SHALL 由采集脚本按同月同比确定性计算,MUST NOT 用相邻月份近似替代;上月同比 SHALL 由同一份响应算出作为 `prev`(基期缺失时记 null),使报告不必自找比较基准;BLS 路径失败或同月基期缺失时 SHALL 记入缺漏并交由 BIS 接手。BIS MUST NOT 覆盖已由 BLS 取得的美国 CPI。
 
-BIS 取数 SHALL 只覆盖 `config/indicators.json` 实际跟踪的(经济体, 指标):某 dataflow 无任何跟踪项时 MUST NOT 发出该请求;未被跟踪的经济体缺席 MUST NOT 记入缺漏(无人引用的指标缺席不是缺漏,记录会淹没真正影响报告的条目)。
+五经济体的 CPI 同比与政策利率 SHALL 直连 BIS Stats API 取得(`WS_LONG_CPI` 与 `WS_CBPOL`);五经济体的经常账户 SHALL 直连 IMF 官方 SDMX 取得(dataflow `IMF.STA,BOP,21.0.0`)。三者 MUST NOT 经由第三方镜像:实测该镜像滞后 8–17 个月、政策利率给出过期值,且其 API 域的 `robots.txt` 为 `User-agent: *` / `Disallow: /`(整站禁爬),与 BSP 出局适用同一条合规纪律。
 
-`is_new_release` 的判据 SHALL 随序列频率而定:月频序列比对**期号**(相邻月份同值也是两次独立发布);日频序列 SHALL 比对**数值水平**,MUST NOT 比对期号——日频政策利率序列每个日历日追加一行,期号推进反映的是数据管道刷新而非央行动作。取不到可比数值(首次落地、上一份快照无该 series、旧值非数值)时 SHALL 记为 false,MUST NOT 猜测。
+SDMX 响应 SHALL 按**列名**解析(地区列 + `TIME_PERIOD` + `OBS_VALUE`;地区列 BIS 为 `REF_AREA`、IMF BOP 为 `COUNTRY`),MUST NOT 按列位置索引——IMF SDMX-CSV 实测 53 列,按位置取不会报错,只会静默取错列。IMF 请求 SHALL 携带 `Accept: application/vnd.sdmx.data+csv`:实测 `api.imf.org` 无视 `?format=csv` 查询参数,不发该头返回的是 SDMX-ML。地区码映射 SHALL 写死:IMF BOP 的欧元区代码为 `G163`,`U2` / `XM` / `EA` 在该 dataflow 中均查无此码。
+
+某源整体不可达、缺少必需列、或缺少某经济体时,受影响的指标 SHALL 在本次采集中**无观测**并逐条记入缺漏,未受影响的指标不受牵连。缺漏的 scope SHALL 定位到受影响的**具体指标**(经济体/指标),MUST NOT 只记到 dataflow 一级——报告层需要知道该对哪几条打折扣,而不是知道"某个源出过事"。
+
+采集层 MUST NOT 为取数失败伪造干净的空观测:HTTP 200 但响应结构无法识别时 SHALL 记入缺漏,否则该情形与"确实没有数据"不可区分。
+
+SDMX 取数 SHALL 只覆盖 `config/indicators.json` 实际跟踪的(经济体, 指标):某 dataflow 无任何跟踪项时 MUST NOT 发出该请求;未被跟踪的经济体缺席 MUST NOT 记入缺漏(无人引用的指标缺席不是缺漏,记录会淹没真正影响报告的条目)。
+
+采集层发出的 User-Agent SHALL 自报项目名与可联系的出处,MUST NOT 伪装成浏览器(`Mozilla/...`)或搜索引擎爬虫(`Googlebot` 等)——伪装是在规避源站按 UA 作出的准入判断,与尊重 `robots.txt` 是同一条纪律。
+
+`is_new_release` 的判据 SHALL 随序列频率而定:月频与季频序列比对**期号**(相邻期同值也是两次独立发布);日频序列 SHALL 比对**数值水平**,MUST NOT 比对期号——日频政策利率序列每个日历日追加一行,期号推进反映的是数据管道刷新而非央行动作。取不到可比数值(首次落地、上一份快照无该 series、旧值非数值)时 SHALL 记为 false,MUST NOT 猜测。
 
 政策利率取自日频序列时,非交易日的观测值为 `NaN`;系统 SHALL 取最近一个非 `NaN` 观测作为当前值,`NaN` MUST NOT 参与数值比较。政策利率的 `prev` SHALL 为**上一个与当前值不同的利率水平**及其生效日,MUST NOT 取"上一个观测"——日频序列绝大多数相邻观测相同,后者会恒等于当前值而不含信息;回溯窗口内未出现变动时 `prev` SHALL 为 null,MUST NOT 等于当前值。
 
@@ -65,11 +75,11 @@ BIS 取数 SHALL 只覆盖 `config/indicators.json` 实际跟踪的(经济体, �
 
 #### Scenario: BIS 整体不可达
 - **WHEN** BIS 请求失败或响应无法解析
-- **THEN** 受影响的 10 个指标逐条回落 DBnomics,每次失败记入缺漏,经常账户等未走 BIS 的指标不受影响
+- **THEN** 受影响的 10 个指标本次均无观测,并**逐条**记入缺漏(scope 为"经济体/指标"),经常账户等未走 BIS 的指标不受影响
 
 #### Scenario: BIS 缺少某经济体
 - **WHEN** BIS 响应中某个**被跟踪的**经济体没有任何可用观测(缺席或全 `NaN`)
-- **THEN** 仅该经济体的对应指标回落 DBnomics,其余经济体保持 BIS 来源;同时记入一条 scope 为"经济体/指标"的缺漏,使报告层能对这条陈值打折扣
+- **THEN** 仅该经济体的对应指标本次无观测,其余经济体保持 BIS 来源;同时记入一条 scope 为"经济体/指标"的缺漏,使报告层知道这一条这次没有数
 
 #### Scenario: 未跟踪的指标不请求也不记缺漏
 - **WHEN** `config/indicators.json` 未跟踪某 BIS 指标的任何经济体
@@ -87,13 +97,25 @@ BIS 取数 SHALL 只覆盖 `config/indicators.json` 实际跟踪的(经济体, �
 - **WHEN** 上一份快照没有该 series,或其值不是可比数值
 - **THEN** `is_new_release` 为 false(漏列一次真实变动只是少说,凭不可比的输入打出发布行是编造)
 
-#### Scenario: BIS 响应缺少必需列
-- **WHEN** BIS CSV 不含 `REF_AREA` / `TIME_PERIOD` / `OBS_VALUE` 中的任一列
-- **THEN** 该 dataflow 整体回落并记入缺漏,MUST NOT 按列位置猜测取值
+#### Scenario: SDMX 响应缺少必需列
+- **WHEN** SDMX CSV 不含地区列 / `TIME_PERIOD` / `OBS_VALUE` 中的任一列
+- **THEN** 该 dataflow 覆盖的每个被跟踪指标本次均无观测,并逐条记入缺漏,MUST NOT 按列位置猜测取值
+
+#### Scenario: IMF 直连取得五经济体经常账户
+- **WHEN** IMF BOP dataflow 可达且携带了 SDMX-CSV 的 `Accept` 头
+- **THEN** 五经济体的经常账户取自 IMF,条目标注来源为 `imf`,欧元区经由 `G163` 取得
+
+#### Scenario: IMF 返回 SDMX-ML 而非 CSV
+- **WHEN** IMF 返回 HTTP 200 但响应体是 SDMX-ML(`Accept` 头被中间层剥除)
+- **THEN** 记入缺漏且该指标无观测,MUST NOT 落盘为空观测
+
+#### Scenario: 被跟踪的指标没有任何可用来源
+- **WHEN** 某被跟踪的(经济体, 指标)在本次采集中未由任何已配置来源产出观测
+- **THEN** 快照中不含该条目,且 gaps 中至少有一条 scope 为该 `经济体/指标` 的缺漏
 
 #### Scenario: 政策利率日频序列末端为 NaN
 - **WHEN** 政策利率序列最新若干观测的值为 `NaN`(非交易日)
-- **THEN** 取最近一个非 `NaN` 观测作为当前值;全部观测均为 `NaN` 时该经济体回落 DBnomics
+- **THEN** 取最近一个非 `NaN` 观测作为当前值;全部观测均为 `NaN` 时该经济体的该指标本次无观测并记入缺漏
 
 #### Scenario: 政策利率前值取上一个不同水平
 - **WHEN** 回溯窗口内出现过利率变动
@@ -109,7 +131,7 @@ BIS 取数 SHALL 只覆盖 `config/indicators.json` 实际跟踪的(经济体, �
 
 #### Scenario: 存量快照无来源字段
 - **WHEN** 上一份快照的条目不含 `source` 字段(本变更之前生成)
-- **THEN** 视其为 `dbnomics`,据此正确识别出换源
+- **THEN** 视其为 `dbnomics`(该字段引入之前的历史快照均来自那个镜像),据此正确识别出换源
 
 #### Scenario: 滞后月数披露
 - **WHEN** 某宏观条目的期号可解析
@@ -125,7 +147,7 @@ BIS 取数 SHALL 只覆盖 `config/indicators.json` 实际跟踪的(经济体, �
 
 #### Scenario: FRED 增强路径失败
 - **WHEN** FRED_API_KEY 存在但 FRED 请求失败
-- **THEN** FRED 失败记入缺漏,DBnomics 与其余采集照常进行
+- **THEN** FRED 失败记入缺漏,宏观指标与其余采集照常进行
 
 ### Requirement: 前一日事件采集(GDELT)
 系统 SHALL 以 Google News RSS 为事件主通道,按五币种关键词组查询前一日窗口的文章列表;GDELT DOC 2.0 SHALL 降级为**空洞补位**通道——仅当某币种经主通道取得的条目数为 0 时才对该币种发起 GDELT 查询,未出现空洞的币种 MUST NOT 发起 GDELT 请求。

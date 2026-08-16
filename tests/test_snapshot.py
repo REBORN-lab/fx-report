@@ -11,23 +11,27 @@ from tests.helpers import DEAD_URL, FixtureServer, make_test_root
 
 FRANK = {"rates": {"PHP": 60.843, "THB": 35.2, "BRL": 5.43, "EUR": 0.921}}
 EXCH = {"usd": {"php": 60.834, "thb": 35.21, "brl": 5.431, "eur": 0.9211}}
-SERIES = {"series": {"docs": [{"period": ["2026-06", "2026-07"], "value": [3.4, 3.1]}]}}
+# BIS WS_LONG_CPI 形态(月频)。宏观源由 DBnomics 镜像换成 BIS/IMF 官方直连后,
+# 聚合层的"宏观这一枪"用它当被打掉/打不掉的对象。
+BIS_CPI = ("FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\n"
+           "M,PH,771,2026-06,3.4\n"
+           "M,PH,771,2026-07,3.1\n")
 GDELT = {"articles": [{"url": "u", "title": "t", "domain": "d", "seendate": "s"}]}
-IND = [{"economy": "PH", "indicator": "CPI 同比", "series_id": "X"}]
+IND = [{"economy": "PH", "indicator": "CPI 同比"}]
 
 
 def endpoints(srv):
     return {
         "frankfurter_url": srv.base_url + "/frank?d={date}",
         "exchange_api_urls": [srv.base_url + "/exch?d={date}"],
-        "dbnomics_series_url": srv.base_url + "/db/{series_id}",
+        "bis_cpi_url": srv.base_url + "/bis/cpi",
         "gdelt_doc_url": srv.base_url + "/doc",
         "fred_release_dates_url": srv.base_url + "/fred",
     }
 
 
 ROUTES = {"/frank": (200, json.dumps(FRANK)), "/exch": (200, json.dumps(EXCH)),
-          "/db/": (200, json.dumps(SERIES)), "/doc": (200, json.dumps(GDELT))}
+          "/bis/cpi": (200, BIS_CPI), "/doc": (200, json.dumps(GDELT))}
 
 
 @mock.patch.dict(os.environ, {"FX_GDELT_DELAY_S": "0", "FX_GDELT_BACKOFF_S": "0"})
@@ -63,14 +67,15 @@ class SnapshotTest(unittest.TestCase):
     def test_one_source_down_others_intact(self):
         with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
             eps = endpoints(srv)
-            eps["dbnomics_series_url"] = DEAD_URL + "/db/{series_id}"
+            eps["bis_cpi_url"] = DEAD_URL + "/bis/cpi"
             make_test_root(tmp, eps, indicators=IND)
             rc = entry.main(["--date", "2026-08-10", "--root", tmp])
             self.assertEqual(rc, 0)                  # 单源失败不中断
             with open(os.path.join(tmp, "data", "2026-08-10.json"), encoding="utf-8") as f:
                 snap = json.load(f)
         self.assertEqual(snap["macro"], [])
-        self.assertEqual([g["source"] for g in snap["gaps"]], ["dbnomics"])
+        self.assertEqual([g["source"] for g in snap["gaps"]], ["bis"])
+        self.assertEqual([g["scope"] for g in snap["gaps"]], ["PH/CPI 同比"])
         self.assertTrue(snap["gaps"][0]["reason"])
         self.assertEqual(snap["rates"]["EUR"]["primary"], 0.921)
         self.assertEqual(len(snap["events"]), 5)

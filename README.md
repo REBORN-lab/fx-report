@@ -1,7 +1,7 @@
 # macro — 五币种外汇日报/周报管线
 
 零 API key、零第三方依赖(Python 3 标准库 only)的外汇报告管线:
-每日用免费公开数据源(Frankfurter / exchange-api / DBnomics / GDELT / 静态央行年历)
+每日用免费公开数据源(Frankfurter / exchange-api / BIS / IMF / BLS / Google News / 静态央行年历)
 采集 USD 兑 PHP/THB/BRL/EUR 的汇率、宏观指标与事件快照,
 再由 Claude Code skill 两步生成中文日报(快照 → 要点表 → 叙事),
 报告数字经 `scripts/check_report.py` 强制溯源校验;周报按主题聚合最近 7 天日报。
@@ -48,7 +48,7 @@ skill 会按"无快照不生成报告"前置约束正确终止(零产物)——`
 | 官方公告 | Fed press RSS、ECB press RSS | ✅ 零 key |
 | 美国 CPI | BLS 公共 API v1(零 key) | ✅ 滞后 2 个月;同比由脚本按同月计算 |
 | CPI 同比 ×5、政策利率 ×5 | BIS Stats API 直连(零 key,`text/csv`) | ✅ CPI 滞后 2 个月、政策利率 7–12 天 |
-| 经常账户 ×5 | DBnomics(IMF 口径) | ⚠ BIS 不覆盖,仍滞后;快照 `lag_months` 显式披露 |
+| 经常账户 ×5 | IMF 官方 SDMX 直连(零 key,SDMX-CSV) | ✅ 2026-08-16 实测 5/5 经济体、零 gap;滞后 1 个季度 |
 
 ### 事件通道:主通道 + 白名单闸门 + 空洞补位
 
@@ -80,9 +80,21 @@ GDELT 的限流判定与退避逻辑未改动。
 **回滚**:删掉 `config/endpoints.json` 的 `gnews_rss_url` 或 `config/news_sources.json`
 任一,整通道静默停用,全部币种回到 GDELT-only(即接入前的现状)。
 
-**宏观来源优先级:BLS > BIS > DBnomics。** 三者逐指标独立命中——BIS 整体不可达、
-缺必需列、或缺某经济体时,只有受影响的指标回落 DBnomics,其余保持 BIS。
-删掉 `endpoints.json` 里两个 `bis_*_url` 即整体回滚(未配置 = 有意停用)。
+**宏观来源:三个官方直连,没有回落层。** 美国 CPI 走 BLS(优先于 BIS);
+CPI 同比与政策利率走 BIS;经常账户走 IMF。三者逐指标独立命中,一个源出事
+只影响它自己覆盖的那几条。删掉 `endpoints.json` 里对应的 `*_url` 即停用该源
+(未配置 = 有意停用)。
+
+**没有回落层是有意的**:原先的 DBnomics 回落已整只删除——它的 **API 域**
+robots.txt 是 `User-agent: *` / `Disallow: /`(2026-08-16 实测 HTTP 200,26 字节),
+整站禁爬。这与 BSP、CME 出局适用的是同一把尺子(见下文"有意未接入的源")。
+删的是路径本身,不是"默认关闭的开关":陈旧调用点会静默地什么都不做,而 grep
+仍看得见它,复核者以为还在用。
+
+去掉回落后"取不到就没有这一行"成了常态路径,于是采集层有一条硬不变量:
+**每个被跟踪的指标,要么产出一行,要么产出一条 scope 定位到它(`经济体/指标`)
+的缺漏**。否则"整块消失"与"这一期确实没有发布"在快照里同形,下游结论句
+会把前者说成后者。
 
 BIS 两个 dataflow:
 
@@ -98,15 +110,35 @@ BIS 两个 dataflow:
 同理,政策利率的"新发布"判据是**水平变了**,不是序列多了一行。
 BIS 用 `XM` 表示欧元区,采集层映射到仓库内部的 `EA`。
 
-**为什么直连**:DBnomics 是 IMF/BIS 的镜像,2026-08-11 实测滞后 8–17 个月,
-且五经济体政策利率**全部给出过期值**(如巴西 15.0 vs 实际 14.25)。
-`config/indicators.json` 里政策利率的 `series_id` 本来就是 `BIS/WS_CBPOL/D.XX` ——
-上游一直是 BIS,直连只是去掉中间商。
+IMF 经常账户(`imf_bop_url`):dataflow `IMF.STA,BOP,21.0.0`,键
+`USA+G163+PHL+THA+BRA.NETCD_T.CAB.USD.Q`,`lastNObservations=4`。两点实测坑:
+`api.imf.org` **无视 `?format=csv`**,只认 `Accept: application/vnd.sdmx.data+csv`
+(不发这个头拿回来的是 SDMX-ML);欧元区代码是 **`G163`**(codelist 名称
+"Euro Area (EA)"),`U2` / `XM` / `EA` 在该 dataflow 里都查无此码。SDMX-CSV
+实测 53 列,一律按**列名**取。
+
+**IMF 侧 robots 实测(2026-08-16)**:`www.imf.org/robots.txt` HTTP 200,Disallow
+列表里**没有** `/external/sdmx/`(即我们走的路径未被禁);`api.imf.org/robots.txt`
+HTTP 502(Azure 网关),该主机**未发布** robots 限制 —— 如实记为"未发布",
+不当作"已放行"或"已禁止"。
+
+**采集层 User-Agent**:`fx-macro-report/1.0 (+https://github.com/REBORN-lab/macro)`。
+自报项目名与可联系出处;**永不**写 `Mozilla/...` 或 `Googlebot` —— 伪装成浏览器
+或搜索引擎爬虫是在规避源站按 UA 作出的准入判断,与尊重 `robots.txt` 是同一条纪律。
+
+**为什么直连**:镜像源 2026-08-11 实测滞后 8–17 个月,且五经济体政策利率
+**全部给出过期值**(如巴西 15.0 vs 实际 14.25);经常账户那一侧,此前记录的
+「TH 整行缺失」也不是 IMF 没数据,而是镜像的问题 —— 直连下五国全有观测。
+注意直连与镜像的**计价单位不同**(镜像百万美元、直连美元),换源当日由
+快照的 `source_changed_from` 字段标出两值不可比。
 
 **探针失败或有意未接入的源**(不写进 `config/endpoints.json`,避免每日缺漏噪音):
 
 - BSP(菲律宾央行):SharePoint REST 实测可达,但 `robots.txt` 对非搜索引擎 UA
   写的是 `Disallow: /` —— **出于合规有意不接入**,非技术障碍
+- DBnomics **API 域**:2026-08-16 实测 `robots.txt` 为 `User-agent: *` /
+  `Disallow: /`(HTTP 200,26 字节),整站禁爬 —— 与 BSP 同一把尺子,已于
+  本轮把回落路径整只删除(网页域放行,被禁的是我们在打的 API 域)
 - BOT(泰国央行)`apigw1.bot.or.th`:DNS 无 A 记录,且本就需要 client key
 - PSA(菲律宾统计局):Cloudflare JS 挑战,标准库不可达
 - 泰国 MOC:`price.moc.go.th` 403 / CPI 文件 500 / `dataapi.moc.go.th` 全路径 404
@@ -147,7 +179,7 @@ BIS 用 `XM` 表示欧元区,采集层映射到仓库内部的 `EA`。
 
 ## 目录
 
-    config/    endpoints.json(全部外部 URL 模板)与 indicators.json(DBnomics series)
+    config/    endpoints.json(全部外部 URL 模板)与 indicators.json(跟踪的经济体×指标)
     state/     calendar-<年>.json 静态央行年历;decision-log.jsonl 决策日志(脚本代笔)
     data/      每日快照 YYYY-MM-DD.json(报告数字的唯一来源)
     briefs/    每日要点表(LLM 第一步产物 + review.py 注入复盘材料)

@@ -10,18 +10,22 @@ from tests.helpers import DEAD_URL, FixtureServer, make_test_root
 
 FRANK = {"rates": {"PHP": 60.843, "THB": 35.2, "BRL": 5.43, "EUR": 0.921}}
 EXCH = {"usd": {"php": 60.834, "thb": 35.21, "brl": 5.431, "eur": 0.9211}}
-SERIES = {"series": {"docs": [{"period": ["2026-06", "2026-07"], "value": [3.4, 3.1]}]}}
+# BIS WS_LONG_CPI 形态(月频)。宏观源由 DBnomics 镜像换成 BIS/IMF 官方直连后,
+# 聚合层的"宏观这一枪"用它当被打掉/打不掉的对象。
+BIS_CPI = ("FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\n"
+           "M,PH,771,2026-06,3.4\n"
+           "M,PH,771,2026-07,3.1\n")
 GDELT = {"articles": [{"url": "u", "title": "t", "domain": "d", "seendate": "s"}]}
-IND = [{"economy": "PH", "indicator": "CPI 同比", "series_id": "X"}]
+IND = [{"economy": "PH", "indicator": "CPI 同比"}]
 ROUTES = {"/frank": (200, json.dumps(FRANK)), "/exch": (200, json.dumps(EXCH)),
-          "/db/": (200, json.dumps(SERIES)), "/doc": (200, json.dumps(GDELT))}
+          "/bis/cpi": (200, BIS_CPI), "/doc": (200, json.dumps(GDELT))}
 
 
 def endpoints(srv):
     return {
         "frankfurter_url": srv.base_url + "/frank?d={date}",
         "exchange_api_urls": [srv.base_url + "/exch?d={date}"],
-        "dbnomics_series_url": srv.base_url + "/db/{series_id}",
+        "bis_cpi_url": srv.base_url + "/bis/cpi",
         "gdelt_doc_url": srv.base_url + "/doc",
         "fred_release_dates_url": srv.base_url + "/fred",
     }
@@ -62,9 +66,11 @@ class FaultMatrixTest(unittest.TestCase):
         self.assertIsNone(snap["rates"]["PHP"]["primary"])             # 当日无汇率
         self.assertEqual(len(snap["events"]), 5)                       # 其余源完好
 
-    def test_dbnomics_down(self):
-        rc, snap = run_with(lambda e: e.update(dbnomics_series_url=DEAD_URL + "/db/{s}".replace("{s}", "{series_id}")))
-        self.assertEqual([g["source"] for g in snap["gaps"]], ["dbnomics"])
+    def test_macro_source_down(self):
+        """宏观源打掉:没有回落层,该指标没有行,并逐条记缺漏(scope 到指标)。"""
+        rc, snap = run_with(lambda e: e.update(bis_cpi_url=DEAD_URL + "/bis/cpi"))
+        self.assertEqual([g["source"] for g in snap["gaps"]], ["bis"])
+        self.assertEqual([g["scope"] for g in snap["gaps"]], ["PH/CPI 同比"])
         self.assertEqual(snap["macro"], [])
         self.assertEqual(snap["rates"]["EUR"]["primary"], 0.921)
 

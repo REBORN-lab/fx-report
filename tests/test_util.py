@@ -69,5 +69,36 @@ class HeadersTest(unittest.TestCase):
         self.assertEqual(got["ua"], "probe/9")
 
 
+class UserAgentComplianceTest(unittest.TestCase):
+    """UA 必须自报家门:项目名 + 可联系的出处。
+
+    仓库已裁定的合规约束(与"尊重 robots.txt、不绕过封锁"同一条纪律):
+    伪装成浏览器或搜索引擎爬虫,是在**规避**源站按 UA 作出的准入判断。
+    源站看到 `Mozilla/...` 无法把我们与真人区分,看到 `Googlebot` 会给出
+    它本不打算给我们的待遇——两者都让对方失去拒绝我们的能力。
+    """
+
+    FORBIDDEN = ("Mozilla", "Googlebot", "bingbot", "AppleWebKit",
+                 "Chrome", "Safari", "Gecko")
+
+    def test_ua_never_impersonates_browser_or_search_crawler(self):
+        for token in self.FORBIDDEN:
+            self.assertNotIn(token.lower(), util.DEFAULT_UA.lower(), token)
+
+    def test_ua_carries_project_name_and_contact_url(self):
+        """光有一个不像浏览器的名字不够:源站要能查到我们是谁、找谁反映。"""
+        self.assertIn("fx-macro-report", util.DEFAULT_UA)
+        self.assertIn("https://github.com/REBORN-lab/macro", util.DEFAULT_UA)
+
+    def test_ua_actually_sent_on_the_wire(self):
+        """常量对了但没发出去等于没有——钉住实际请求头。"""
+        def handler(req):
+            return 200, json.dumps({"ua": req.headers.get("User-Agent")})
+        with FixtureServer({"/h": handler}) as srv:
+            got = util.fetch_json(srv.base_url + "/h")
+        self.assertEqual(got["ua"], util.DEFAULT_UA)
+        self.assertIn("fx-macro-report", got["ua"])
+
+
 if __name__ == "__main__":
     unittest.main()
