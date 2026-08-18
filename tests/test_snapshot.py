@@ -291,3 +291,102 @@ class GnewsCapsTest(unittest.TestCase):
             cfg = entry.build_cfg("2026-08-10", root=tmp)
         self.assertEqual(cfg["news_sources_path"],
                          os.path.join(tmp, "config", "news_sources.json"))
+
+
+@mock.patch.dict(os.environ, {"FX_GDELT_DELAY_S": "0", "FX_GDELT_BACKOFF_S": "0"})
+class PrevSnapshotAcrossGapDaysTest(unittest.TestCase):
+    """日更断档时,前一份快照不是 DATE-1,而 `prev_snapshot` 曾严格只取 DATE-1。
+
+    2026-08-18 实际发生:上一份快照是 08-14,`data/2026-08-17.json` 不存在 →
+    `prev_snapshot` 为 None → 四个币种 `prev_primary` 全空,且**经常账户由
+    dbnomics 换到 imf(计价单位由百万美元变美元)却没有打 `source_changed_from`**
+    —— 那个字段是报告层看出两个数不可比的唯一线索。文件不存在时连 gap 都不记
+    (只有"存在但损坏"才记),所以这件事在快照里完全看不见。
+
+    修法:取**最近一份**早于 DATE 的快照;它不是 DATE-1 时**出声**。
+    "一份都没有"(首次运行)不出声 —— 那时没有可比对象,也不可能产生假比较。
+    """
+
+    def _run(self, tmp, srv, priors, date_str="2026-08-10"):
+        make_test_root(tmp, endpoints(srv), indicators=IND)
+        for name, payload in priors.items():
+            path = os.path.join(tmp, "data", name + ".json")
+            with open(path, "w", encoding="utf-8") as f:
+                if isinstance(payload, str):
+                    f.write(payload)
+                else:
+                    json.dump(payload, f)
+        rc = entry.main(["--date", date_str, "--root", tmp])
+        self.assertEqual(rc, 0)
+        with open(os.path.join(tmp, "data", date_str + ".json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def _snapshot_gaps(self, snap):
+        return [g for g in snap["gaps"] if g["source"] == "snapshot"]
+
+    def test_prev_primary_comes_from_the_most_recent_prior_not_only_yesterday(self):
+        prior = {"date": "2026-08-07", "rates": {"PHP": {"primary": 60.1}}, "macro": []}
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {"2026-08-07": prior})
+        self.assertEqual(snap["rates"]["PHP"]["prev_primary"], 60.1)
+
+    def test_a_gap_day_is_declared_with_the_date_actually_used(self):
+        prior = {"date": "2026-08-07", "rates": {"PHP": {"primary": 60.1}}, "macro": []}
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {"2026-08-07": prior})
+        gaps = self._snapshot_gaps(snap)
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(gaps[0]["scope"], "prev")
+        self.assertIn("2026-08-07", gaps[0]["reason"])
+        self.assertIn("2026-08-09", gaps[0]["reason"])
+
+    def test_source_change_is_still_marked_across_a_gap_day(self):
+        """本轮的核心靶子:换源披露不得因为断档而消失。"""
+        prior = {"date": "2026-08-07", "rates": {},
+                 "macro": [{"economy": "PH", "indicator": "CPI 同比",
+                            "source": "dbnomics", "value": 3.0, "period": "2026-05"}]}
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {"2026-08-07": prior})
+        row = [r for r in snap["macro"]
+               if (r["economy"], r["indicator"]) == ("PH", "CPI 同比")][0]
+        self.assertEqual(row.get("source_changed_from"), "dbnomics")
+        self.assertFalse(row["is_new_release"])
+
+    def test_the_most_recent_prior_wins_over_older_ones(self):
+        older = {"date": "2026-08-05", "rates": {"PHP": {"primary": 59.0}}, "macro": []}
+        newer = {"date": "2026-08-07", "rates": {"PHP": {"primary": 60.1}}, "macro": []}
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {"2026-08-05": older, "2026-08-07": newer})
+        self.assertEqual(snap["rates"]["PHP"]["prev_primary"], 60.1)
+
+    def test_an_adjacent_prior_declares_nothing(self):
+        prior = {"date": "2026-08-09", "rates": {"PHP": {"primary": 60.9}}, "macro": []}
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {"2026-08-09": prior})
+        self.assertEqual(self._snapshot_gaps(snap), [])
+        self.assertEqual(snap["rates"]["PHP"]["prev_primary"], 60.9)
+
+    def test_no_prior_at_all_is_not_declared(self):
+        """首次运行:没有可比对象,也不可能产生假比较,不出声。"""
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {})
+        self.assertEqual(self._snapshot_gaps(snap), [])
+        self.assertIsNone(snap["rates"]["PHP"]["prev_primary"])
+
+    def test_a_corrupt_most_recent_prior_is_declared_and_degrades(self):
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {"2026-08-07": "{corrupt json"})
+        gaps = self._snapshot_gaps(snap)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("2026-08-07", gaps[0]["reason"])
+        self.assertIsNone(snap["rates"]["PHP"]["prev_primary"])
+
+    def test_a_corrupt_newer_file_does_not_silently_fall_back_to_an_older_good_one(self):
+        """坏文件被跳过、拿更旧的那份当 prev,会把"损坏"伪装成"正常" —— 必须出声。"""
+        older = {"date": "2026-08-05", "rates": {"PHP": {"primary": 59.0}}, "macro": []}
+        with tempfile.TemporaryDirectory() as tmp, FixtureServer(dict(ROUTES)) as srv:
+            snap = self._run(tmp, srv, {"2026-08-05": older, "2026-08-07": "{corrupt"})
+        gaps = self._snapshot_gaps(snap)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("2026-08-07", gaps[0]["reason"])
+        self.assertIsNone(snap["rates"]["PHP"]["prev_primary"])

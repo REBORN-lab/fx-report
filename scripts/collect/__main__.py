@@ -44,6 +44,65 @@ def _load_history(data_dir, date_str, limit=derive_mod.HISTORY_SPAN):
     return out
 
 
+def _latest_prior_path(data_dir, date_str):
+    """早于 DATE 的**最近**一份快照路径;一份都没有时返回 None。
+
+    这里刻意按**文件名**取最近的那一份、不跳过坏文件:坏文件被跳过、拿更旧的
+    那一份当 prev,会把"损坏"伪装成"正常",与本函数存在的理由正相反。
+    """
+    best = None
+    for path in glob.glob(os.path.join(data_dir, "*.json")):
+        name = os.path.basename(path)[:-len(".json")]
+        if not SNAPSHOT_NAME_RE.fullmatch(name):
+            continue    # 误放的非快照文件不得冒充前一份快照
+        if name >= date_str:
+            continue    # 排除当日自身:重跑当天时它已存在
+        if best is None or name > best[0]:
+            best = (name, path)
+    return best
+
+
+def _prev_snapshot(data_dir, date_str, yesterday):
+    """(前一份快照, gap)。前一份快照是外部持久化数据:损坏/不可读不该让当日
+    采集崩掉(硬契约精神),置 None 继续并记一条 source="snapshot" 的 gap
+    —— `prev_primary`/`is_new_release`/`source_changed_from` 会静默退化,
+    不记 gap 则无从察觉。
+
+    **取的是最近一份早于 DATE 的快照,不是严格的 DATE-1。** 严格取 DATE-1 时,
+    日更只要断一天,这三个字段就一起失效而快照里毫无痕迹;2026-08-18 实际发生:
+    上一份快照是 08-14,经常账户当天由 dbnomics 换到 imf(计价单位由百万美元
+    变美元,PH 从 -4247 跳到 -5663843363),`source_changed_from` 一个都没打。
+
+    它不是 DATE-1 时**出声**:比对基准不相邻,是读者判断"这两个数可不可比"
+    的前提。一份都没有(首次运行)不出声 —— 那时没有可比对象,也不可能
+    产生假比较,记 gap 只是噪音。
+    """
+    found = _latest_prior_path(data_dir, date_str)
+    if found is None:
+        return None, None
+    name, path = found
+    try:
+        with open(path, encoding="utf-8") as f:
+            snap = json.load(f)
+    except (OSError, ValueError, RecursionError) as e:
+        return None, util.make_gap(
+            "snapshot", "prev",
+            "corrupt prev snapshot %s: %s: %s" % (name, type(e).__name__, e))
+    if not isinstance(snap, dict):
+        # 合法 JSON 但顶层非 dict:同样属于"prev 退化",必须可见,不得静默
+        return None, util.make_gap(
+            "snapshot", "prev",
+            "corrupt prev snapshot %s: top-level %s, expected dict"
+            % (name, type(snap).__name__))
+    if name != yesterday:
+        return snap, util.make_gap(
+            "snapshot", "prev",
+            "前一份快照为 %s、非 %s:比对基准与本日不相邻,"
+            "prev_primary / prev_ref_date / source_changed_from 均以 %s 为准"
+            % (name, yesterday, name))
+    return snap, None
+
+
 def build_cfg(date_str, root=ROOT):
     with open(os.path.join(root, "config", "endpoints.json"), encoding="utf-8") as f:
         endpoints = json.load(f)
@@ -52,27 +111,7 @@ def build_cfg(date_str, root=ROOT):
     d = date.fromisoformat(date_str)
     yesterday = (d - timedelta(days=1)).isoformat()
     data_dir = os.path.join(root, "data")
-    # 前日快照是外部持久化数据:损坏/不可读不该让当日采集崩掉(硬契约精神)。
-    # 置 None 继续,并记一条 source="snapshot" 的 gap 让报告可见
-    # (prev_primary/is_new_release 会静默退化,不记 gap 则无从察觉)。
-    prev_snapshot, prev_gap = None, None
-    prev_path = os.path.join(data_dir, yesterday + ".json")
-    if os.path.exists(prev_path):
-        try:
-            with open(prev_path, encoding="utf-8") as f:
-                prev_snapshot = json.load(f)
-        except (OSError, ValueError, RecursionError) as e:
-            prev_gap = util.make_gap(
-                "snapshot", "prev",
-                "corrupt prev snapshot %s: %s: %s" % (yesterday, type(e).__name__, e))
-        else:
-            # 合法 JSON 但顶层非 dict:同样属于"prev 退化",必须可见,不得静默
-            if not isinstance(prev_snapshot, dict):
-                prev_gap = util.make_gap(
-                    "snapshot", "prev",
-                    "corrupt prev snapshot %s: top-level %s, expected dict"
-                    % (yesterday, type(prev_snapshot).__name__))
-                prev_snapshot = None
+    prev_snapshot, prev_gap = _prev_snapshot(data_dir, date_str, yesterday)
     cals = sorted(glob.glob(os.path.join(root, "state", "calendar-*.json")))
     return {
         "date": date_str,
