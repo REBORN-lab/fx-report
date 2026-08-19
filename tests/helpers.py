@@ -9,6 +9,14 @@ DEAD_URL = "http://127.0.0.1:9"
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        # 必须把请求体读干净再回应:不读就关连接,客户端侧看到的是
+        # ConnectionResetError,与"源站拒绝"同形——本仓库要区分这两件事。
+        n = int(self.headers.get("Content-Length") or 0)
+        self.request_body = self.rfile.read(n) if n else b""
+        self.server.fixture_last_body = self.request_body
+        self.do_GET()
+
     def do_GET(self):
         for prefix, resp in self.server.fixture_routes.items():
             if self.path.startswith(prefix):
@@ -38,9 +46,15 @@ class FixtureServer:
     def __init__(self, routes):
         self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self.httpd.fixture_routes = routes
+        self.httpd.fixture_last_body = None
         self.thread = threading.Thread(
             target=lambda: self.httpd.serve_forever(poll_interval=0.05), daemon=True
         )
+
+    @property
+    def last_body(self):
+        """最近一次 POST 的请求体(bytes);没收到过 POST 时为 None。"""
+        return self.httpd.fixture_last_body
 
     @property
     def base_url(self):

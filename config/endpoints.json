@@ -10,6 +10,7 @@
   "ecb_press_rss": "https://www.ecb.europa.eu/rss/press.html",
   "bls_timeseries_url": "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0",
   "bis_cbpol_url": "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.US+XM+PH+TH+BR?format=csv&detail=dataonly&lastNObservations=400",
+  "psa_cpi_url": "https://openstat.psa.gov.ph/PXWeb/api/v1/en/DB/2M/PI/CPI/2018NEW/0012M4ACP23.px",
   "bis_cpi_url": "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_LONG_CPI/1.0/M.US+XM+PH+TH+BR.771?format=csv&detail=dataonly&lastNObservations=4",
   "imf_bop_url": "https://api.imf.org/external/sdmx/2.1/data/IMF.STA,BOP,21.0.0/USA+G163+PHL+THA+BRA.NETCD_T.CAB.USD.Q?lastNObservations=4",
   "gnews_rss_url": "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"

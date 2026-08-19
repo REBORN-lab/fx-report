@@ -100,5 +100,34 @@ class UserAgentComplianceTest(unittest.TestCase):
         self.assertIn("fx-macro-report", got["ua"])
 
 
+class PostBodyTest(unittest.TestCase):
+    """PXWeb(PSA)只接受 POST + JSON 查询体,GET 拿不到数据。"""
+
+    def test_data_makes_it_a_post_and_body_arrives_intact(self):
+        def handler(req):
+            return 200, json.dumps({"method": req.command,
+                                    "body": req.request_body.decode("utf-8")})
+        with FixtureServer({"/px": handler}) as srv:
+            got = util.fetch_json(srv.base_url + "/px", data=b'{"q":1}')
+        self.assertEqual(got["method"], "POST")
+        self.assertEqual(got["body"], '{"q":1}')
+
+    def test_without_data_it_stays_a_get(self):
+        """默认路径必须一个字节都不变——十几个既有源全走 GET。"""
+        def handler(req):
+            return 200, json.dumps({"method": req.command})
+        with FixtureServer({"/g": handler}) as srv:
+            got = util.fetch_json(srv.base_url + "/g")
+        self.assertEqual(got["method"], "GET")
+
+    def test_ua_still_sent_on_post(self):
+        """自报家门的纪律不因换了动词就失效。"""
+        def handler(req):
+            return 200, json.dumps({"ua": req.headers.get("User-Agent")})
+        with FixtureServer({"/px": handler}) as srv:
+            got = util.fetch_json(srv.base_url + "/px", data=b"{}")
+        self.assertEqual(got["ua"], util.DEFAULT_UA)
+
+
 if __name__ == "__main__":
     unittest.main()

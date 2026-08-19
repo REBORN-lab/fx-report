@@ -1083,3 +1083,243 @@ class ConfiguredIndicatorsReachableTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ------------------------------------------------------------ PSA OpenSTAT fixture
+# 结构逐字取自 2026-08-19 对 openstat.psa.gov.ph 的实测响应(PXWeb px 格式,
+# CRLF 行尾、关键字以 ; 收尾、长文本跨行续写)。数值在两处**故意与实测不同**,
+# 都是为了杀变异:
+#   ① 2026 的 "Ave"(年均值)给了一个数 5.1 —— 实测那一格是 "..",
+#      于是"把 Ave 当成一期"这个错误在真数据上不可见。
+#   ② NOTEX 正文里塞了分号与引号 —— 按 ";" 切关键字的实现会在这里截断,
+#      把后面的 NEXT-UPDATE / DATA 一起吃掉。
+PSA_PX = "\r\n".join([
+    'CHARSET="ANSI";',
+    'AXIS-VERSION="2010";',
+    'DECIMALS=1;',
+    'MATRIX="2M4ACP23";',
+    'STUB="Geolocation","Commodity Description";',
+    'HEADING="Year","Period";',
+    'VALUES("Geolocation")="PHILIPPINES";',
+    'VALUES("Commodity Description")="0 - ALL ITEMS";',
+    'VALUES("Year")="2025","2026";',
+    'VALUES("Period")="Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep",'
+    '"Oct","Nov","Dec","Ave";',
+    'LAST-UPDATED="20260805 09:00";',
+    'UNITS="Percent";',
+    'NOTEX="Inflation Rate; see technical notes##Note/s:##[..] Data not available"',
+    '"##Region VI includes Aklan; Antique; Capiz";',
+    'NEXT-UPDATE="20260904 09:00";',
+    'UPDATE-FREQUENCY="Monthly";',
+    'DATA=',
+    '2.9 2.1 1.8 1.4 1.3 1.4 0.9 1.5 1.7 1.7 1.5 1.8 1.7 '
+    '2.0 2.4 4.1 7.2 6.8 6.4 6.2 ".." ".." ".." ".." ".." 5.1 ',
+    ';',
+])
+
+PH_CPI = {"economy": "PH", "indicator": "CPI 同比"}
+# BIS 侧的菲律宾 CPI:PSA 缺席时接手的就是它(优先级 PSA > BIS),
+# 期号比 PSA 旧一个月 —— 这正是接 PSA 的理由。
+BIS_CPI_PH = ("FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\n"
+              "M,PH,771,2026-05,6.761006\n"
+              "M,PH,771,2026-06,6.362922\n")
+
+
+class PsaPhCpiTest(unittest.TestCase):
+    """菲律宾 CPI 走 PSA OpenSTAT 主源:比 BIS 快一个月,并自带发布日与下次发布日。"""
+
+    def _cfg(self, srv, **over):
+        cfg = make_test_cfg(
+            date="2026-08-19",
+            indicators=[dict(PH_CPI)],
+            endpoints={"psa_cpi_url": srv.base_url + "/PXWeb/api/v1/en/DB/2M/PI",
+                       # BIS 始终配着:PSA 是主源不是唯一源,成功路径上
+                       # 这条接线同时钉住了"优先级",不只是"回落可用"。
+                       "bis_cpi_url": srv.base_url + "/bis/cpi"})
+        cfg["endpoints"].update(over.pop("endpoints", {}))
+        cfg.update(over)
+        return cfg
+
+    def _collect(self, px=PSA_PX, status=200, **over):
+        with FixtureServer({"/PXWeb": (status, px),
+                            "/bis/cpi": (200, BIS_CPI_PH)}) as srv:
+            cfg = self._cfg(srv, **over)
+            out, gaps = macro.collect(cfg)
+            return out, gaps, srv
+
+    def test_latest_month_and_prev_come_from_psa(self):
+        out, gaps, _ = self._collect()
+        row = out["indicators"][0]
+        self.assertEqual(gaps, [])
+        self.assertEqual(row["source"], "psa")
+        self.assertEqual(row["value"], 6.2)
+        self.assertEqual(row["period"], "2026-07")
+        self.assertEqual(row["prev"], 6.4)
+        self.assertEqual(row["prev_period"], "2026-06")
+        self.assertEqual(row["series_id"], "PSA/2M4ACP23/PH")
+
+    def test_annual_average_cell_is_not_a_period(self):
+        """px 的 "Ave" 是年均值。选中它会以 2026-13 落盘并把 5.1 当成最新通胀。"""
+        row = self._collect()[0]["indicators"][0]
+        self.assertEqual(row["period"], "2026-07")
+        self.assertNotEqual(row["value"], 5.1)
+
+    def test_axis_order_is_period_fastest_not_transposed(self):
+        """DATA 按 Year × Period 行主序排,Period 变得最快。转置后 2026-07
+        会取到 1.5(2025 的 8 月那一格),数字仍然像通胀,错得看不出来。"""
+        self.assertNotEqual(self._collect()[0]["indicators"][0]["value"], 1.5)
+
+    def test_missing_cells_are_skipped_not_zeroed(self):
+        """".." 是"未发布"。当成 0 会让 2026-12 成为最新期、通胀读数变 0。"""
+        row = self._collect()[0]["indicators"][0]
+        self.assertEqual(row["period"], "2026-07")
+        self.assertNotEqual(row["value"], 0)
+
+    def test_release_dates_are_carried(self):
+        """接 PSA 的第二个理由:它是唯一给出**发布日与下次发布日**的源。
+        没有这两个日期,「这个存量值有多旧」与「什么时候会变」都只能靠猜。"""
+        row = self._collect()[0]["indicators"][0]
+        self.assertEqual(row["released"], "2026-08-05")
+        self.assertEqual(row["next_release"], "2026-09-04")
+
+    def test_semicolon_inside_quoted_text_does_not_truncate_parsing(self):
+        """NOTEX 正文含分号。按 ";" 切关键字会把 NEXT-UPDATE 与 DATA 一起吃掉。"""
+        row = self._collect()[0]["indicators"][0]
+        self.assertEqual(row["next_release"], "2026-09-04")
+        self.assertEqual(row["value"], 6.2)
+
+    def test_lag_months_attached(self):
+        self.assertEqual(self._collect()[0]["indicators"][0]["lag_months"], 1)
+
+    def test_query_is_actually_posted_with_the_right_selection(self):
+        """PXWeb 对 GET 只回元数据。发错动词会拿到一份没有 DATA 的响应,
+        而"没有 DATA"与"这一期没发布"在 gap 里同形。"""
+        _, _, srv = self._collect()
+        body = json.loads(srv.last_body.decode("utf-8"))
+        codes = {q["code"] for q in body["query"]}
+        self.assertEqual(codes, {"Geolocation", "Commodity Description",
+                                 "Year", "Period"})
+        self.assertEqual(body["response"]["format"], "px")
+
+    def test_geolocation_mismatch_is_rejected_not_silently_used(self):
+        """Geolocation "0" 是位置码。PSA 改一次表结构就会静默取到某个省的
+        通胀,数值仍然合理。响应里带着地区名,必须当场核对。"""
+        px = PSA_PX.replace('"PHILIPPINES"', '"....Siquijor"')
+        out, gaps, _ = self._collect(px=px)
+        self.assertEqual(out["indicators"][0]["source"], "bis")
+        self.assertIn("psa", [g["source"] for g in gaps])
+
+    def test_commodity_mismatch_is_rejected(self):
+        px = PSA_PX.replace('"0 - ALL ITEMS"', '"01 - FOOD AND NON-ALCOHOLIC BEVERAGES"')
+        out, gaps, _ = self._collect(px=px)
+        self.assertEqual(out["indicators"][0]["source"], "bis")
+        self.assertIn("psa", [g["source"] for g in gaps])
+
+    def test_request_failure_falls_back_to_bis_with_gap(self):
+        with FixtureServer({"/bis/cpi": (200, BIS_CPI_PH)}) as srv:
+            cfg = self._cfg(srv)
+            cfg["endpoints"]["psa_cpi_url"] = DEAD_URL + "/PXWeb"
+            cfg["endpoints"]["bis_cpi_url"] = srv.base_url + "/bis/cpi"
+            out, gaps = macro.collect(cfg)
+        row = out["indicators"][0]
+        self.assertEqual(row["source"], "bis")
+        self.assertEqual(row["period"], "2026-06")
+        self.assertIn("psa", [g["source"] for g in gaps])
+
+    def test_psa_not_configured_uses_bis_silently(self):
+        """未配置 = 有意停用(与 BLS 同约定),不记缺漏。"""
+        with FixtureServer({"/bis/cpi": (200, BIS_CPI_PH)}) as srv:
+            cfg = self._cfg(srv)
+            del cfg["endpoints"]["psa_cpi_url"]
+            cfg["endpoints"]["bis_cpi_url"] = srv.base_url + "/bis/cpi"
+            out, gaps = macro.collect(cfg)
+        self.assertEqual(gaps, [])
+        self.assertEqual(out["indicators"][0]["source"], "bis")
+
+    def test_psa_not_called_when_ph_cpi_untracked(self):
+        """没跟踪就别打这一枪,也就不会为无人关心的指标记缺漏。"""
+        with FixtureServer({"/PXWeb": (500, "boom")}) as srv:
+            cfg = self._cfg(srv, indicators=[{"economy": "US", "indicator": "CPI 同比"}])
+            _, gaps = macro.collect(cfg)
+        self.assertNotIn("psa", [g["source"] for g in gaps])
+
+    def test_source_change_from_bis_is_marked_and_not_new_release(self):
+        """换源当日期号前移一个月,与前值不可比;不标出来就会被写成通胀回落。"""
+        prev = {"macro": [{"economy": "PH", "indicator": "CPI 同比",
+                           "source": "bis", "period": "2026-06",
+                           "series_id": "BIS/WS_LONG_CPI/PH"}]}
+        row = self._collect(prev_snapshot=prev)[0]["indicators"][0]
+        self.assertEqual(row["source_changed_from"], "bis")
+        self.assertFalse(row["is_new_release"])
+
+    def test_next_update_absent_leaves_the_key_out(self):
+        """px 里没有 NEXT-UPDATE 时不许补一个:缺失与"已知下次发布日"
+        在报告层是两件事,写成 null 之外的任何值都是编的。"""
+        px = PSA_PX.replace('NEXT-UPDATE="20260904 09:00";\r\n', '')
+        row = self._collect(px=px)[0]["indicators"][0]
+        self.assertNotIn("next_release", row)
+        self.assertEqual(row["value"], 6.2)      # 其余照常产出
+
+    def test_no_data_keyword_falls_back_with_gap(self):
+        px = PSA_PX.split("DATA=")[0] + ";"
+        out, gaps, _ = self._collect(px=px)
+        self.assertEqual(out["indicators"][0]["source"], "bis")
+        self.assertIn("psa", [g["source"] for g in gaps])
+
+    def test_cell_count_mismatch_is_refused_not_read_anyway(self):
+        """DATA 的格数与"年 × 期"对不上,说明我们对这张表的形状理解错了。
+        多出来的格不会触发越界,于是照读会得到一份**看起来正常**的结果 ——
+        这类静默错位正是本仓库反复栽的那一类,必须整份作废。"""
+        px = PSA_PX.replace('".." 5.1 ', '".." 5.1 9.9 9.9 9.9 9.9 ')
+        out, gaps, _ = self._collect(px=px)
+        self.assertEqual(out["indicators"][0]["source"], "bis")
+        self.assertIn("psa", [g["source"] for g in gaps])
+
+    def test_year_order_in_the_response_does_not_decide_which_is_latest(self):
+        """px 只承诺"轴的顺序与 VALUES 一致",没承诺年份升序。
+        按出现次序取最后一个,遇到倒序响应就会把去年当成最新期。"""
+        px = (PSA_PX.replace('VALUES("Year")="2025","2026";',
+                             'VALUES("Year")="2026","2025";')
+                    .replace('2.9 2.1 1.8 1.4 1.3 1.4 0.9 1.5 1.7 1.7 1.5 1.8 1.7 '
+                             '2.0 2.4 4.1 7.2 6.8 6.4 6.2 ".." ".." ".." ".." ".." 5.1 ',
+                             '2.0 2.4 4.1 7.2 6.8 6.4 6.2 ".." ".." ".." ".." ".." 5.1 '
+                             '2.9 2.1 1.8 1.4 1.3 1.4 0.9 1.5 1.7 1.7 1.5 1.8 1.7 '))
+        row = self._collect(px=px)[0]["indicators"][0]
+        self.assertEqual(row["period"], "2026-07")
+        self.assertEqual(row["value"], 6.2)
+
+    def test_other_economies_cpi_untouched_by_psa(self):
+        """PSA 只供菲律宾一条。写成"CPI 同比"的通用主源会把四个经济体
+        全部替换成菲律宾的读数。"""
+        with FixtureServer({"/PXWeb": (200, PSA_PX),
+                            "/bis/cpi": (200, BIS_CPI_PH + "M,TH,771,2026-06,2.419837\n")}) as srv:
+            cfg = self._cfg(srv, indicators=[dict(PH_CPI),
+                                             {"economy": "TH", "indicator": "CPI 同比"}])
+            cfg["endpoints"]["bis_cpi_url"] = srv.base_url + "/bis/cpi"
+            out, _ = macro.collect(cfg)
+        by = {r["economy"]: r for r in out["indicators"]}
+        self.assertEqual(by["PH"]["source"], "psa")
+        self.assertEqual(by["TH"]["source"], "bis")
+        self.assertEqual(by["TH"]["value"], 2.419837)
+
+
+class PxParseTest(unittest.TestCase):
+    """px 关键字切分的边界(引号内的分号、跨行续写、CRLF)。"""
+
+    def test_quoted_semicolon_does_not_end_the_keyword(self):
+        got = macro._px_parse('A="x;y";\r\nB="z";\r\n')
+        self.assertEqual(got["A"], '"x;y"')
+        self.assertEqual(got["B"], '"z"')
+
+    def test_continuation_lines_are_joined(self):
+        got = macro._px_parse('A="one"\r\n"two";\r\nB=1;\r\n')
+        self.assertEqual(macro._px_strings(got["A"]), ["onetwo"])
+        self.assertEqual(got["B"], "1")
+
+    def test_parenthesised_keyword_kept_verbatim(self):
+        got = macro._px_parse('VALUES("Year")="2025","2026";\r\n')
+        self.assertEqual(macro._px_strings(got['VALUES("Year")']), ["2025", "2026"])
+
+    def test_unterminated_keyword_is_dropped_not_guessed(self):
+        got = macro._px_parse('A="x";\r\nB="oops\r\n')
+        self.assertEqual(list(got), ["A"])

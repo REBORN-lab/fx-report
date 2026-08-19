@@ -19,6 +19,7 @@ grep 仍看得见它,复核者以为还在用。
 """
 import csv
 import io
+import json
 import math
 import re
 
@@ -26,6 +27,7 @@ from . import util
 
 PERIOD_RE = re.compile(r"^(\d{4})-(\d{2})")
 US_CPI = ("US", "CPI 同比")
+PH_CPI = ("PH", "CPI 同比")
 
 
 def _obs_value(raw):
@@ -190,6 +192,7 @@ def collect(cfg):
     tracked = [(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]]
     # 没跟踪美国 CPI 就别打 BLS 这一枪(也就不会为未跟踪指标记 gap)
     bls_row = _bls_us_cpi(cfg, gaps) if US_CPI in tracked else None
+    psa_row = _psa_ph_cpi(cfg, gaps) if PH_CPI in tracked else None
     # 批量取数放在循环之前:每个源一次 GET 覆盖五经济体,循环内只查表。
     table = _sdmx_table(cfg, gaps)
     for ind in cfg["indicators"]:
@@ -202,6 +205,15 @@ def collect(cfg):
                        is_new_release=_is_new(cfg, bls_row["series_id"],
                                               bls_row["period"]),
                        lag_months=lag_months(bls_row["period"], cfg["date"]))
+            indicators.append(_mark_source_change(cfg, ind, row))
+            continue
+        if psa_row is not None and key == PH_CPI:
+            # PSA 是菲律宾 CPI 的主源,优先于 BIS。与 BLS 那一支同形:
+            # series_id 写 PSA 的真实出处,is_new_release 按期号判。
+            row = dict(psa_row, economy=ind["economy"], indicator=ind["indicator"],
+                       is_new_release=_is_new(cfg, psa_row["series_id"],
+                                              psa_row["period"]),
+                       lag_months=lag_months(psa_row["period"], cfg["date"]))
             indicators.append(_mark_source_change(cfg, ind, row))
             continue
         hit = table.get(key)
@@ -248,6 +260,171 @@ def lag_months(period, date_str):
     if not (1 <= pm <= 12 and 1 <= dm <= 12):
         return None
     return (dy - py) * 12 + (dm - pm)
+
+
+# --------------------------------------------------------------- PSA OpenSTAT
+# 菲律宾 CPI 的官方发布方。接它有两个理由,第二个比第一个重要:
+# ① 比 BIS 转发快一个整月(2026-08-19 实测:PSA 已有 2026-07 = 6.2,
+#    BIS 仍停在 2026-06);
+# ② 它是**唯一**给出发布日(LAST-UPDATED)与下次发布日(NEXT-UPDATE)的源。
+#    没有这两个日期,"这个存量值有多旧"与"它什么时候会变"都只能靠猜,
+#    而报告的关键假设正锚在这类存量值上。
+#
+# 合规:openstat.psa.gov.ph 的 robots 通配组是 Allow: /,并带
+# Content-Signal: use=reference(正面授权"引一条数进报告"这个用途)。
+# UA 走 util.DEFAULT_UA 自报家门,只打 /PXWeb/api/*。
+#
+# 位置码的风险由响应自证:查询里的 "0"/"0" 是**位置索引**,PSA 改一次表结构
+# 就会静默取到某个省或某个分类,数值仍然像通胀。px 响应把选中的地区名与
+# 分类名原样回显,所以取数前当场核对——豁免/假设必须自证,不能只在注释里声明。
+PSA_QUERY = {
+    "query": [
+        {"code": "Geolocation",
+         "selection": {"filter": "item", "values": ["0"]}},          # PHILIPPINES
+        {"code": "Commodity Description",
+         "selection": {"filter": "item", "values": ["0"]}},          # 0 - ALL ITEMS
+        # 年份用 top:2 而不是位置索引:索引会随新年份加入整体后移,而错位不会
+        # 报错,只会安静地取到去年同月。两年足够覆盖"最新 + 前值"跨年的情形。
+        {"code": "Year", "selection": {"filter": "top", "values": ["2"]}},
+        {"code": "Period", "selection": {"filter": "all", "values": ["*"]}},
+    ],
+    "response": {"format": "px"},
+}
+
+# px 的 Period 维里混着 "Ave"(年均值)。它不在这张表里,于是自动排除——
+# 与 BLS 的 M13 是同一个坑:选中它会把年均值当成一期通胀落盘。
+PSA_MONTHS = {m: i + 1 for i, m in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))}
+
+PSA_DATE_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})")
+
+
+def _px_parse(text):
+    """px 关键字 → 原样值串。
+
+    关键字以**引号外**的第一个 ';' 收尾。这一条是承重的:实测 NOTEX 正文里
+    带分号(还带跨行的引号续写),按 ';' 直接切会把它后面的 NEXT-UPDATE 与
+    DATA 一起吃掉,而结果是"少了两个键",与"这份响应没有下次发布日"同形。
+
+    未收尾的尾巴直接丢弃,不猜。
+    """
+    out, i, n = {}, 0, len(text)
+    while i < n:
+        j = text.find("=", i)
+        if j < 0:
+            break
+        key = text[i:j].strip()
+        k, in_quote = j + 1, False
+        while k < n:
+            c = text[k]
+            if c == '"':
+                in_quote = not in_quote
+            elif c == ";" and not in_quote:
+                break
+            k += 1
+        if k >= n:
+            break                      # 未收尾 → 丢掉
+        if key:
+            out[key] = text[j + 1:k].strip()
+        i = k + 1
+    return out
+
+
+def _px_strings(raw):
+    """px 值串 → 字符串列表。逗号分项;仅空白相隔的相邻引号段是**同一项的
+    跨行续写**(px 用它写长文本),两者不能混为一谈。"""
+    items, cur, i, n, after_comma = [], None, 0, len(raw), True
+    while i < n:
+        c = raw[i]
+        if c == '"':
+            end = raw.find('"', i + 1)
+            if end < 0:
+                break
+            chunk = raw[i + 1:end]
+            if after_comma or cur is None:
+                if cur is not None:
+                    items.append(cur)
+                cur = chunk
+            else:
+                cur += chunk           # 续写,不是新的一项
+            after_comma = False
+            i = end + 1
+            continue
+        if c == ",":
+            after_comma = True
+        i += 1
+    if cur is not None:
+        items.append(cur)
+    return items
+
+
+def _px_date(raw):
+    """px 的 "20260805 09:00" → "2026-08-05";形态不符返回 None,不猜。"""
+    vals = _px_strings(raw or "")
+    m = PSA_DATE_RE.match(vals[0]) if vals else None
+    return "-".join(m.groups()) if m else None
+
+
+def _psa_ph_cpi(cfg, gaps):
+    """菲律宾 CPI 走 PSA OpenSTAT(零 key,POST + px)。
+
+    未配置端点 → 静默交给 BIS(有意停用,与 BLS 同约定);配置了但失败或
+    响应不可信 → 记 gap 后由 BIS 接手。任何失败都不上抛。
+    """
+    endpoints = cfg.get("endpoints")
+    url = endpoints.get("psa_cpi_url") if isinstance(endpoints, dict) else None
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        text = util.fetch_text(
+            url, cfg["timeout_s"], {"Content-Type": "application/json"},
+            json.dumps(PSA_QUERY).encode("utf-8"))
+        px = _px_parse(text)
+        geo = _px_strings(px.get('VALUES("Geolocation")', ""))
+        if geo != ["PHILIPPINES"]:
+            raise ValueError("unexpected Geolocation selection: %r" % (geo,))
+        commodity = _px_strings(px.get('VALUES("Commodity Description")', ""))
+        if len(commodity) != 1 or not commodity[0].startswith("0 - ALL ITEMS"):
+            raise ValueError("unexpected commodity selection: %r" % (commodity,))
+        years = _px_strings(px.get('VALUES("Year")', ""))
+        periods = _px_strings(px.get('VALUES("Period")', ""))
+        if "DATA" not in px:
+            raise ValueError("no DATA keyword in px response")
+        cells = px["DATA"].split()
+        if not years or not periods or len(cells) != len(years) * len(periods):
+            # 形状对不上就整份作废:错位取数会得到一个可信但错误的通胀读数
+            raise ValueError("DATA has %d cells, expected %d years x %d periods"
+                             % (len(cells), len(years), len(periods)))
+        obs = []
+        for yi, year in enumerate(years):
+            for pi, period in enumerate(periods):
+                month = PSA_MONTHS.get(period)
+                if month is None:
+                    continue                   # "Ave" 是年均值,不是一期
+                value = _obs_value(cells[yi * len(periods) + pi])
+                if value is None:
+                    continue                   # ".." = 未发布,不是 0
+                obs.append(("%s-%02d" % (year, month), value))
+        obs.sort()
+        if not obs:
+            raise ValueError("no numeric observation")
+        matrix = _px_strings(px.get("MATRIX", "")) or ["CPI"]
+        period, value = obs[-1]
+        prev_period, prev = obs[-2] if len(obs) > 1 else (None, None)
+        row = {"value": value, "prev": prev, "period": period,
+               "prev_period": prev_period, "source": "psa",
+               "series_id": "PSA/%s/PH" % matrix[0]}
+        # 两个日期都是"有就写、没有就不写":缺失与"已知下次发布日"在报告层
+        # 是两件事,补一个值就是编的。
+        for key, kw in (("released", "LAST-UPDATED"), ("next_release", "NEXT-UPDATE")):
+            got = _px_date(px.get(kw))
+            if got:
+                row[key] = got
+        return row
+    except Exception as e:
+        gaps.append(util.make_gap("psa", "PH/CPI 同比", "%s: %s" % (type(e).__name__, e)))
+        return None
 
 
 def _bls_us_cpi(cfg, gaps):

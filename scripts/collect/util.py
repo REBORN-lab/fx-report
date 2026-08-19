@@ -14,10 +14,15 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def fetch_text(url, timeout_s=20, headers=None):
+def fetch_text(url, timeout_s=20, headers=None, data=None):
+    """data 非 None 时发 POST(PXWeb 只接受 POST + JSON 查询体)。
+
+    data 必须是 bytes:交给 urllib 一个 str 会当场抛 TypeError,而把编码
+    留给调用方是有意的——查询体的字符集由端点约定,不该在这里替它猜。
+    """
     hdrs = {"User-Agent": DEFAULT_UA}
     hdrs.update(headers or {})          # 调用方可覆盖 UA,语义明确
-    req = urllib.request.Request(url, headers=hdrs)
+    req = urllib.request.Request(url, data=data, headers=hdrs)
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         raw = resp.read()
     # 先解压再 decode。反过来会让 errors="replace" 把压缩体变成乱码,使
@@ -29,8 +34,8 @@ def fetch_text(url, timeout_s=20, headers=None):
     return raw.decode("utf-8", errors="replace")
 
 
-def fetch_json(url, timeout_s=20, headers=None):
-    return json.loads(fetch_text(url, timeout_s, headers))
+def fetch_json(url, timeout_s=20, headers=None, data=None):
+    return json.loads(fetch_text(url, timeout_s, headers, data))
 
 
 def make_gap(source, scope, reason):
