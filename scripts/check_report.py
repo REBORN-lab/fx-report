@@ -247,6 +247,10 @@ DISPOSITION_THEME_ATTRIBUTION = (
     "处置:「主线归属」格必须逐字命名**本周报里真实存在的**主线段"
     "(`### 主线N:…` 的段名);写一个不存在的名字等于让被查方自选宿主,"
     "翻转指标的比对当场落空")
+DISPOSITION_ROW_ABSENT = (
+    "处置:把缺的那一行补进速览表 —— SKILL 速览表模板段写死「五币种五行,"
+    "一行都不许少」,少一行等于这个币种当天的判断根本没有发布。"
+    "币种格写错(如 BRLX)与整行没写在这条码上同判:两者对读者是同一件事")
 DISPOSITION_ANCHOR = ("处置:在关键假设句里引一个来自快照或要点表的**当前值**;"
                       "不要写阈值 —— 阈值是尚未发生的前瞻价位、不在快照里,"
                       "写进去会被 NUMBER_UNTRACEABLE 当场拦下")
@@ -806,6 +810,30 @@ def overview_rows(secs, notes=None):
     return out
 
 
+def check_overview_row_present(secs, covered):
+    """报告写了某个币种节,速览表就必须有它的行。缺行即违规。
+
+    ---- 为什么要单独一条码(2026-08-19,登记逃逸 6 的另一半)----
+    `overview_rows` 早就会为缺行打 `OVERVIEW_ROW_MISSING` 声明,但那是 notes:
+    实测把 BRL 行的币种格写成 `BRLX`,生产命令 rc=**0** —— 声明照印,
+    自动化那一侧照样放行。少一行不是"少查了一点",是一个币种当天的判断
+    根本没有发布,而 SKILL 速览表模板段写死「五币种五行,一行都不许少」。
+
+    判据取 `covered`(报告真实写了节的币种)而不是 `CURRENCIES`:整节缺席由
+    `CURRENCY_MISSING` 负责出声,同一件事两条码会被读成两个问题。
+    """
+    rows = overview_rows(secs)
+    if not rows:
+        return []       # 整表取不到 → OVERVIEW_TABLE_* 已声明,不在这里叠红
+    absent = sorted(c for c in covered if c not in rows)
+    if not absent:
+        return []
+    return ["OVERVIEW_ROW_ABSENT: 报告写了 %d 个币种节,速览表却缺 %d 个"
+            "币种的行(%s);%s"
+            % (len(covered), len(absent), "、".join(absent),
+               DISPOSITION_ROW_ABSENT)]
+
+
 # 打进声明里的**宿主名**。日报的宿主是币种节,周报的宿主是主线段;两侧共用
 # 同一个判定函数,只有这一个词不同。
 INVALIDATION_SCOPE_DAILY = "币种节"
@@ -847,10 +875,27 @@ def _cell_deadlines(text):
     return set(DEADLINE_RE.findall(text or ""))
 
 
+# 时限**子句**:时限串本身,加上它惯常带的「时限」标签与包裹括号。
+# 空洞判定要先把它整段剥掉,理由见 `_vacuous_invalidation`。
+DEADLINE_CLAUSE_RE = re.compile(r"[((]?\s*(?:时限\s*[::]\s*)?"
+                                r"(?:T\+\d+|\d{4}-\d{2}-\d{2})\s*[))]?")
+
+
 def _vacuous_invalidation(cell):
     """这一格空洞的**理由串**;不空洞返回 `""`。判据在去标点空白之后比 ——
-    往禁用短语中缝插一个顿号就绕过去,那不叫改写。"""
-    s = _RING_STRIP_RE.sub("", cell or "")
+    往禁用短语中缝插一个顿号就绕过去,那不叫改写。
+
+    ---- 为什么先剥时限子句(2026-08-19,登记逃逸 1 与 3)----
+    占位词表是**整串相等**判定。实测两条逃逸都只是给占位词挂了个时限尾巴:
+    整格写 `T+99`(四个字符换一格全绿)、或写 `无(时限:2026-11-11)` ——
+    整串因此不再等于 `无`,rc=0、回执照打 `自身判据 5/5`。
+    时限归**时限轴**管(见 ③ 的轴 B),它在这里不该替这一格挡下空洞判定;
+    剥掉之后再看剩下什么,`T+99` 剩空串、`无(时限:…)` 剩 `无`,两条都当场红。
+
+    剥的是时限**子句**不是时限**串**:只剥数字会给 `无(时限:)` 留下「无时限」,
+    整串仍不等于 `无`,逃逸照旧成立。
+    """
+    s = _RING_STRIP_RE.sub("", DEADLINE_CLAUSE_RE.sub("", cell or ""))
     if s in VACUOUS_INVALIDATION_CELLS:
         return ("整格去掉标点空白后是「%s」,属占位词表 %s"
                 % (s, "/".join(x or "(空)" for x in VACUOUS_INVALIDATION_CELLS)))
@@ -885,7 +930,11 @@ def _flip_payloads(body):
         p = _ring_payload(s, (FLIP_LABEL,))
         if not p:
             continue
-        head = s[:s.rfind(FLIP_LABEL)]
+        # 前缀判定前先去掉尾部空白(含全角空格):实测在「其」与标签之间
+        # 插一个空格,这一句就从"替代解释自带的"落进"主判断自己的"池里,
+        # `FLIP_HOST_MISSING` 于是不触发、回执转而宣称 5/5 都比过了 ——
+        # 一个空格让整条码哑掉(登记逃逸 4)。
+        head = s[:s.rfind(FLIP_LABEL)].rstrip(" \t\u3000\u00a0")
         (alt if head.endswith(ALT_FLIP_PREFIXES) else own).append(p)
     return own, alt
 
@@ -957,11 +1006,14 @@ def check_invalidation_independent(pairs, scope, notes=None,
     **本函数是这四条码字面量的唯一产地**,日报与周报两条路径都落到它上面
     (由 InvalidationColumnIsIndependentTest 的 AST 断言钉住)。
     """
-    v, checked, self_checked, self_total = [], 0, 0, 0
+    v, checked, self_checked = [], 0, 0
+    # 分母口径只有一个:`len(pairs)`。修前 ② ③ 那个分数把"表里根本没有这一行"
+    # 算出了分母,于是同一次丢行会印出「独立性 4/5;自身判据 4/4」——
+    # 读者分不出"查过 4 行、还有 1 行没查"与"总共就 4 行、全查过"(登记逃逸 6)。
+    absent = [name for name, cell, _t, _b in pairs if cell is None]
     for name, cell, trigger, bodies in pairs:
         if cell is None:
             continue            # 这一行不存在,由调用点的 *_ROW_MISSING 负责
-        self_total += 1
         # ---- ② 空洞 ----
         why = _vacuous_invalidation(cell)
         if why:
@@ -1031,9 +1083,14 @@ def check_invalidation_independent(pairs, scope, notes=None,
         notes.append("INVALIDATION_COLUMN_CHECKED: 独立性 %d/%d 行的「%s」格与"
                      "对应%s翻转指标已比对(两侧都取得到载荷的行才算分子);"
                      "自身判据 %d/%d 行(空洞 / 机械否定;同行取得到「%s」格、"
-                     "且本格非空洞的行才算分子)"
+                     "且本格非空洞的行才算分子)%s"
                      % (checked, len(pairs), OVERVIEW_COL_INVALIDATION, scope,
-                        self_checked, self_total, trigger_label))
+                        self_checked, len(pairs), trigger_label,
+                        # 丢行必须点名:没有名字的分数只说明"少了一行",
+                        # 说不出少的是哪一行。行齐全时不印 —— 恒印一句
+                        # "丢了 0 行"会把声明变成噪音。
+                        (";其中 %d 行在表里根本不存在(%s)"
+                         % (len(absent), "、".join(absent))) if absent else ""))
     return v
 
 
@@ -2217,6 +2274,7 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
     # OVERVIEW_TABLE_* 声明,读者看到的是同一件事说两遍。
     if OVERVIEW_SECTION_KEY not in amb:
         rows = overview_rows(secs, notes=notes)
+        v.extend(check_overview_row_present(secs, covered))
         bodies = {c: find_section(secs, c)[1] for c in sorted(covered)}
         v.extend(check_invalidation_independent(
             [(c, (rows.get(c) or {}).get(OVERVIEW_COL_INVALIDATION),

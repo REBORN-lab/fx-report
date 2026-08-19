@@ -4663,6 +4663,10 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     # 自己历史上的最小滞后"判一条都标不出来,而 PH 的 2026-07 读数 6.2
     # 早已发布。真正的新鲜度判据要等发布日历接进来(A1 步骤 3)。
     "ASSUMPTION_VINTAGE_UNDISCLOSED": "DISPOSITION_VINTAGE",
+    # 2026-08-19:速览表缺行由「声明 + rc=0」升成违规。缺行不是"少查了一点",
+    # 是一个币种当天的判断根本没发布 —— 而 `OVERVIEW_ROW_MISSING` 那条声明
+    # 在实测里与 rc=0 并存(docs/known-gate-escapes.md 逃逸 6)。
+    "OVERVIEW_ROW_ABSENT": "DISPOSITION_ROW_ABSENT",
     "NUMBER_WRONG_SECTION": "DISPOSITION_WRONG_SECTION",
     "SUMMARY_NUMBER_NOT_IN_BODY": "DISPOSITION_SUMMARY_BODY",
     "SUMMARY_NUMBER_WRONG_CURRENCY": "DISPOSITION_SUMMARY_CURRENCY",
@@ -4815,7 +4819,11 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # ASSUMPTION_VINTAGE_UNDISCLOSED(违规)+ ASSUMPTION_VINTAGE_CHECKED
         # (回执)+ ASSUMPTION_VINTAGE_SKIPPED_NO_LAG(跳过态)。三条一起进,
         # 因为"判了几个组合""哪些判不了"必须与违规同批出声。
-        self.assertEqual(len(want), 73, len(want))
+        # 73 → 74(2026-08-19,登记逃逸 6 的另一半):OVERVIEW_ROW_ABSENT。
+        # 只加违规、不加声明 —— 「缺了哪几行」由既有的 OVERVIEW_ROW_MISSING
+        # 与 INVALIDATION_COLUMN_CHECKED 的丢行子句负责,再加一条会把同一件事
+        # 说三遍。
+        self.assertEqual(len(want), 74, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4947,6 +4955,18 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 check_report.main(argv)
             out.append(("assumption-vintage", buf.getvalue()))
+        # 第六次四分之三:速览表少了一个**报告写了节**的币种的行。宿主是
+        # 速览表那份报告,但违规在表的行集上,与上面几份都不同 —— 否则
+        # OVERVIEW_ROW_ABSENT 只有映射、没有任何用例触发。
+        with tempfile.TemporaryDirectory() as tmp:
+            argv, _ = daily_files(
+                tmp,
+                report_text=OVERVIEW_REPORT.replace("| USD |", "| USDX |", 1),
+                extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main(argv)
+            out.append(("overview-row-absent", buf.getvalue()))
         # 第七/八/九次:2026-08-15 第二轮补的三条日报侧码。三条的宿主都是
         # 速览表那份报告,但触发形态互不相同 —— 空洞占位 / 第 2 列的机械否定 /
         # 宿主段取不到本判断的翻转指标,所以各喂一份。
@@ -6575,3 +6595,138 @@ class AssumptionVintageTest(unittest.TestCase):
                 "翻转指标:参考价回落至 60.9 一侧(T+3)。")
         self.assertEqual([x for x in vintage_check(ring, rows=[row])
                           if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")], [])
+
+
+OVERVIEW_ONE_ROW_REPORT = """# 外汇日报 2026-08-14
+
+## 速览
+
+| 币种 | 条件方向(时限) | 核心依据 | 失效条件 |
+| --- | --- | --- | --- |
+| USD | 甲 | 乙 | 丙 |
+| BRL | 甲 | 乙 | 丙 |
+
+## 美元(USD)
+正文
+"""
+
+
+class KnownGateEscapeTest(unittest.TestCase):
+    """`docs/known-gate-escapes.md` 登记的逃逸路径,逐条做成判据。
+
+    这些不是推测:每一条都在 2026-08-16 用生产命令实测跑通过 rc=0。
+    登记时的状态一律是「已知、本轮未修」;本类是"修了没有"的判据。
+    """
+
+    def one(self, cell, **kw):
+        return check_report.check_invalidation_independent(
+            inval_pairs(cell, **kw), check_report.INVALIDATION_SCOPE_DAILY,
+            notes=kw.pop("notes", None))
+
+    # ---- 逃逸 1:第 4 列整格写 T+99 ----
+    def test_a_bare_deadline_is_vacuous(self):
+        """四个字符换一格全绿。时限归时限轴管,剥掉之后这一格什么都没说。"""
+        v = self.one("T+99")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_a_bare_calendar_deadline_is_also_vacuous(self):
+        v = self.one("2026-11-11")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    # ---- 逃逸 3:第 4 列 = 「无(时限:2026-11-11)」 ----
+    def test_a_placeholder_with_a_deadline_tail_is_vacuous(self):
+        """占位词表是**整串相等**判定,挂一个时限尾巴整串就不相等了。"""
+        v = self.one("无(时限:2026-11-11)")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_a_placeholder_with_a_bare_tplusn_tail_is_vacuous(self):
+        v = self.one("暂无(T+99)")
+        self.assertTrue(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    def test_a_real_cell_carrying_a_deadline_clause_still_passes(self):
+        """剥时限是为了看清剩下什么,不是为了把带时限的格都判红 ——
+        真实产物里五格全带时限尾巴,过度剥离会把它们一起打红。"""
+        v = self.one("到 2026-09-10 的 ECB 决议为止,政策利率 2.25 一次都没有"
+                     "变动过(时限:2026-09-10)")
+        self.assertFalse(any("INVALIDATION_COLUMN_VACUOUS" in x for x in v), v)
+
+    # ---- 逃逸 4:「其」与「翻转指标」之间插一个空格 ----
+    def test_a_space_between_qi_and_the_label_still_counts_as_the_alt_one(self):
+        """插一个空格,替代解释自带的那句就被算进"主判断自己的"池里,
+        `FLIP_HOST_MISSING` 因此不触发,而回执转而宣称 5/5 都比过了。"""
+        body = ("**分歧与判断**:关键假设甲。替代解释乙(其 翻转指标:丁位升破 61.1)。"
+                "反转指标:丙位回落(T+2)。")
+        v = self.one("到 2026-09-10 为止,戊位 99.9 一次都没有出现", bodies=(body,))
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_FLIP_HOST_MISSING" in x for x in v), v)
+
+    def test_a_fullwidth_space_does_not_get_past_it_either(self):
+        body = ("**分歧与判断**:关键假设甲。替代解释乙(其　翻转指标:丁位升破 61.1)。"
+                "反转指标:丙位回落(T+2)。")
+        v = self.one("到 2026-09-10 为止,戊位 99.9 一次都没有出现", bodies=(body,))
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_FLIP_HOST_MISSING" in x for x in v), v)
+
+    def test_the_normal_form_is_unchanged(self):
+        """没有插空格的写法必须照旧被认成替代解释自带的那一句。"""
+        v = self.one("到 2026-09-10 为止,戊位 99.9 一次都没有出现",
+                     bodies=(RING_BODY_TWO_FLIPS,))
+        self.assertFalse(
+            any("INVALIDATION_COLUMN_FLIP_HOST_MISSING" in x for x in v), v)
+
+    # ---- 逃逸 6:丢一行,两个分数两套分母 ----
+    def test_both_scores_use_the_same_denominator_when_a_row_is_missing(self):
+        """同一次丢行,一个分母把它算进去、另一个算出去,读者分不出
+        「查过 4 行还有 1 行没查」与「总共就 4 行全查过」。"""
+        notes = []
+        check_report.check_invalidation_independent(
+            [("PHP", None, None, []),
+             ("THB", "到 2026-09-10 为止,戊位 99.9 一次都没有出现",
+              MIRROR_TRIGGER, [RING_BODY])],
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+        line = [n for n in notes if "INVALIDATION_COLUMN_CHECKED" in n][0]
+        self.assertIn("1/2", line)          # 独立性
+        self.assertIn("自身判据 1/2", line)  # 同一个分母,不是 1/1
+
+    def test_the_dropped_row_is_named_in_the_receipt(self):
+        """没有名字的分数只说明"少了一行",说不出少的是哪一行。"""
+        notes = []
+        check_report.check_invalidation_independent(
+            [("PHP", None, None, []),
+             ("THB", "到 2026-09-10 为止,戊位 99.9 一次都没有出现",
+              MIRROR_TRIGGER, [RING_BODY])],
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+        line = [n for n in notes if "INVALIDATION_COLUMN_CHECKED" in n][0]
+        self.assertIn("PHP", line)
+
+    # ---- 逃逸 6 的另一半:丢行只出声、不改退出码 ----
+    def test_a_covered_currency_without_an_overview_row_is_a_violation(self):
+        """速览表少一行 = 一个币种的判断根本没发布。SKILL 写死"五币种五行、
+        一行都不许少",而实测把 BRL 行的币种格写成 BRLX,生产命令 rc=0 ——
+        `OVERVIEW_ROW_MISSING` 有出声,自动化那一侧照样放行。"""
+        secs = check_report.sections(
+            OVERVIEW_ONE_ROW_REPORT.replace("| BRL |", "| BRLX |"))
+        v = check_report.check_overview_row_present(secs, {"USD", "BRL"})
+        self.assertTrue(any("OVERVIEW_ROW_ABSENT" in x for x in v), v)
+        self.assertTrue(any("BRL" in x for x in v), v)
+
+    def test_a_currency_the_report_does_not_cover_is_not_charged_here(self):
+        """报告压根没有该币种节时,负责出声的是 CURRENCY_MISSING;
+        同一件事报两条码,读者会以为是两个问题。"""
+        secs = check_report.sections(OVERVIEW_ONE_ROW_REPORT)
+        v = check_report.check_overview_row_present(secs, {"USD"})
+        self.assertEqual(v, [])
+
+    def test_all_rows_present_is_silent(self):
+        secs = check_report.sections(OVERVIEW_ONE_ROW_REPORT)
+        self.assertEqual(
+            check_report.check_overview_row_present(secs, {"USD", "BRL"}), [])
+
+    def test_no_dropped_row_means_no_dropped_row_clause(self):
+        """行齐全时不许印那句 —— 恒印一句"丢了 0 行"会把声明变成噪音。"""
+        notes = []
+        check_report.check_invalidation_independent(
+            inval_pairs("到 2026-09-10 为止,戊位 99.9 一次都没有出现"),
+            check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
+        line = [n for n in notes if "INVALIDATION_COLUMN_CHECKED" in n][0]
+        self.assertNotIn("根本不存在", line)
