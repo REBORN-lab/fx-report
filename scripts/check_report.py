@@ -1259,6 +1259,18 @@ SUMMARY_SECTION_KEY = "执行摘要"
 # 诚实边界 4:`DATE_RE` 不认 `2026-08`,而改 `DATE_RE` 会连带放松两个既有的
 # `*_UNTRACEABLE` 闸门。负向断言 `(?!\d)` 挡住 `2026-0812` 这种非日期串。
 YEAR_MONTH_RE = re.compile(r"\d{4}-\d{2}(?!\d)")
+
+
+def attributable_numbers(text):
+    """归属层要判的数:先剥**整日期**,再剥「年-月」碎片。
+
+    顺序是承重的。`YEAR_MONTH_RE` 的后视只挡数字,而 `2026-09-16` 的下一个
+    字符是 `-` —— 先剥年-月会把它削成 ` -16`,`DATE_RE` 于是再也认不出这是个
+    日期,`numbers_in` 吐出一个裸的 `16`,日期里的"日"就变成了一个待归属的数。
+    整日期在速览与摘要里是常态写法(「到 2026-09-16 的 FOMC 为止」),
+    这个 `16` 只要落在别的币种池里就是一条假红。
+    """
+    return numbers_in(YEAR_MONTH_RE.sub(" ", DATE_RE.sub(" ", text or "")))
 # 「正文」的范围:币种节 ∪ 这三节。**冻结的清单**,不是"报告的其余部分" ——
 # 后者会让这条码退化成"摘要的数只要在报告里出现过就行",附录里随手一提就算
 # 数。缺漏节在列是实测要求的:reports/daily/2026-08-07.md 的摘要写
@@ -1551,8 +1563,7 @@ def check_summary_number_attribution(secs, snap, brief_text, allowed,
     shared = shared_number_pool(snap, brief_text)
     unnamed = 0
     for item in list_items(s[1]):
-        nums = (numbers_in(YEAR_MONTH_RE.sub(" ", item)) & allowed) \
-            - ALLOWED_SMALL
+        nums = (attributable_numbers(item) & allowed) - ALLOWED_SMALL
         if not nums:
             continue
         named = [c for c in CURRENCIES

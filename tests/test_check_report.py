@@ -6817,3 +6817,36 @@ class DecisionTriggerTruncatedDeadlineTest(unittest.TestCase):
         self.assertTrue(any("DECISION_TRIGGER_NOT_SOURCED" in x for x in v), v)
         self.assertFalse(
             any("DECISION_TRIGGER_TRUNCATED_DEADLINE" in x for x in v), v)
+
+
+class IsoDateFragmentTest(unittest.TestCase):
+    """归属层剥「年-月」碎片时,不许先把整日期切碎。
+
+    ---- 实测(2026-08-19)----
+    `YEAR_MONTH_RE` 是 `\\d{4}-\\d{2}(?!\\d)`,而 `2026-09-16` 的后视字符是
+    `-` 不是数字 —— 于是它先被削成 ` -16`,`DATE_RE` 再也认不出这是个日期,
+    `numbers_in` 吐出一个裸的 `16`。日期里的"日"就这样变成了一个待归属的数。
+    整日期在速览与摘要里是常态写法(「到 2026-09-16 的 FOMC 为止」),
+    这个 `16` 一旦落在别的币种池里就是一条假红。
+
+    修法:先剥整日期,再剥年-月碎片。两步顺序反过来就是上面那条缺陷。
+    """
+
+    def test_a_full_iso_date_leaves_no_day_number(self):
+        got = check_report.attributable_numbers("到 2026-09-16 的 FOMC 为止")
+        self.assertEqual(got, set(), got)
+
+    def test_the_year_month_fragment_is_still_stripped(self):
+        """既有行为不得回退:`参考月 2026-08` 仍不许留下 2026 与 08。"""
+        got = check_report.attributable_numbers("美国 CPI 下一期(参考月 2026-08)")
+        self.assertEqual(got, set(), got)
+
+    def test_a_real_number_survives_both_strips(self):
+        got = check_report.attributable_numbers("到 2026-09-16 为止,3.625 未变")
+        self.assertEqual(got, {"3.625"}, got)
+
+    def test_the_summary_layer_uses_it(self):
+        """摘要归属层实测同一个顺序缺陷 —— 点名 USD 的一条写了「2026-09-16」,
+        而 16 只出现在别的币种切片里时会被判成借了别人的数。"""
+        v = map_check(summary=["- 美元:到 2026-09-16 的 FOMC 为止,不变。"])
+        self.assertEqual(codes_of(v, "SUMMARY_NUMBER_WRONG_CURRENCY"), [], v)
