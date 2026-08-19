@@ -4742,6 +4742,9 @@ NEW_LAYER_NOTE_CODES = frozenset({
     # 2026-08-15 第二轮:周报落点表的丢行声明。分母口径改成**应有的行集合**
     # (五个币种)之后,"少一行"不再是从分母里消失,而是这条带计数的点名。
     "WEEKLY_LANDING_ROW_MISSING",
+    # 2026-08-19(登记逃逸 5):主线标题的「(影响 …)」子句此前没有任何代码读它。
+    # 比对池改按它扩;标题缺该子句的主线扩不了池,必须带计数出声。
+    "WEEKLY_THEME_SCOPE_MISSING",
     # 周报:数字归属结构性不适用 / 无 --digest 时 ③ 判不了锚点。
     "WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE",
     # 结构化字段之前登记的条目没有 `claim`,判不了也不该判红;但"没查"与
@@ -4830,7 +4833,10 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # 74 → 75(2026-08-19,登记逃逸 8):DECISION_TRIGGER_TRUNCATED_DEADLINE。
         # 只加违规:「查了几个币种」由既有的 DECISION_LOG_NO_ENTRY 声明承担,
         # 这条码与 DECISION_TRIGGER_NOT_SOURCED 共用同一个循环与同一个分母。
-        self.assertEqual(len(want), 75, len(want))
+        # 75 → 76(2026-08-19,登记逃逸 5):WEEKLY_THEME_SCOPE_MISSING(声明)。
+        # 只加声明不加违规:抄袭本身由既有的 INVALIDATION_COLUMN_IS_FLIP_RESTATED
+        # 判,本轮改的是它的**比对池**,不是新增一类违规。
+        self.assertEqual(len(want), 76, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -5382,13 +5388,24 @@ class WeeklyInvalidationColumnTest(unittest.TestCase):
             [x for x in v if "INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x], [])
         self.assertIn("INVALIDATION_COLUMN_CHECKED", "\n".join(notes))
 
-    def test_the_host_is_the_theme_named_in_the_belonging_column(self):
-        """归属写的是主线二时,拿的就不该是主线一那一段的翻转指标 ——
-        否则"宿主由归属列指定"这句话没有分辨力。"""
+    def test_a_theme_claiming_this_currency_is_a_host_even_if_unattributed(self):
+        """**本断言 2026-08-19 改口。**
+
+        原文是「归属写的是主线二时,拿的就不该是主线一那一段的翻转指标」——
+        而这正是 docs/known-gate-escapes.md 逃逸 5 的形态本身:宿主完全由
+        报告自己写的归属格决定,于是把归属改挂到另一条**同样覆盖本币种**的
+        真实主线上,抄袭对象就移出了比对池,`IS_FLIP_RESTATED` 消失而回执
+        照印「独立性 5/5」。
+
+        现在比对池 = 归属格点名的段 ∪ 标题「影响」子句点了本币种的段。
+        这里 PHP 行抄的是主线一的翻转指标,而主线一的标题写着「(影响 PHP)」
+        —— 归属格写什么都躲不掉。"宿主由归属列指定"这句话保留它仅剩的那半:
+        归属格必须点到真实主线(`WEEKLY_THEME_ATTRIBUTION_UNKNOWN`)。
+        """
         v = check_report.check_weekly(
             self.weekly("下一次定盘比索退回 60.9 之下", belong="主线二"))
-        self.assertEqual(
-            [x for x in v if "INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x], [])
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
 
     def test_a_missing_landing_table_is_declared_with_counts(self):
         """WEEKLY_RING 那份 fixture 写的是 `## 各币种一周归因`(散文,不是表)
@@ -6850,3 +6867,76 @@ class IsoDateFragmentTest(unittest.TestCase):
         而 16 只出现在别的币种切片里时会被判成借了别人的数。"""
         v = map_check(summary=["- 美元:到 2026-09-16 的 FOMC 为止,不变。"])
         self.assertEqual(codes_of(v, "SUMMARY_NUMBER_WRONG_CURRENCY"), [], v)
+
+
+class WeeklyThemeScopeTest(unittest.TestCase):
+    """主线标题里的「(影响 …)」必须真的被读:比对池按它扩,不只按归属格。
+
+    ---- 登记逃逸 5 的形态(2026-08-16 实测)----
+    宿主段完全由「主线归属」格点名的段决定。把 BRL 行的第 5 列换成主线二的
+    翻转指标原文,再把归属格从「主线二」改成「主线一」——**另一条真实存在、
+    并且标题里同样点了 BRL 的主线** —— 比对池就换成了别人的翻转指标,
+    抄袭那条码比不出来了(`IS_FLIP_RESTATED` 消失),回执仍印「独立性 5/5」。
+    改归属格不是笔误,是把被查方的宿主选择权交给了被查方。
+
+    ---- 修法 ----
+    比对池 = 归属格点名的段 ∪ **标题的「影响」子句里点了本币种的段**。
+    那个子句是 SKILL 模板里写死的(`### 主线一:<一句话标题>(影响 <币种列表>)`),
+    修前**没有任何代码读它**。扩池之后,抄谁的都躲不掉:抄的那条主线只要
+    自称影响本币种,就一定在池里。
+
+    实测(reports/weekly/2026-W33.md):五行里只有 BRL 的池会变大
+    (归属格只写「主线二」,而主线一的标题写着「影响 …BRL」),
+    扩入的那一段与它的失效条件不重合 —— 真实产物零误伤。
+    """
+
+    def landing(self, cell, belong):
+        return weekly_landing(cell, belong=belong).replace(
+            "| PHP | ", "| THB | ", 1)
+
+    def test_switching_attribution_no_longer_hides_a_copied_column(self):
+        """归属格改挂主线一,而抄的是主线二的翻转指标 —— 主线二的标题
+        点了 THB,所以它照样在池里。"""
+        rep = self.landing("下一次定盘泰铢退回 35.2 之下", "主线一")
+        v = check_report.check_weekly(rep)
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_the_control_still_fires(self):
+        rep = self.landing("下一次定盘泰铢退回 35.2 之下", "主线二")
+        v = check_report.check_weekly(rep)
+        self.assertTrue(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_a_theme_that_does_not_claim_this_currency_stays_out(self):
+        """扩池只按「影响」子句,不是把所有主线都塞进来 —— 否则任何一行的
+        失效条件都要躲开全部主线的翻转指标,合规写法会被大面积打红。"""
+        rep = self.landing("下一次定盘比索退回 60.9 之下", "主线二")
+        v = check_report.check_weekly(rep)
+        self.assertFalse(
+            any("INVALIDATION_COLUMN_IS_FLIP_RESTATED" in x for x in v), v)
+
+    def test_a_title_without_the_scope_clause_is_declared(self):
+        """标题没写「(影响 …)」时不能默默不扩池 —— 跳过必须带计数出声。"""
+        rep = self.landing("戊位 99.9 一次都没有出现", "主线一").replace(
+            "### 主线二:泰铢那条腿(影响 THB)", "### 主线二:泰铢那条腿")
+        notes = []
+        check_report.check_weekly(rep, notes=notes)
+        line = "\n".join(notes)
+        self.assertIn("WEEKLY_THEME_SCOPE_MISSING", line)
+        self.assertIn("1/2", line)
+
+    def test_widening_the_pool_does_not_swallow_the_attribution_code(self):
+        """扩池之后 hosts 恒非空。`WEEKLY_THEME_ATTRIBUTION_UNKNOWN` 必须在
+        扩池**之前**判,否则这条码会被自己的修法盖掉,
+        而「归属写成主线九」照样静默通过。"""
+        rep = self.landing("戊位 99.9 一次都没有出现", "主线九")
+        v = check_report.check_weekly(rep)
+        self.assertTrue(
+            any("WEEKLY_THEME_ATTRIBUTION_UNKNOWN" in x for x in v), v)
+
+    def test_all_titles_scoped_means_no_declaration(self):
+        notes = []
+        check_report.check_weekly(
+            self.landing("戊位 99.9 一次都没有出现", "主线一"), notes=notes)
+        self.assertNotIn("WEEKLY_THEME_SCOPE_MISSING", "\n".join(notes))

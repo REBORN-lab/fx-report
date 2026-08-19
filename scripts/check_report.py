@@ -1929,6 +1929,27 @@ def theme_names(secs):
             for h, b in theme_subsections(secs)]
 
 
+# 主线标题的「(影响 <币种列表>)」子句。SKILL 的周报模板写死了这个形状
+# (`### 主线一:<一句话标题>(影响 <币种列表>)`),而修前**没有任何代码读它**
+# —— 登记逃逸 5 正是钻这个空子:把归属格改挂到另一条同样覆盖本币种的真实
+# 主线上,抄袭对象就移出了比对池。
+THEME_SCOPE_RE = re.compile(r"[((]\s*影响\s*([^)）]*)[))]")
+
+
+def theme_scope(title):
+    """标题的「影响」子句点了哪几个币种;没有该子句返回 `None`(不是空集合)。
+
+    两者必须分开:空集合是"写了子句、一个币种都没点",`None` 是"压根没写"
+    —— 后者要出声,前者是报告自己的问题,不该被静默当成"不影响任何币种"。
+    """
+    m = THEME_SCOPE_RE.search(title or "")
+    if not m:
+        return None
+    text = m.group(1)
+    return {c for c in CURRENCIES
+            if any(a in text for a in CURRENCY_ALIASES[c])}
+
+
 def weekly_invalidation_pairs(secs, notes=None):
     """周报落点表 → (`check_invalidation_independent` 要的 pairs, 违规行)。
 
@@ -1967,6 +1988,16 @@ def weekly_invalidation_pairs(secs, notes=None):
     named = theme_names(secs)
     if not named:
         return None, []
+    # 按标题的「影响」子句建的第二条取宿主路径。归属格由报告自己写,
+    # 只按它取宿主 = 让被查方自选比对对象(登记逃逸 5)。
+    scopes = [(theme_scope(h), b) for h, b in theme_subsections(secs)]
+    unscoped = [1 for s, _ in scopes if s is None]
+    if unscoped and notes is not None:
+        notes.append("WEEKLY_THEME_SCOPE_MISSING: %d/%d 条主线的标题没有"
+                     "「(影响 <币种列表>)」子句,这些主线不参与按标题扩池,"
+                     "落点表若抄了它们的翻转指标,只有在归属格恰好点了它们时"
+                     "才比得出来"
+                     % (len(unscoped), len(scopes)))
     v, by_cur = [], {}
     for cells in rows[1:]:
         if max(idx.values()) >= len(cells):
@@ -1976,6 +2007,9 @@ def weekly_invalidation_pairs(secs, notes=None):
             continue
         belong = cells[idx[WEEKLY_COL_THEME]]
         hosts = [b for n, b in named if n and n in belong]
+        # `WEEKLY_THEME_ATTRIBUTION_UNKNOWN` 判的是**归属格**有没有点到真实
+        # 主线,必须在扩池**之前**判 —— 扩池之后 hosts 恒非空,这条码会被
+        # 自己的修法盖掉,而"归属写成主线九"照样静默通过。
         if not hosts:
             v.append("WEEKLY_THEME_ATTRIBUTION_UNKNOWN: %s 行的「%s」格"
                      "「%s」没有命名本周报里任何一条真实主线(现有 %d 条:%s),"
@@ -1984,6 +2018,10 @@ def weekly_invalidation_pairs(secs, notes=None):
                         "、".join(n for n, _ in named),
                         OVERVIEW_COL_INVALIDATION,
                         DISPOSITION_THEME_ATTRIBUTION))
+        # 标题自称影响本币种的主线一律进池,哪怕归属格没点它:抄谁的都躲不掉。
+        for scope, body in scopes:
+            if scope and cur in scope and body not in hosts:
+                hosts.append(body)
         by_cur[cur] = (cells[idx[OVERVIEW_COL_INVALIDATION]],
                        cells[idx[WEEKLY_COL_TRIGGER]], hosts)
     absent = [c for c in CURRENCIES if c not in by_cur]
