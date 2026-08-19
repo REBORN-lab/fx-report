@@ -1,13 +1,13 @@
 {
   "date": "2026-08-19",
-  "run_at": "2026-08-19T01:42:15+00:00",
+  "run_at": "2026-08-19T02:33:59+00:00",
   "schema_version": 1,
   "rates": {
     "PHP": {
       "primary": 61.78,
-      "secondary": null,
+      "secondary": 61.88369434,
       "primary_source": "frankfurter",
-      "deviation_pct": null,
+      "deviation_pct": 0.168,
       "suspect": false,
       "prev_primary": 61.509,
       "ref_date": "2026-08-18",
@@ -15,9 +15,9 @@
     },
     "THB": {
       "primary": 33.06,
-      "secondary": null,
+      "secondary": 33.14158632,
       "primary_source": "frankfurter",
-      "deviation_pct": null,
+      "deviation_pct": 0.247,
       "suspect": false,
       "prev_primary": 33.025,
       "ref_date": "2026-08-18",
@@ -25,9 +25,9 @@
     },
     "BRL": {
       "primary": 5.2074,
-      "secondary": null,
+      "secondary": 5.21555744,
       "primary_source": "frankfurter",
-      "deviation_pct": null,
+      "deviation_pct": 0.157,
       "suspect": false,
       "prev_primary": 5.2102,
       "ref_date": "2026-08-18",
@@ -35,9 +35,9 @@
     },
     "EUR": {
       "primary": 0.86386,
-      "secondary": null,
+      "secondary": 0.86388443,
       "primary_source": "frankfurter",
-      "deviation_pct": null,
+      "deviation_pct": 0.003,
       "suspect": false,
       "prev_primary": 0.86259,
       "ref_date": "2026-08-18",
@@ -69,16 +69,19 @@
       "lag_months": 2
     },
     {
-      "value": 6.362922,
-      "prev": 6.761006,
-      "period": "2026-06",
-      "prev_period": "2026-05",
-      "source": "bis",
-      "series_id": "BIS/WS_LONG_CPI/PH",
-      "is_new_release": false,
+      "value": 6.2,
+      "prev": 6.4,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "psa",
+      "series_id": "PSA/2M4ACP23/PH",
+      "released": "2026-08-05",
+      "next_release": "2026-09-04",
       "economy": "PH",
       "indicator": "CPI 同比",
-      "lag_months": 2
+      "is_new_release": false,
+      "lag_months": 1,
+      "source_changed_from": "bis"
     },
     {
       "value": 2.419837,
@@ -235,16 +238,16 @@
           "seendate": "20260819T013100Z"
         },
         {
-          "title": "Plunging private foreign demand could fan US bond rout flames: McGeever - Reuters",
-          "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxPQzJjZFdIczJ4TXRGa01zUjVGS2N0dzV6ZWpucF9TdFQxaC1xWWRaekFqQnZORUpMa295TXVCd0o3RHRDblhpNk41RzJkS080R0tZa01JUkx6YWFNcnBYbEY4S1Z3LUEtc0RaSjZ5VWhVTFhuR1kzNUs1N1BNNGs0ZUt6OXc4cDhMaklsRGNIWlkyUVkxWDRSTWZqMmhjdVZ5aWFmWGhVcUhrQ2VOaGF5XzgtcDlXZkx6OEdXMkc2WDVORjlYdkhHZ2RkdzM4Q09nQlE1bS13?oc=5",
-          "domain": "reuters.com",
-          "seendate": "20260818T233025Z"
-        },
-        {
           "title": "US yields edge lower despite Iran worries, broader sell-off - Reuters",
           "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxPaERYcG1nTmtNcy1ia2hGekZQaVp4X1Y5RHlab3QydTVDV2tfSVZmQnctVC1iaWFmZ2xJRmN6U3pzNk1wdUx1VlpQWmF6WTZsdmtfdmF3SmpGUWYzMzluM3JEVVBVTmZXU2NfMG9lcjRzUktxWEZNZDZxbTE1Q2FkVmd4Mmd3ekpxeHY3RWtpRC14QmV0SktSNA?oc=5",
           "domain": "reuters.com",
           "seendate": "20260818T212027Z"
+        },
+        {
+          "title": "Plunging private foreign demand could fan US bond rout flames - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxPQzJjZFdIczJ4TXRGa01zUjVGS2N0dzV6ZWpucF9TdFQxaC1xWWRaekFqQnZORUpMa295TXVCd0o3RHRDblhpNk41RzJkS080R0tZa01JUkx6YWFNcnBYbEY4S1Z3LUEtc0RaSjZ5VWhVTFhuR1kzNUs1N1BNNGs0ZUt6OXc4cDhMaklsRGNIWlkyUVkxWDRSTWZqMmhjdVZ5aWFmWGhVcUhrQ2VOaGF5XzgtcDlXZkx6OEdXMkc2WDVORjlYdkhHZ2RkdzM4Q09nQlE1bS13?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260818T130000Z"
         },
         {
           "title": "Fed to hold interest rates this year, economists say, sticking to their view: Reuters poll - Reuters",
@@ -269,6 +272,12 @@
           "url": "https://news.google.com/rss/articles/CBMiywFBVV95cUxQSkx4M1hZeWx5Mnp2endmVlRLNnltcERaNG55Sk9YSmpOU2lQaUhxLUtnRGNJal9KcEtwTG1kdS1HMlRHcGE3amwzRl84LVNWT3JUMmlQWE5VZ3JaQ0VqMUpFNEJRV2U3bjUyLVY0dzFWVndmS3lTcUt6OWluLTQxeVc0cmU2TGRFdlJMVjV1QXZDSkJhM2JTNW12S0JVZmJya1YyRGdMQzloN2FqeFplWEtibVU1T3BWc09Gb0h2SkxvYjFNSjFYa0ZWdw?oc=5",
           "domain": "reuters.com",
           "seendate": "20260817T233032Z"
+        },
+        {
+          "title": "Dollar edges lower against euro as markets trim rate hike bets - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMipwFBVV95cUxNcEx2UnRQT3N2aTdDejItdVFGZ280ZXJ1ZzYtSHRoeDg0WEd1dGxmbkRvd1ZJMVRaUkdsMEZsMWx6ZUh1Wk1NeExBUTRxbHNuaW01TFpBd1F5dWlOOWoydXdETU8tamlmU2xpeEptdDRDTk52LW9GZW5oV201MmRubl85SnNSdnVwT2NxT0VHdmxxVGJ4TGdIWFhQcUN4dnBEcmFUUENqRQ?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260817T161146Z"
         },
         {
           "title": "FX hedging activity among North American funds at four-year high, survey shows - Reuters",
@@ -305,8 +314,8 @@
         "raw": 100,
         "undated": 0,
         "out_window": 0,
-        "offlist": 89,
-        "kept": 11,
+        "offlist": 88,
+        "kept": 12,
         "capped": true
       },
       "attributable_source_absent": false,
@@ -346,30 +355,24 @@
           "seendate": "20260818T120705Z"
         },
         {
-          "title": "Commentary - European Central Bank",
-          "url": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOZE9GUWZSLV9RM3MtRm92RllpOGx3UG13dnlOd0Q2Y25vcWY1bjRVbElnRDFpeTQ0Wnc1blZkdG1lXzk0UDBFNUI0QkZ1THVUX0F2MXZsYlNqcEYxNzJGdnkyaHpSS1A3R1F6N2F4d3g4UklKLTJ6eWx4OVhnVzBKeHA3ZnZyRG1MQWFlRExRbXdwT3lfUkdrTy1JODhBZzZRVS12TA?oc=5",
-          "domain": "ecb.europa.eu",
-          "seendate": "20260818T130208Z"
-        },
-        {
           "title": "AI market correction is coming, ECB blog predicts - Reuters",
           "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxOejNkZVFTSjVNZEVpMms5aWtNbzdCcWMyZFQwT2xHRnQzanhqbHoxZzZKSGdTblptSHhUT0Jjamk3ZWI1VnJHOFZPWnk0VERidlZsNFItMzE2T2UyOEhfYWVGOUt1MkRLLVlNTWlNYnViUGhnalAtS3RDSS0tX3ZSckR1MjM4UmF4YzNDZ3hyN1AxYVhEaE1fMWpOQlFhVlZBbXdJVF9sVTNhNjJGMEQ0THlBVHc?oc=5",
           "domain": "reuters.com",
           "seendate": "20260817T091851Z"
         }
       ],
-      "articles_raw_count": 23,
+      "articles_raw_count": 25,
       "source_cap": 99,
       "source_capped": false,
       "count_at_cap": false,
       "articles_dropped_malformed": 0,
       "channel": "gnews",
       "gnews_filter": {
-        "raw": 23,
+        "raw": 25,
         "undated": 0,
         "out_window": 0,
-        "offlist": 19,
-        "kept": 4,
+        "offlist": 22,
+        "kept": 3,
         "capped": false
       },
       "attributable_source_absent": false,
@@ -397,22 +400,16 @@
     "PHP": {
       "articles": [
         {
+          "title": "Philippine Peso Weakens to Record Low as Oil Prices Extend Gains - Bloomberg",
+          "url": "https://news.google.com/rss/articles/CBMitwFBVV95cUxQMGZnRWNFTXd3dFduNXdCclhXSHJiRnNRNEZ1UXotbW9aUUxLV2RGRkZtcmNhTmFJNzJfQlhBQlBaWm1wTHNZNHJGeU9VY2Z6RUZiUmhIUk1IVHF3YVFZb3o2TDBvelBwYmxKUTFlMEN2cWg5TUthdlUzMFVjVDY5ZzZmaGNQcGFmTGdaX0k3TjlXNld5ZTViNG05WTNWelFvb25VQXpUWFVPby0wbnNoc1FNZGxualk?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260819T014100Z"
+        },
+        {
           "title": "BSP seeks tougher oversight of bank execs - Inquirer.net",
           "url": "https://news.google.com/rss/articles/CBMihAFBVV95cUxPbUJBNEpqMjNaX1lFWnQ0eTFsOXFDYXQ4b0dPUjRyNlBaRU4yb2ZHUmZLZ3QwbXE4aHZoWnU5dkw3c2E1QU05TE9tUnhWb3FsZENETHVSSTlmMTNWLXpVSE5TMk1DUThVOTVzYVNMdnNwUGxkMWJmR3c0WkFwMnFydkROX2bSAYoBQVVfeXFMTTl6NExnbEJzRVVKNVZNblZfQ1UwVjB6Vmt6bGVWLTVtMjZSX1JhajJjOXVwSDZkdUNWQUxZVDd3TXJpdC0zQ3lzUml1dThrblBHdDdvSjMwY0Jrc0Y4dVZ5NkVqNXJsWmVOMkUwQWNCb0lhU2tfMlNKa2VncmFsM0hvakxIeTJwbkhn?oc=5",
           "domain": "business.inquirer.net",
           "seendate": "20260818T180400Z"
-        },
-        {
-          "title": "Digital payments accounted for 64.7% of total retail payments in 2025, says BSP - GMA Network",
-          "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxOS3RYWlZxMExLTGFERUt4NU5xS2otZWo0R2ZrTGp1eUpRVmtHMW0zWW9RbTJvLUk3UDhPTHlFaVMtdS1GUFgwcWJBNGNlaWR4NGI4cEIzQ01ZX2tKTHFDM0xOQW1IVnFSY3JLTF9CaHFqNkJSSjdYUkZsWGpnX1VEdXdtbWozdF9jT2VhNkt6Zk5PMEVvZjk2Z09MM2ZtdjhZQndraWNLZllLTk9ZazNHQWlVNUlnRUl2ZDlyWXI1cGFPaUltc0dzN1p30gHPAUFVX3lxTE9La21MS0lZNUJONWRXajgtSk1HWkh0Tm5MTGxqSXNFSi1taWtrYUxtUEhLQTVyMndhVG0tMUc1aHF0aTBiQ0ZhRl94WlotVGEtUkxsdEJVZHVPN01TX2JMOVRWVDR3ZHdqUmFhc1Q4cmlmUHdmdkxlZktFb2xNRFBSaDdpaVNWcXFldW15bUh5NXJQbEt5SHZOMUVLTmI5TzRDLWhKcGdMX0Yta0xzbUNtX29aTWFkbHU1NWwxSjVSRkpOMEJYa2xFeVZEUnpUbw?oc=5",
-          "domain": "gmanetwork.com",
-          "seendate": "20260818T142424Z"
-        },
-        {
-          "title": "BSP says inflation to ease gradually, risks remain on upside - Interaksyon",
-          "url": "https://news.google.com/rss/articles/CBMivAFBVV95cUxPVU4wUDlsb1ZOMlVxRmhSREU4NWxOMXdRNlJVSk1NODNfRmkxUlI1UXM0T1B3NkpJT1NuZXlEQmJfSGMtQ0V3NFo4d0hrQkh2cHNrWW0weXJ2UXpONzZ6eHhZcUljUTJGOF9aQi01TGgzV0JaRmdfMlpPWVFBYTRGMlRxaHRDTFZIaTM0azJMaUYycGFEbTM0YkgxNVQtWkRNY29pY1BVOFJydWtMRS0wTEVXS20yWWROVktzaw?oc=5",
-          "domain": "interaksyon.philstar.com",
-          "seendate": "20260818T012222Z"
         },
         {
           "title": "PH banks’ farm lending tops P3T - Inquirer.net",
@@ -421,16 +418,28 @@
           "seendate": "20260817T180300Z"
         },
         {
-          "title": "Philippines hits digital payments goal –– BSP - Inquirer.net",
-          "url": "https://news.google.com/rss/articles/CBMihgFBVV95cUxOQ3FyOGtBOTZCMkNYemVvaWlrX2J1cEktaTRkWU9VMmxRSVVWdHJOVnZBekVSb19qX1dMbFhiM09tZ0lBZ0xOU3pYcUljVEVTMDBic2JlclNMd1NpWEd6Y1h4dWlhSUJwRUxpVDZBRDNnTGJGNUFMb2pjbXhQQjB0ZDN2X1cyUdIBiwFBVV95cUxQNXhrYVZILUxLZGkyVklUYUtaNG9KR0xhdncxVkhxVWlIMENCMTVPSmJMcTFycm0ycThUZC1SbEtxckpLZFZ4cmk2TEk2dWNkMi1zUkxyTVRXX2RyTzZoOUdxV1BNbGR2TnllTTd3OFNNTlBVb2ZUOHlpcHNsQ3pkb2NEOW9EVWtKTFB3?oc=5",
-          "domain": "business.inquirer.net",
-          "seendate": "20260817T170000Z"
-        },
-        {
           "title": "BSP signals further ‘monetary action’ to curb inflation, support growth - Inquirer.net",
           "url": "https://news.google.com/rss/articles/CBMiqAFBVV95cUxNOG5EQ1Z3eFFmalVaQkpnWG5CdThJQVU1SnNFQ1ZhbFVxczUtTHJnXzVWUzFqd2xpWnRYbmZpcm5iT0VtN1JoUWdyR0ZtQllJUW8xNzZKMEdfT1Ruc2pMREZLaGFHYWxHeWlKS1hmUE1WU0FtY3dWak1OSnM1eC1RR25Cc3g4QzhVYzI0UHRYVUZsbTFFZDJhMWxoeWRkT28tTUstR0ZGZEPSAa4BQVVfeXFMTUNtazdiOFNteUZvRkZhS25rSmJMQlJQWHBva1M2ZnNwQmpZMjhST2duaGg1TlpkRTNGckRkRHdaTUpteTlFYVVmS3dUSlJiOUYtUjI5RmdoX3FUUXVwUEkzUkVLOFYtSW1iMThKTnRCNWYtREZfamFJSXNtM2pUcnd0WW5QSDFlWl9wN1JlcERkeW1uSDZBRHFSNVdVM2ViTGlXRDlzUnl6TGR5a0R3?oc=5",
           "domain": "business.inquirer.net",
           "seendate": "20260817T040300Z"
+        },
+        {
+          "title": "Peso sinks to new record low, nears P62/$1 - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMigwFBVV95cUxNTlE2OS1mN3VjZ202R0cySXN3NW5QNndJUHRQUEtDSmFwVGhiRGlTcVRNVEFteGNCVmxYWnNERllxdTB4QVBfdHMtSnNnUnRLTTBtZFBOdzlqS0N5QUhaSjNpNDYxalYzbDVjVkJsZGRLZ0JMSzI4dDNOWFJnRjRrQ3J6b9IBiAFBVV95cUxQRWs3SGNDMTU5b3JJYkhYRzJSNi01MFdQTEV6TEVZOThoa05tMHQyNmlIRU1SQnJtTVBYUFpGSjIyQkRVOS1Ld19uNTRuQVh5eVp2NWR0dlBXaHhPTU0zOWxqMjBFalhPeXBkZTFCU0lVZmJxZVBvQzJrR1dIUno2dzVmX0IyU1JS?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260819T014200Z"
+        },
+        {
+          "title": "Digital payments accounted for 64.7% of total retail payments in 2025, says BSP - GMA Network",
+          "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxOS3RYWlZxMExLTGFERUt4NU5xS2otZWo0R2ZrTGp1eUpRVmtHMW0zWW9RbTJvLUk3UDhPTHlFaVMtdS1GUFgwcWJBNGNlaWR4NGI4cEIzQ01ZX2tKTHFDM0xOQW1IVnFSY3JLTF9CaHFqNkJSSjdYUkZsWGpnX1VEdXdtbWozdF9jT2VhNkt6Zk5PMEVvZjk2Z09MM2ZtdjhZQndraWNLZllLTk9ZazNHQWlVNUlnRUl2ZDlyWXI1cGFPaUltc0dzN1p30gHPAUFVX3lxTE9La21MS0lZNUJONWRXajgtSk1HWkh0Tm5MTGxqSXNFSi1taWtrYUxtUEhLQTVyMndhVG0tMUc1aHF0aTBiQ0ZhRl94WlotVGEtUkxsdEJVZHVPN01TX2JMOVRWVDR3ZHdqUmFhc1Q4cmlmUHdmdkxlZktFb2xNRFBSaDdpaVNWcXFldW15bUh5NXJQbEt5SHZOMUVLTmI5TzRDLWhKcGdMX0Yta0xzbUNtX29aTWFkbHU1NWwxSjVSRkpOMEJYa2xFeVZEUnpUbw?oc=5",
+          "domain": "gmanetwork.com",
+          "seendate": "20260818T142424Z"
+        },
+        {
+          "title": "Philippines hits digital payments goal –– BSP - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMihgFBVV95cUxOQ3FyOGtBOTZCMkNYemVvaWlrX2J1cEktaTRkWU9VMmxRSVVWdHJOVnZBekVSb19qX1dMbFhiM09tZ0lBZ0xOU3pYcUljVEVTMDBic2JlclNMd1NpWEd6Y1h4dWlhSUJwRUxpVDZBRDNnTGJGNUFMb2pjbXhQQjB0ZDN2X1cyUdIBiwFBVV95cUxQNXhrYVZILUxLZGkyVklUYUtaNG9KR0xhdncxVkhxVWlIMENCMTVPSmJMcTFycm0ycThUZC1SbEtxckpLZFZ4cmk2TEk2dWNkMi1zUkxyTVRXX2RyTzZoOUdxV1BNbGR2TnllTTd3OFNNTlBVb2ZUOHlpcHNsQ3pkb2NEOW9EVWtKTFB3?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260817T170000Z"
         },
         {
           "title": "PH remittances posted slow growth despite June peak - Inquirer.net",
@@ -439,24 +448,30 @@
           "seendate": "20260817T040800Z"
         },
         {
+          "title": "BSP says inflation to ease gradually, risks remain on upside - Interaksyon",
+          "url": "https://news.google.com/rss/articles/CBMivAFBVV95cUxPVU4wUDlsb1ZOMlVxRmhSREU4NWxOMXdRNlJVSk1NODNfRmkxUlI1UXM0T1B3NkpJT1NuZXlEQmJfSGMtQ0V3NFo4d0hrQkh2cHNrWW0weXJ2UXpONzZ6eHhZcUljUTJGOF9aQi01TGgzV0JaRmdfMlpPWVFBYTRGMlRxaHRDTFZIaTM0azJMaUYycGFEbTM0YkgxNVQtWkRNY29pY1BVOFJydWtMRS0wTEVXS20yWWROVktzaw?oc=5",
+          "domain": "interaksyon.philstar.com",
+          "seendate": "20260818T012222Z"
+        },
+        {
           "title": "RCBC joins BSP-backed direct debit network - Philstar.com",
           "url": "https://news.google.com/rss/articles/CBMimwFBVV95cUxNOEI2Wk1YRVNkdUgzbjd2OThNajBBbnJzMFZmWWRkVWpXNXVjZVh0Y0VUM1REeGlpQjlHcm9qXzBXMFJ2czRQSUkzZW5LRDYwbmJEYXZoOW4zZHJIcnhFTy15LTFPQ3g1RzhsTGxGUThSU3p0TGx3OHFDSHJVZ0FfV1hBcEJKTTl2c1N3VldnbEw0Y3hxNHdraHBFd9IBogFBVV95cUxOb194U0pIV2lWWVVVbDVINi04Q3pyNEQ3T1pBREQxX1hvNVpReHlyMUdscTVjWllwMklzU09mdC1fenlBVHpXZmZqejlvZktlYmJXZ0lfUzhYNmxWQTlRMkllOVRNVWZsYXdVTDZFcEtmOHg1ckhFQ05OUTRod0lvTm51Y2c1djVTU2JBNE9KTzdJbl9fN0lyd1VSSTNxZGNYNnc?oc=5",
           "domain": "philstar.com",
           "seendate": "20260817T160000Z"
         }
       ],
-      "articles_raw_count": 35,
+      "articles_raw_count": 36,
       "source_cap": 99,
       "source_capped": false,
       "count_at_cap": false,
       "articles_dropped_malformed": 0,
       "channel": "gnews",
       "gnews_filter": {
-        "raw": 35,
+        "raw": 36,
         "undated": 0,
         "out_window": 0,
-        "offlist": 27,
-        "kept": 8,
+        "offlist": 26,
+        "kept": 10,
         "capped": false
       },
       "attributable_source_absent": false
@@ -464,22 +479,22 @@
     "THB": {
       "articles": [
         {
-          "title": "JSCCIB Joins Forces with Public Sector and World Bank - bangkokpost.com",
+          "title": "JSCCIB Joins Forces with Public Sector and World Bank - Bangkok Post",
           "url": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxOZzJKbVVRWk9EdjRrT196THltQkNSdjJYMndud1BFVE5XcFczbDFCUzRaaUtFdnVDRGJMblBxYVUxTXo5Y1o2ZFVTT1BlTW5QWTJVLXZLVy10TDNYSXI2T0YyMXNOYVdTUWJFOTZDVTl0MDduNEtVLWI4azFwT1VZcUZvbllQX2VSajUzYU9heHlyaldQUjN0Qk1XMGo1YmhnZ045WUxUNDZuUQ?oc=5",
           "domain": "bangkokpost.com",
           "seendate": "20260818T025000Z"
-        },
-        {
-          "title": "Thai bank lending picks up, bad loans edge down - bangkokpost.com",
-          "url": "https://news.google.com/rss/articles/CBMioAFBVV95cUxNRXlNNGdoX25uQ3R6Z0lWWkozSGFRbFFpNTJKdDFKMWUtR09IajVmWnU2QVJWMHZvemRXUEhkemxzU0NWaHBwWmVBNkFyYVJrVndGMFlXU0dLNUdQT2xQaHZ1LTJMaGZWcW41bjRBLTA1c1RRVzd2SFYxRHlYal9qaU9ZSFRPYWE3RkpuNWs0ZUdxUXdNT1htSWpqRWlvRHNh?oc=5",
-          "domain": "bangkokpost.com",
-          "seendate": "20260818T083900Z"
         },
         {
           "title": "Thai gold traders to oppose possible tax in talks with Finance Ministry - Nation Thailand",
           "url": "https://news.google.com/rss/articles/CBMidkFVX3lxTE0wVVM5T1hSYVl0N3hQRFVfM1lEa09WQkticmJWeWxOTnhyak5NUk1TcDdiRjI1bGhocDRwdHNFNUVZRC1UOEw2ME1iN3RYNUhheGJUQUw1bmRGbnQya0lRejR4bGxhbVVfRkN6d25QclNmc1I3bXc?oc=5",
           "domain": "nationthailand.com",
           "seendate": "20260817T082100Z"
+        },
+        {
+          "title": "Thai bank lending picks up, bad loans edge down - Bangkok Post",
+          "url": "https://news.google.com/rss/articles/CBMioAFBVV95cUxNRXlNNGdoX25uQ3R6Z0lWWkozSGFRbFFpNTJKdDFKMWUtR09IajVmWnU2QVJWMHZvemRXUEhkemxzU0NWaHBwWmVBNkFyYVJrVndGMFlXU0dLNUdQT2xQaHZ1LTJMaGZWcW41bjRBLTA1c1RRVzd2SFYxRHlYal9qaU9ZSFRPYWE3RkpuNWs0ZUdxUXdNT1htSWpqRWlvRHNh?oc=5",
+          "domain": "bangkokpost.com",
+          "seendate": "20260818T083900Z"
         }
       ],
       "articles_raw_count": 18,
@@ -525,14 +540,7 @@
     }
   },
   "calendar_hits": [],
-  "gaps": [
-    {
-      "source": "exchange-api",
-      "scope": "all",
-      "reason": "HTTPError: HTTP Error 404: Not Found; HTTPError: HTTP Error 404: Not Found",
-      "at": "2026-08-19T01:42:07+00:00"
-    }
-  ],
+  "gaps": [],
   "meta": {
     "collector_version": "0.1.0",
     "caps": {
@@ -575,16 +583,16 @@
     },
     "events": {
       "PHP": {
-        "count": 8,
+        "count": 10,
         "count_prev": 8,
-        "count_delta": 0,
+        "count_delta": 2,
         "channel_changed_from": null,
         "count_capped": false,
         "count_prev_capped": false,
         "sample_capped": false,
         "dropped_malformed": 0,
         "main_sample_capped": false,
-        "events_verdict": "当日采到 8 条"
+        "events_verdict": "当日采到 10 条"
       },
       "THB": {
         "count": 3,
@@ -611,28 +619,28 @@
         "events_verdict": "当日采到 1 条"
       },
       "EUR": {
-        "count": 4,
+        "count": 3,
         "count_prev": 3,
-        "count_delta": 1,
+        "count_delta": 0,
         "channel_changed_from": null,
         "count_capped": false,
         "count_prev_capped": false,
         "sample_capped": false,
         "dropped_malformed": 0,
         "main_sample_capped": false,
-        "events_verdict": "当日采到 4 条"
+        "events_verdict": "当日采到 3 条"
       },
       "USD": {
-        "count": 11,
+        "count": 12,
         "count_prev": 6,
-        "count_delta": 5,
+        "count_delta": 6,
         "channel_changed_from": null,
         "count_capped": false,
         "count_prev_capped": false,
         "sample_capped": true,
         "dropped_malformed": 0,
         "main_sample_capped": true,
-        "events_verdict": "当日采到 11 条(源返回的原始样本顶到其上限,滤后条数是下界)"
+        "events_verdict": "当日采到 12 条(源返回的原始样本顶到其上限,滤后条数是下界)"
       }
     },
     "real_rate": {
@@ -651,11 +659,11 @@
         "cpi_period": "2026-06"
       },
       "PH": {
-        "value": -1.613,
+        "value": -1.45,
         "policy_rate": 4.75,
         "policy_period": "2026-08-07",
-        "cpi": 6.362922,
-        "cpi_period": "2026-06"
+        "cpi": 6.2,
+        "cpi_period": "2026-07"
       },
       "TH": {
         "value": -1.42,
