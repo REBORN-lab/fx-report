@@ -4667,6 +4667,10 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     # 是一个币种当天的判断根本没发布 —— 而 `OVERVIEW_ROW_MISSING` 那条声明
     # 在实测里与 rc=0 并存(docs/known-gate-escapes.md 逃逸 6)。
     "OVERVIEW_ROW_ABSENT": "DISPOSITION_ROW_ABSENT",
+    # 2026-08-19:「格 ⊇ trigger」这条包含判据允许截断,而实测 15 条登记里
+    # 砍掉的恰好总是时限那一截 —— `claim.horizon` 于是合法地登记成 open,
+    # 观点永不到期(docs/known-gate-escapes.md 逃逸 8)。
+    "DECISION_TRIGGER_TRUNCATED_DEADLINE": "DISPOSITION_TRUNCATED_DEADLINE",
     "NUMBER_WRONG_SECTION": "DISPOSITION_WRONG_SECTION",
     "SUMMARY_NUMBER_NOT_IN_BODY": "DISPOSITION_SUMMARY_BODY",
     "SUMMARY_NUMBER_WRONG_CURRENCY": "DISPOSITION_SUMMARY_CURRENCY",
@@ -4823,7 +4827,10 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # 只加违规、不加声明 —— 「缺了哪几行」由既有的 OVERVIEW_ROW_MISSING
         # 与 INVALIDATION_COLUMN_CHECKED 的丢行子句负责,再加一条会把同一件事
         # 说三遍。
-        self.assertEqual(len(want), 74, len(want))
+        # 74 → 75(2026-08-19,登记逃逸 8):DECISION_TRIGGER_TRUNCATED_DEADLINE。
+        # 只加违规:「查了几个币种」由既有的 DECISION_LOG_NO_ENTRY 声明承担,
+        # 这条码与 DECISION_TRIGGER_NOT_SOURCED 共用同一个循环与同一个分母。
+        self.assertEqual(len(want), 75, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4955,6 +4962,18 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 check_report.main(argv)
             out.append(("assumption-vintage", buf.getvalue()))
+        # 第六次七分之八:日志的 trigger 把时限截在登记之外。宿主同为速览表
+        # 那份报告,但违规在日志与格的**差集**上 —— 否则
+        # DECISION_TRIGGER_TRUNCATED_DEADLINE 只有映射、没有任何用例触发。
+        with tempfile.TemporaryDirectory() as tmp:
+            truncated = DECISION_LOG.replace("若 C 升破 60.9 → 关注丙(T+2)",
+                                             "若 C 升破 60.9")
+            argv, _ = daily_files(tmp, report_text=OVERVIEW_REPORT,
+                                  log_text=truncated, extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main(argv)
+            out.append(("trigger-truncated", buf.getvalue()))
         # 第六次四分之三:速览表少了一个**报告写了节**的币种的行。宿主是
         # 速览表那份报告,但违规在表的行集上,与上面几份都不同 —— 否则
         # OVERVIEW_ROW_ABSENT 只有映射、没有任何用例触发。
@@ -6730,3 +6749,71 @@ class KnownGateEscapeTest(unittest.TestCase):
             check_report.INVALIDATION_SCOPE_DAILY, notes=notes)
         line = [n for n in notes if "INVALIDATION_COLUMN_CHECKED" in n][0]
         self.assertNotIn("根本不存在", line)
+
+
+class DecisionTriggerTruncatedDeadlineTest(unittest.TestCase):
+    """`DECISION_TRIGGER_TRUNCATED_DEADLINE` —— 日志的 trigger 不许把时限截掉。
+
+    ---- 实测形态(2026-08-19,11/11)----
+    `DECISION_TRIGGER_NOT_SOURCED` 判的是「格 ⊇ trigger」,**包含**而非相等。
+    包含就允许截断,而实测 11 条 `horizon: open` 的登记全是同一种截断:
+    trigger 恰好砍在 `→ 关注…(T+N)` 之前,时限随之丢失,于是
+    `claims._validate_horizon` 的「散文没写时限 → open」那一档当场成立。
+    后果是这 11 条**永不到期**:复盘材料里恒为"未到期顺延",
+    而报告已经把 `(T+3)` 印给读者看了。读者看到的保质期与机器判到期用的那个,
+    是两套。
+
+    ---- 为什么不改成"必须相等" ----
+    SKILL 第 388 行说日志只登记触发那一半,格里还有「→ 关注<方向>」。
+    要求相等会把每一条合规的都打红。判的是**时限这一件**:
+    格里有时限串、trigger 里一个都没有 → 违规。
+    """
+
+    def one(self, cell, trigger, currency="USD"):
+        report = OVERVIEW_REPORT.replace(
+            "| USD | 若 A 升破 60.843 → 关注甲(T+2) |", "| USD | %s |" % cell)
+        log = {("2026-08-10", currency): {"trigger": trigger}}
+        return check_report.check_decision_trigger(
+            check_report.sections(report), "2026-08-10", log)
+
+    def test_a_trigger_that_drops_the_deadline_is_a_violation(self):
+        v = self.one("若 A 升破 60.843 → 关注甲(T+2)", "若 A 升破 60.843")
+        self.assertTrue(
+            any("DECISION_TRIGGER_TRUNCATED_DEADLINE" in x for x in v), v)
+
+    def test_the_dropped_deadline_is_named(self):
+        """只说"截断了"不够 —— 要说截掉的是哪一个时限,否则回填时得自己再找。"""
+        v = self.one("若 A 升破 60.843 → 关注甲(T+2)", "若 A 升破 60.843")
+        self.assertTrue(any("T+2" in x for x in v), v)
+
+    def test_a_calendar_deadline_counts_too(self):
+        v = self.one("若 A 升破 60.843 → 关注甲(时限:2026-09-11)",
+                     "若 A 升破 60.843")
+        self.assertTrue(
+            any("DECISION_TRIGGER_TRUNCATED_DEADLINE" in x for x in v), v)
+
+    def test_carrying_the_deadline_passes(self):
+        v = self.one("若 A 升破 60.843 → 关注甲(T+2)",
+                     "若 A 升破 60.843 → 关注甲(T+2)")
+        self.assertEqual(v, [])
+
+    def test_a_cell_without_any_deadline_is_not_charged_here(self):
+        """格里本来就没有时限时,这条码判不了 —— 那是「条件方向」列自身的事,
+        不该借这条码顺手判红(同一件事两条码会被读成两个问题)。"""
+        v = self.one("若 A 升破 60.843", "若 A 升破 60.843")
+        self.assertEqual(v, [])
+
+    def test_a_partial_deadline_still_counts_as_carried(self):
+        """格里两个时限、trigger 带了其中一个 —— 时限没丢,不判红。
+        要求"全都带上"会把合规写法打红:格里的第二个时限常在「关注」那半句。"""
+        v = self.one("若 A 升破 60.843(T+2) → 关注甲(时限:2026-09-11)",
+                     "若 A 升破 60.843(T+2)")
+        self.assertEqual(v, [])
+
+    def test_it_does_not_fire_when_the_trigger_is_not_sourced_at_all(self):
+        """两条码不叠加:trigger 压根不是格的子串时,该报的是 NOT_SOURCED。
+        叠一条截断码只会让读者以为有两处毛病。"""
+        v = self.one("若 A 升破 60.843 → 关注甲(T+2)", "日志里另写了一版")
+        self.assertTrue(any("DECISION_TRIGGER_NOT_SOURCED" in x for x in v), v)
+        self.assertFalse(
+            any("DECISION_TRIGGER_TRUNCATED_DEADLINE" in x for x in v), v)

@@ -247,6 +247,11 @@ DISPOSITION_THEME_ATTRIBUTION = (
     "处置:「主线归属」格必须逐字命名**本周报里真实存在的**主线段"
     "(`### 主线N:…` 的段名);写一个不存在的名字等于让被查方自选宿主,"
     "翻转指标的比对当场落空")
+DISPOSITION_TRUNCATED_DEADLINE = (
+    "处置:用 `python3 scripts/log_decision.py amend-trigger` 把日志的 trigger "
+    "补成速览那一格的**整格原文**(时限那一半也要),再用 `set-claim` 把 "
+    "`claim.horizon` 从 open 改成该时限 —— 顺序不能反:先补 trigger,"
+    "horizon.quote 才溯源得到。表是源、日志是抄件,不要反过来删掉格里的时限")
 DISPOSITION_ROW_ABSENT = (
     "处置:把缺的那一行补进速览表 —— SKILL 速览表模板段写死「五币种五行,"
     "一行都不许少」,少一行等于这个币种当天的判断根本没有发布。"
@@ -1738,6 +1743,19 @@ def check_decision_trigger(secs, date, entries, notes=None):
                      "日志原文:「%s」;速览原文:「%s」;%s"
                      % (c, OVERVIEW_COL_TRIGGER, date, c, trigger, cell,
                         DISPOSITION_DECISION_TRIGGER))
+            continue        # 两条码不叠加:整串都不是子串时,截断判据无所指
+        # ---- 截断:包含判据允许砍掉一截,而砍掉的恰好总是时限那一截 ----
+        cell_dl = _cell_deadlines(cell)
+        if cell_dl and not _cell_deadlines(trigger):
+            v.append("DECISION_TRIGGER_TRUNCATED_DEADLINE: 速览表 %s 行的「%s」"
+                     "格写着时限(%s),决策日志 %s/%s 的 trigger 却一个都没有"
+                     " —— 时限被截在登记之外,`claim.horizon` 于是只能登记成"
+                     "「散文没写时限」(open),这条观点因此**永不到期**,"
+                     "复盘材料里恒为顺延;读者看到的保质期与机器判到期用的"
+                     "不是同一个。日志原文:「%s」;速览原文:「%s」;%s"
+                     % (c, OVERVIEW_COL_TRIGGER, "、".join(sorted(cell_dl)),
+                        date, c, trigger, cell,
+                        DISPOSITION_TRUNCATED_DEADLINE))
     if absent and notes is not None:
         notes.append("DECISION_LOG_NO_ENTRY: 决策日志里没有 %s 的 %d/%d 个币种"
                      "条目(%s,或条目的 trigger 缺失/为空),这些币种的"
