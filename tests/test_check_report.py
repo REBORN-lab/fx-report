@@ -4657,6 +4657,12 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     "JUDGEMENT_RING_INCOMPLETE": "DISPOSITION_RING",
     "FLIP_INDICATOR_IS_INVALIDATION_RESTATED": "DISPOSITION_FLIP",
     "ASSUMPTION_UNANCHORED": "DISPOSITION_ANCHOR",
+    # 2026-08-19 新增:关键假设拿**带滞后**的宏观读数当锚点时必须写出期号。
+    # 它判**披露**不判新鲜度 —— 快照回答不了"发布方有没有出新的一期"。
+    # 实测:PH/TH/EA/BR 的 CPI 自换 BIS 起 lag_months 恒为 2,按"该序列
+    # 自己历史上的最小滞后"判一条都标不出来,而 PH 的 2026-07 读数 6.2
+    # 早已发布。真正的新鲜度判据要等发布日历接进来(A1 步骤 3)。
+    "ASSUMPTION_VINTAGE_UNDISCLOSED": "DISPOSITION_VINTAGE",
     "NUMBER_WRONG_SECTION": "DISPOSITION_WRONG_SECTION",
     "SUMMARY_NUMBER_NOT_IN_BODY": "DISPOSITION_SUMMARY_BODY",
     "SUMMARY_NUMBER_WRONG_CURRENCY": "DISPOSITION_SUMMARY_CURRENCY",
@@ -4704,6 +4710,8 @@ NEW_LAYER_NOTE_CODES = frozenset({
     # 「跳过必须出声」这条原则没有放弃:不再有跳过态,于是改由回执把
     # 「覆盖 N 节、查了 N 节」打进 stdout。
     "JUDGEMENT_RING_CHECKED", "FLIP_INDICATOR_CHECK_UNREACHABLE",
+    # 2026-08-19:披露检查的正向回执 + lag_months 缺失时的跳过声明。
+    "ASSUMPTION_VINTAGE_CHECKED", "ASSUMPTION_VINTAGE_SKIPPED_NO_LAG",
     "NUMBER_WRONG_SECTION_MACRO_UNATTRIBUTED",
     "NUMBER_WRONG_SECTION_SKIPPED_NO_SLICE",
     "NUMBER_WRONG_SECTION_NAMED_PASS",
@@ -4803,7 +4811,11 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # (INVALIDATION_COLUMN_VACUOUS / …_MIRRORS_TRIGGER /
         #  …_FLIP_HOST_MISSING / WEEKLY_THEME_ATTRIBUTION_UNKNOWN)
         # 与 1 条声明(WEEKLY_LANDING_ROW_MISSING)。
-        self.assertEqual(len(want), 70, len(want))
+        # 70 → 73(2026-08-19,读数期号披露):
+        # ASSUMPTION_VINTAGE_UNDISCLOSED(违规)+ ASSUMPTION_VINTAGE_CHECKED
+        # (回执)+ ASSUMPTION_VINTAGE_SKIPPED_NO_LAG(跳过态)。三条一起进,
+        # 因为"判了几个组合""哪些判不了"必须与违规同批出声。
+        self.assertEqual(len(want), 73, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4919,6 +4931,22 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 check_report.main(argv)
             out.append(("invalidation-column", buf.getvalue()))
+        # 第六次半:关键假设拿带滞后的读数当锚点却没写期号。宿主是币种节的
+        # 判断环 + 快照的 macro 行(要带 lag_months/period),与上面几份 fixture
+        # 都不同 —— 否则 ASSUMPTION_VINTAGE_UNDISCLOSED 只有映射、没有用例触发。
+        with tempfile.TemporaryDirectory() as tmp:
+            ring = ("关键假设是 6.362922 这一档通胀仍主导定价;不成立时利差失效。"
+                    "替代解释:比索走弱是美元一端在统一定价"
+                    "(其翻转指标:泰铢同步升破 35.2)。"
+                    "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+            argv, _ = daily_files(
+                tmp, report_text=make_report(php_body=ring_body(ring)),
+                snapshot_text=vintage_snap([PH_CPI_LAGGED]),
+                extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main(argv)
+            out.append(("assumption-vintage", buf.getvalue()))
         # 第七/八/九次:2026-08-15 第二轮补的三条日报侧码。三条的宿主都是
         # 速览表那份报告,但触发形态互不相同 —— 空洞占位 / 第 2 列的机械否定 /
         # 宿主段取不到本判断的翻转指标,所以各喂一份。
@@ -6430,3 +6458,120 @@ class InvalidationReceiptNamesTheRightColumnTest(unittest.TestCase):
         line = [x for x in v
                 if "INVALIDATION_COLUMN_MIRRORS_TRIGGER" in x][0]
         self.assertIn(check_report.WEEKLY_COL_TRIGGER, line)
+
+
+def vintage_snap(rows, schema_version=1):
+    """ring_snap 的宏观行可控版本:本组要的是 macro 行的 lag_months/period。"""
+    snap = dict(SNAP)
+    snap["macro"] = rows
+    snap["derived"] = {"schema_version": schema_version,
+                       "rates": {}, "real_rate": {}, "events": {}}
+    return json.dumps(snap, ensure_ascii=False)
+
+
+PH_CPI_LAGGED = {"economy": "PH", "indicator": "CPI 同比", "value": 6.362922,
+                 "prev": 6.761006, "period": "2026-06", "lag_months": 2}
+
+
+def vintage_check(ring, rows=None, notes=None):
+    return check_report.check_daily(
+        make_report(php_body=ring_body(ring)),
+        vintage_snap([PH_CPI_LAGGED] if rows is None else rows),
+        BRIEF, notes=notes)
+
+
+class AssumptionVintageTest(unittest.TestCase):
+    """`ASSUMPTION_VINTAGE_UNDISCLOSED` —— **披露检查**,不是新鲜度检查。
+
+    它**判不了**"这个读数是不是过期了":快照里没有任何输入能回答"发布方有没有
+    出新的一期"。实测(2026-08-19 全量历史)PH/TH/EA/BR 的 CPI 自 2026-08-11
+    换 BIS 起 `lag_months` 恒为 2,按"该序列自己历史上的最小滞后"判,一条都
+    标不出来 —— 而 PH 的 2026-07 读数 6.2 早在 2026-08-05 就已由 PSA 发布。
+    真正的新鲜度判据必须等发布日历接进来(A1 步骤 3)。
+
+    它能判的是**披露**:拿一个带滞后的读数当关键假设的锚点,却不写它的期号,
+    读者无从知道那是两个月前的数。靶子取自实测 —— reports/daily/2026-08-12
+    两条(PH/TH 政策利率)、2026-08-13 一条(PH CPI 6.362922),三条都没写期号。
+    """
+
+    def test_a_lagged_anchor_without_its_period_is_a_violation(self):
+        ring = ("关键假设是 6.362922 这一档通胀仍主导定价;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        line = [x for x in vintage_check(ring)
+                if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")]
+        self.assertEqual(len(line), 1, line)
+        self.assertIn("PHP", line[0])
+        self.assertIn("6.362922", line[0])
+        self.assertIn("2026-06", line[0])     # 处置要告诉作者该补哪个期号
+
+    def test_the_same_anchor_with_its_period_passes(self):
+        ring = ("关键假设是期 2026-06 的 6.362922 仍是最新可得读数;"
+                "不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        self.assertEqual([x for x in vintage_check(ring)
+                          if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")], [])
+
+    def test_a_zero_lag_reading_needs_no_period(self):
+        """滞后 0 的读数就是当期值,写不写期号都不误导。"""
+        row = dict(PH_CPI_LAGGED, lag_months=0)
+        ring = ("关键假设是 6.362922 这一档通胀仍主导定价;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        self.assertEqual([x for x in vintage_check(ring, rows=[row])
+                          if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")], [])
+
+    def test_rows_without_lag_months_are_declared_with_a_count(self):
+        """存量快照没有 lag_months:判不了,必须出声 —— 不出声就与"查过了、没问题"同形。"""
+        row = dict(PH_CPI_LAGGED); row.pop("lag_months")
+        ring = ("关键假设是 6.362922 这一档通胀仍主导定价;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        notes = []
+        v = vintage_check(ring, rows=[row], notes=notes)
+        self.assertEqual([x for x in v
+                          if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")], [])
+        line = [n for n in notes if n.startswith("ASSUMPTION_VINTAGE_SKIPPED")]
+        self.assertEqual(len(line), 1, notes)
+        self.assertIn("1", line[0])           # 带计数
+
+    def test_a_positive_check_receipt_carries_counts(self):
+        notes = []
+        vintage_check(RING_OK, notes=notes)
+        line = [n for n in notes if n.startswith("ASSUMPTION_VINTAGE_CHECKED")]
+        self.assertEqual(len(line), 1, notes)
+
+    def test_the_value_must_stand_alone_as_a_number(self):
+        """1.0 不得被 61.0 里的子串命中 —— 边界判定,不是子串判定。"""
+        row = {"economy": "PH", "indicator": "政策利率", "value": 1.0,
+               "period": "2026-07-30", "lag_months": 1}
+        ring = ("关键假设是参考价 61.09 仍在区间内;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        self.assertEqual([x for x in vintage_check(ring, rows=[row])
+                          if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")], [])
+
+    def test_only_the_assumption_clause_is_judged(self):
+        """同一个数出现在传导环里不算 —— 本码判的是**锚点**的披露,不是全节。"""
+        ring = ("关键假设是参考价 60.843 仍在区间内;不成立时利差这条腿失效。"
+                "替代解释:6.362922 这一档通胀由本地因素定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        self.assertEqual([x for x in vintage_check(ring)
+                          if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")], [])
+
+    def test_another_economys_row_does_not_apply_to_this_section(self):
+        """美国那行的值出现在比索节,归属问题由 NUMBER_WRONG_SECTION 管,不在本码。"""
+        row = dict(PH_CPI_LAGGED, economy="US")
+        ring = ("关键假设是 6.362922 这一档通胀仍主导定价;不成立时利差这条腿失效。"
+                "替代解释:比索走弱是美元一端在统一定价"
+                "(其翻转指标:泰铢同步升破 35.2)。"
+                "翻转指标:参考价回落至 60.9 一侧(T+3)。")
+        self.assertEqual([x for x in vintage_check(ring, rows=[row])
+                          if x.startswith("ASSUMPTION_VINTAGE_UNDISCLOSED")], [])

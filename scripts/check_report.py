@@ -250,6 +250,9 @@ DISPOSITION_THEME_ATTRIBUTION = (
 DISPOSITION_ANCHOR = ("处置:在关键假设句里引一个来自快照或要点表的**当前值**;"
                       "不要写阈值 —— 阈值是尚未发生的前瞻价位、不在快照里,"
                       "写进去会被 NUMBER_UNTRACEABLE 当场拦下")
+DISPOSITION_VINTAGE = ("处置:在同一句里写出该读数的期号(形如「期 2026-06 的 X」);"
+                       "本码判的是**披露**不是新鲜度 —— 快照回答不了"
+                       "「发布方有没有出新的一期」,读者至少要知道手上这个数是哪一期的")
 DISPOSITION_WRONG_SECTION = ("处置:换成该币种自己快照切片里的数;"
                              "确是跨币种比较时,在**同一节内**点名那个币种"
                              "(写「比索 61.325」,不要光写 61.325)")
@@ -1093,6 +1096,70 @@ def _check_one_ring(currency, body, allowed):
             v.append("ASSUMPTION_UNANCHORED: %s 节的关键假设句里没有可溯源"
                      "数字:「%s」;%s" % (currency, s, DISPOSITION_ANCHOR))
     return v, flip_unreachable
+
+
+
+def check_assumption_vintage(secs, covered, snap, notes=None):
+    """关键假设拿**带滞后**的宏观读数当锚点时,必须在同一句里写出它的期号。
+
+    **本码不判新鲜度,判披露。** 快照里没有任何输入能回答"发布方有没有出新的
+    一期" —— 实测(2026-08-19 全量历史)PH/TH/EA/BR 的 CPI 自 2026-08-11 换 BIS
+    起 `lag_months` 恒为 2,按"该序列自己历史上的最小滞后"判,一条都标不出来,
+    而 PH 的 2026-07 读数 6.2 早在 2026-08-05 就已由 PSA 发布。真正的新鲜度
+    判据要等发布日历接进来;在那之前把这一层说成"已挡住过期读数"就是假强制。
+
+    能判的是:拿两个月前的数当锚点却不写期号,读者无从知道它是两个月前的。
+    靶子取自实测 —— reports/daily/2026-08-12 两条(PH/TH 政策利率)、
+    2026-08-13 一条(PH CPI 6.362922),三条都没写期号。
+
+    `lag_months` 缺失(存量快照)→ **不判并出声**,带计数。不出声就与
+    "查过了、没问题"在 stdout 上同形。
+    """
+    v, judged, skipped = [], 0, 0
+    for c in sorted(covered):
+        econ = ECONOMY_OF_CURRENCY.get(c)
+        body = find_section(secs, c)[1]
+        if econ is None or not body:
+            continue
+        clauses = [x for x in split_sentences(body) if ASSUMPTION_LABEL in x]
+        if not clauses:
+            continue
+        for row in _macro_rows(snap):
+            if row.get("economy") != econ or row.get("value") is None:
+                continue
+            lag, period = row.get("lag_months"), row.get("period")
+            if not isinstance(lag, int) or not isinstance(period, str):
+                skipped += 1
+                continue
+            if lag <= 0:
+                continue
+            judged += 1
+            raw = row["value"]
+            # 快照里 1.0 与 1 是同一个读数的两种落法,两种写法都算命中
+            cands = [str(raw)]
+            if isinstance(raw, float) and raw.is_integer():
+                cands.append(str(int(raw)))
+            val = cands[0]
+            for cl in clauses:
+                # 边界判定,不是子串判定:1.0 不得被 61.09 命中
+                if not any(re.search(r"(?<![\d.])%s(?![\d.])" % re.escape(x), cl)
+                           for x in cands):
+                    continue
+                if period in cl:
+                    continue
+                v.append("ASSUMPTION_VINTAGE_UNDISCLOSED: %s 节的关键假设拿 %s "
+                         "当锚点,而它是期 %s 的读数(滞后 %d 个月),同一句里"
+                         "没有写出期号:「%s」;%s"
+                         % (c, val, period, lag, cl, DISPOSITION_VINTAGE))
+    if notes is not None:
+        notes.append("ASSUMPTION_VINTAGE_CHECKED: %d 个「币种节 × 带滞后读数」"
+                     "组合已校验关键假设是否写出期号(本码判披露,不判新鲜度)"
+                     % judged)
+        if skipped:
+            notes.append("ASSUMPTION_VINTAGE_SKIPPED_NO_LAG: %d 个宏观读数没有"
+                         "可用的 lag_months/period,这些读数当锚点时是否写出"
+                         "期号未校验" % skipped)
+    return v
 
 
 # ---- 数字的**归属**:两条映射级检查 ----
@@ -2067,6 +2134,8 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
     # 判断环三码必须在 `allowed` 算完之后:③ 的锚点判据逐字复用同一个白名单,
     # 它自己不另建一份 —— 另建就等于给报告开了第二条数字来源。
     v.extend(check_judgement_ring(secs, covered, allowed, notes=notes))
+    if isinstance(snap, dict):
+        v.extend(check_assumption_vintage(secs, covered, snap, notes=notes))
     # 数字归属两码同样排在 `allowed` 之后:映射检查的候选集是**已可溯源**的
     # 那些数,编造的数由 NUMBER_UNTRACEABLE 单独管,同一个 token 不得吃两条。
     if brief_amb:
