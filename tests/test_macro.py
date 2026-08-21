@@ -1073,8 +1073,12 @@ class ConfiguredIndicatorsReachableTest(unittest.TestCase):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "config", "indicators.json"), encoding="utf-8") as f:
             indicators = _json.load(f)
-        self.assertEqual(len(indicators), 15)
-        covered = {(e, ind) for ind, _k, _s, _d, _c, area, _f, _a in macro.SDMX_SOURCES
+        # 15 → 25(2026-08-21):加名义/实际有效汇率各五个经济体。
+        # 这个数是**冻结的**,不是描述性的 —— 配置里悄悄多一条谁也不取的指标,
+        # 快照里只会表现为"这一条永远缺漏",读者无从分辨是源挂了还是没接。
+        self.assertEqual(len(indicators), 25)
+        covered = {(e, ind)
+                   for ind, _k, _s, _d, _c, area, _f, _a, _t, _e in macro.SDMX_SOURCES
                    for e in area}
         covered.add(macro.US_CPI)          # 美国 CPI 主源是 BLS
         for row in indicators:
@@ -1323,3 +1327,276 @@ class PxParseTest(unittest.TestCase):
     def test_unterminated_keyword_is_dropped_not_guessed(self):
         got = macro._px_parse('A="x";\r\nB="oops\r\n')
         self.assertEqual(list(got), ["A"])
+
+
+# ------------------------------------------------------------- BIS WS_EER fixture
+# 列名与取值来自 2026-08-21 对 stats.bis.org 的实测响应(SDMX-CSV,六列)。
+# 名义(N)与实际(R)是**同一个 dataflow 下的两套指标**,这正是本组要守的坑。
+BIS_NEER = ("FREQ,EER_TYPE,EER_BASKET,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+            "M,N,B,US,2026-06,102.9\n"
+            "M,N,B,US,2026-07,103.2\n"
+            "M,N,B,PH,2026-06,89.1\n"
+            "M,N,B,PH,2026-07,88.47\n"
+            "M,N,B,TH,2026-06,103.9\n"
+            "M,N,B,TH,2026-07,103.33\n")
+BIS_REER = ("FREQ,EER_TYPE,EER_BASKET,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+            "M,R,B,US,2026-06,107.8\n"
+            "M,R,B,US,2026-07,108.25\n"
+            "M,R,B,PH,2026-06,98.2\n"
+            "M,R,B,PH,2026-07,97.85\n"
+            "M,R,B,TH,2026-06,98.4\n"
+            "M,R,B,TH,2026-07,97.72\n")
+NEER, REER = "名义有效汇率", "实际有效汇率"
+EER_INDICATORS = [{"economy": e, "indicator": i}
+                  for i in (NEER, REER) for e in ("US", "PH", "TH")]
+
+
+class BisEerTest(unittest.TestCase):
+    """BIS WS_EER:名义与实际两套有效汇率。**同一个 dataflow,两条指标。**
+
+    接它是为了闭合「缺月频有效汇率指数」那条 —— 报告里「比索被低估」一类的
+    估值说法此前只有标题、没有可引的数,而 BIS 的 EER 五个经济体全覆盖、
+    PH/TH 不比别人慢一档。
+
+    ---- 本组守的那个坑 ----
+    `series_id` 此前由 `(source, dataflow, area)` 三元组拼成,而名义与实际
+    **共用 dataflow `WS_EER`** —— 两条指标会算出同一个 id。`_is_new` 与
+    `_mark_source_change` 都按 id 在上一份快照里线性查找、取**第一个**命中,
+    于是一条指标的期号会决定另一条的 `is_new_release`。这类错不报错、不缺行,
+    只是把某一天的「数据发布」行安在错误的指标上。
+    """
+
+    def _cfg(self, srv, **over):
+        cfg = make_test_cfg(
+            date="2026-08-21",
+            indicators=[dict(i) for i in EER_INDICATORS],
+            endpoints={"bis_neer_url": srv.base_url + "/bis/neer",
+                       "bis_reer_url": srv.base_url + "/bis/reer"})
+        cfg["endpoints"].update(over.pop("endpoints", {}))
+        cfg.update(over)
+        return cfg
+
+    def _collect(self, **over):
+        with FixtureServer({"/bis/neer": (200, BIS_NEER),
+                            "/bis/reer": (200, BIS_REER)}) as srv:
+            out, gaps = macro.collect(self._cfg(srv, **over))
+        return {(r["economy"], r["indicator"]): r for r in out["indicators"]}, gaps
+
+    def test_both_series_land_with_their_own_values(self):
+        rows, gaps = self._collect()
+        self.assertEqual(gaps, [])
+        self.assertEqual(rows[("PH", NEER)]["value"], 88.47)
+        self.assertEqual(rows[("PH", REER)]["value"], 97.85)
+        self.assertEqual(rows[("PH", NEER)]["period"], "2026-07")
+        self.assertEqual(rows[("PH", NEER)]["prev"], 89.1)
+        self.assertEqual(rows[("PH", NEER)]["prev_period"], "2026-06")
+
+    def test_the_two_indicators_do_not_share_a_series_id(self):
+        """同一个 dataflow 下的两条指标必须有各自的 series_id ——
+        它是快照里唯一可回溯到源的字段,也是 `_is_new` 的查找键。"""
+        rows, _ = self._collect()
+        self.assertNotEqual(rows[("PH", NEER)]["series_id"],
+                            rows[("PH", REER)]["series_id"])
+
+    def test_new_release_is_judged_per_indicator_not_per_dataflow(self):
+        """行为级:上一份快照里名义停在 2026-06、实际已是 2026-07。
+        今天两条都是 2026-07 → 名义是新发布,实际不是。
+        id 相撞时,先出现的那一行会替另一行作答。"""
+        prev = {"macro": [
+            {"economy": "PH", "indicator": NEER, "source": "bis",
+             "period": "2026-06", "series_id": "BIS/WS_EER/N/PH"},
+            {"economy": "PH", "indicator": REER, "source": "bis",
+             "period": "2026-07", "series_id": "BIS/WS_EER/R/PH"}]}
+        rows, _ = self._collect(prev_snapshot=prev)
+        self.assertTrue(rows[("PH", NEER)]["is_new_release"])
+        self.assertFalse(rows[("PH", REER)]["is_new_release"])
+
+    def test_lag_months_attached(self):
+        rows, _ = self._collect()
+        self.assertEqual(rows[("PH", NEER)]["lag_months"], 1)
+
+    def test_a_missing_economy_is_a_gap_naming_the_indicator(self):
+        """缺漏必须定位到「经济体/指标」,不能只记到 dataflow ——
+        名义缺席与实际缺席在报告层是两件事。"""
+        with FixtureServer({"/bis/neer": (200, BIS_NEER),
+                            "/bis/reer": (200, BIS_REER)}) as srv:
+            cfg = self._cfg(srv)
+            cfg["indicators"].append({"economy": "BR", "indicator": NEER})
+            _, gaps = macro.collect(cfg)
+        scopes = [g["scope"] for g in gaps]
+        self.assertIn("BR/%s" % NEER, scopes)
+        self.assertNotIn("BR/%s" % REER, scopes)
+
+    def test_unconfigured_endpoint_is_silent_not_a_gap(self):
+        """未配置 = 有意停用(与 BLS / PSA 同约定),删 URL 即回滚。"""
+        with FixtureServer({"/bis/reer": (200, BIS_REER)}) as srv:
+            cfg = self._cfg(srv)
+            del cfg["endpoints"]["bis_neer_url"]
+            cfg["indicators"] = [{"economy": "PH", "indicator": REER}]
+            out, gaps = macro.collect(cfg)
+        self.assertEqual(gaps, [])
+        self.assertEqual(out["indicators"][0]["value"], 97.85)
+
+
+class SeriesIdShapeFrozenTest(unittest.TestCase):
+    """既有三个源的 `series_id` 形状**冻结**。
+
+    为 WS_EER 加判别位时最省事的写法是改 `series_id` 的拼法 —— 那会把已在用的
+    三条一起改名。后果不是报错,而是**静默漏报**:`_is_new` 的循环末尾
+    `return False`,在上一份快照里找不到新名字就返回 False,于是改名当天那一期
+    真实发布被吞掉,报告少写一行「数据发布」而没有任何人出声。
+
+    (2026-08-21 更正:此处原先写的是"十五个指标同一天全部 is_new_release=true"
+    —— 方向与实现**相反**,而且政策利率是日频、走 `_is_new_level`,连那个数也
+    不成立。实测:id 找得到且期号推进 → True;期号未变 → False;**id 找不到
+    → False**。「豁免/理由本身为假」是本仓最贵的一类缺陷,注释也算。)
+    """
+
+    CPI = ("FREQ,REF_AREA,UNIT_MEASURE,TIME_PERIOD,OBS_VALUE\n"
+           "M,PH,771,2026-05,6.761006\n"
+           "M,PH,771,2026-06,6.362922\n")
+    CBPOL = ("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+             "D,PH,2026-08-13,4.5\n"
+             "D,PH,2026-08-14,4.75\n")
+
+    def test_existing_three_keep_their_ids(self):
+        with FixtureServer({"/bis/cpi": (200, self.CPI),
+                            "/bis/cbpol": (200, self.CBPOL),
+                            "/imf/bop": (200, IMF_BOP_CSV)}) as srv:
+            cfg = make_test_cfg(
+                date="2026-08-21",
+                indicators=[{"economy": "PH", "indicator": "CPI 同比"},
+                            {"economy": "PH", "indicator": "政策利率"},
+                            {"economy": "PH", "indicator": CA}],
+                endpoints={"bis_cpi_url": srv.base_url + "/bis/cpi",
+                           "bis_cbpol_url": srv.base_url + "/bis/cbpol",
+                           "imf_bop_url": srv.base_url + "/imf/bop"})
+            out, _ = macro.collect(cfg)
+        got = {r["indicator"]: r["series_id"] for r in out["indicators"]}
+        self.assertEqual(got["CPI 同比"], "BIS/WS_LONG_CPI/PH")
+        self.assertEqual(got["政策利率"], "BIS/WS_CBPOL/PH")
+        self.assertEqual(got[CA], "IMF/BOP/PHL")
+
+
+class SdmxSliceSelfVerifyTest(unittest.TestCase):
+    """端点声称取哪一片,响应必须自己证实。
+
+    ---- 为什么必须有(2026-08-21 对抗证伪查出)----
+    名义与实际有效汇率的两条端点只差一个字符(`M.N.B` / `M.R.B`),而
+    `_sdmx_parse` 只读 `REF_AREA / TIME_PERIOD / OBS_VALUE` —— 响应里明明白白
+    带着的 `EER_TYPE` 从头到尾没被读过一次。于是 `series_id` 里那个 `N`/`R`
+    是**配置作者声称的**,不是从响应读出来的:把两条 URL 对调,全量测试
+    1187 条**全绿**,而快照里「名义有效汇率」那一行装的是实际值。
+
+    更坏的一层:对调之后两条指标的数据挤进同一个 REF_AREA 桶,
+    `_latest_and_prev_observation` 会取出 `prev_period == period` 的一对 ——
+    一个**凭空的「变动」**,期号还一模一样。
+
+    这正是本仓写在 `macro.py` PSA 分支里的那条原则:**豁免/假设必须自证,
+    不能只在注释里声明**。位置码那一条已经这么做了(响应回显地区名与分类名,
+    取数前当场核对),SDMX 这一条本轮补上。
+    """
+
+    EER_R_ONLY = ("FREQ,EER_TYPE,EER_BASKET,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+                  "M,R,B,PH,2026-06,98.07\n"
+                  "M,R,B,PH,2026-07,97.85\n")
+
+    def _cfg(self, srv):
+        return make_test_cfg(
+            date="2026-08-21",
+            indicators=[{"economy": "PH", "indicator": NEER}],
+            endpoints={"bis_neer_url": srv.base_url + "/bis/neer"})
+
+    def test_a_slice_that_contradicts_the_declaration_is_refused(self):
+        """名义那条端点回来的是实际的切片 → 整片作废,不得落盘。"""
+        with FixtureServer({"/bis/neer": (200, self.EER_R_ONLY)}) as srv:
+            out, gaps = macro.collect(self._cfg(srv))
+        self.assertEqual(out["indicators"], [])
+        self.assertEqual([g["scope"] for g in gaps], ["PH/%s" % NEER])
+
+    def test_the_refusal_names_the_column_and_both_values(self):
+        """只说「取数失败」不够 —— 配置写错时要能一眼看出错在哪一维。"""
+        with FixtureServer({"/bis/neer": (200, self.EER_R_ONLY)}) as srv:
+            _, gaps = macro.collect(self._cfg(srv))
+        why = gaps[0]["reason"]
+        self.assertIn("EER_TYPE", why)
+        self.assertIn("N", why)
+        self.assertIn("R", why)
+
+    def test_a_response_without_the_column_is_also_refused(self):
+        """核验列整列缺席 = 自证不了。**失败关闭**:自证不了就不落盘,
+        而不是「没这一列就当它对」。"""
+        no_col = ("FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n"
+                  "M,PH,2026-07,88.47\n")
+        with FixtureServer({"/bis/neer": (200, no_col)}) as srv:
+            out, gaps = macro.collect(self._cfg(srv))
+        self.assertEqual(out["indicators"], [])
+        self.assertIn("EER_TYPE", gaps[0]["reason"])
+
+    def test_the_matching_slice_still_lands(self):
+        """核验通过的照常落盘 —— 这条守的是上面三条没把正路一起堵死。"""
+        with FixtureServer({"/bis/neer": (200, BIS_NEER)}) as srv:
+            out, gaps = macro.collect(self._cfg(srv))
+        self.assertEqual(gaps, [])
+        self.assertEqual(out["indicators"][0]["value"], 88.47)
+
+    def test_sources_without_a_declaration_are_untouched(self):
+        """既有三条不声明切片 → 一行都不核验,行为一字不变。"""
+        with FixtureServer({"/bis/cpi": (200, SeriesIdShapeFrozenTest.CPI)}) as srv:
+            cfg = make_test_cfg(
+                date="2026-08-21",
+                indicators=[{"economy": "PH", "indicator": "CPI 同比"}],
+                endpoints={"bis_cpi_url": srv.base_url + "/bis/cpi"})
+            out, gaps = macro.collect(cfg)
+        self.assertEqual(gaps, [])
+        self.assertEqual(out["indicators"][0]["value"], 6.362922)
+
+
+class SeriesIdUniquenessTest(unittest.TestCase):
+    """`SDMX_SOURCES × 地区映射` 展开后,`series_id` 必须两两不同。
+
+    现有断言都是点断言(冻结三条字面量、比对 NEER/REER 两条),
+    挡不住**将来第六个源**再撞一次。这一条按定义覆盖全部展开。
+    """
+
+    def test_no_two_configured_series_share_an_id(self):
+        ids = ["%s/%s/%s" % (src.upper(), tag or flow, area)
+               for _i, _k, src, flow, _c, amap, _f, _a, tag, _e in macro.SDMX_SOURCES
+               for area in amap.values()]
+        self.assertEqual(len(ids), len(set(ids)), sorted(ids))
+
+    def test_a_declared_tag_may_not_be_empty(self):
+        """空串会经 `or` 回落到 dataflow,把判别位悄悄关掉。"""
+        for row in macro.SDMX_SOURCES:
+            tag = row[8]
+            self.assertTrue(tag is None or tag.strip(), row[0])
+
+    def test_the_configured_url_agrees_with_the_slice_it_declares(self):
+        """配置里的 URL 与它声明的核验值必须一致 —— 这一条是**离线**判据。
+
+        运行期的核验(`SdmxSliceSelfVerifyTest`)只在真的发了请求之后才发现
+        端点写错;把两条 URL 对调,单元测试仍然全绿(它们打的是 fixture 不是
+        配置)。这条断言直接读 `config/endpoints.json` 的 SDMX key,
+        要求每个期望值都出现在 key 的点分维度里。
+        """
+        import json as _json
+        import os
+        import urllib.parse as _up
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "config", "endpoints.json"),
+                  encoding="utf-8") as f:
+            endpoints = _json.load(f)
+        checked = 0
+        for _i, key, _s, _d, _c, _a, _f, _ac, _tag, expect in macro.SDMX_SOURCES:
+            if not expect:
+                continue
+            url = endpoints.get(key)
+            self.assertIsInstance(url, str, key)
+            sdmx_key = _up.urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+            dims = set(sdmx_key.split("."))
+            for col, want in sorted(expect.items()):
+                self.assertIn(want, dims,
+                              "%s 声称 %s=%s,但 URL 的 SDMX key 是 %s"
+                              % (key, col, want, sdmx_key))
+            checked += 1
+        self.assertEqual(checked, 2, "带切片声明的源数目变了,断言要跟着改")

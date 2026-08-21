@@ -49,7 +49,7 @@ def _obs_value(raw):
     return v if math.isfinite(v) else None
 
 
-def _sdmx_parse(text, area_col="REF_AREA"):
+def _sdmx_parse(text, area_col="REF_AREA", expect=None):
     """SDMX-CSV → {地区码: [(period, value), ...]},按 period 升序。
 
     一套解析伺候三个 dataflow。地区维度的**列名**因源而异(BIS 叫 REF_AREA,
@@ -58,6 +58,21 @@ def _sdmx_parse(text, area_col="REF_AREA"):
     按列名取,不按位置:三个 dataflow 的列集合差得很远(BIS CPI 多
     UNIT_MEASURE,IMF BOP 实测 53 列),且 SDMX 版本升级改列序时按位置取
     不会报错,只会静默取错列。
+
+    `expect`:{列名: 期望值},**端点声称取哪一片,响应必须自己证实**。
+    不匹配即整片作废(上抛,由 `_sdmx_table` 转成逐指标缺漏)。
+
+    ---- 为什么必须核验(2026-08-21)----
+    名义与实际有效汇率的两条端点只差一个字符(`M.N.B` / `M.R.B`),而本函数
+    此前只读三列,响应里带着的 `EER_TYPE` 一次都没被读过。于是 `series_id`
+    里那个 `N`/`R` 是**配置作者声称的**,不是从响应读出来的:把两条 URL 对调,
+    全量测试全绿,而快照里「名义有效汇率」那一行装的是实际值;两条指标的数据
+    还会挤进同一个地区桶,取出 `prev_period == period` 的一对 —— 一个凭空的
+    「变动」,期号一模一样。
+    与 PSA 那条位置码的处置同规矩:**豁免/假设必须自证,不能只在注释里声明**。
+
+    核验列整列缺席时同样作废(**失败关闭**):自证不了就不落盘,
+    而不是「没这一列就当它对」。
     """
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     cols = reader.fieldnames or []
@@ -65,8 +80,19 @@ def _sdmx_parse(text, area_col="REF_AREA"):
     if missing:
         raise ValueError("SDMX CSV 缺列 %s(实际:%s)"
                          % (",".join(missing), ",".join(cols)))
+    for col in sorted(expect or {}):
+        if col not in cols:
+            raise ValueError("SDMX CSV 缺核验列 %s(本端点声称 %s=%s,"
+                             "响应里没有这一列,自证不了)"
+                             % (col, col, expect[col]))
     out = {}
     for row in reader:
+        for col, want in (expect or {}).items():
+            got = row.get(col)
+            if got != want:
+                raise ValueError("SDMX CSV 切片与声明不符:本端点声称 %s=%s,"
+                                 "响应里出现 %s=%s —— 整片作废"
+                                 % (col, want, col, got))
         value = _obs_value(row.get("OBS_VALUE"))
         if value is None:
             continue
@@ -118,13 +144,35 @@ IMF_AREA = {"US": "USA", "EA": "G163", "PH": "PHL", "TH": "THA", "BR": "BRA"}
 # SDMX-ML,解析器只会抛"缺列",看不出真实原因。
 SDMX_CSV_ACCEPT = "application/vnd.sdmx.data+csv;version=1.0.0"
 
-# (指标名, 端点配置键, source, dataflow 名, 地区列名, 地区映射, 频率, Accept 头)
+# (指标名, 端点配置键, source, dataflow 名, 地区列名, 地区映射, 频率, Accept 头,
+#  series 判别位, 切片核验 {列名: 期望值} 或 None)
 # 频率同时决定两件事:前值口径,以及"什么算新发布"——见 _latest_and_prev_*
 # 与 _is_new_level。日频("D")比水平,其余比期号。
+#
+# **第 9 位是 series 判别位**,拼进 `series_id`;为 None 时用 dataflow 名。
+# 它存在的唯一理由:BIS 的名义与实际有效汇率是**同一个 dataflow 下的两条指标**
+# (WS_EER 的 EER_TYPE 维,N / R),不加判别位两者会算出同一个 series_id,
+# 而 `_is_new` 与 `_mark_source_change` 都按 id 在上一份快照里取**第一个**命中
+# —— 一条指标的期号会替另一条作答。这类错不报错、不缺行,只是把某一天的
+# 「数据发布」行安在错误的指标上。
+# 既有三条的判别位一律留 None:改动它们的 id 会让 `_is_new` 在旧快照里找不到
+# 名字。**方向是漏报不是虚报**(2026-08-21 实测更正:此处原先写的是"十五个
+# 指标同一天全部 is_new_release=true",与实现相反)——
+#   `_is_new` 的循环末尾 `return False`:id 找不到 → False → 那一期真实发布
+#   **被静默漏掉**,报告少写一行「数据发布」。而政策利率是日频、走的是
+#   `_is_new_level`,压根不经过 `_is_new`,所以连"十五个"这个数也不成立。
+# 漏报比虚报隐蔽:虚报会被读者当场发现,漏报只是那天什么都没说。
+# (由 SeriesIdShapeFrozenTest 钉住三条 id 的字面量。)
 SDMX_SOURCES = (
-    ("政策利率", "bis_cbpol_url", "bis", "WS_CBPOL", "REF_AREA", BIS_AREA, "D", None),
-    ("CPI 同比", "bis_cpi_url", "bis", "WS_LONG_CPI", "REF_AREA", BIS_AREA, "M", None),
-    ("经常账户", "imf_bop_url", "imf", "BOP", "COUNTRY", IMF_AREA, "Q", SDMX_CSV_ACCEPT),
+    ("政策利率", "bis_cbpol_url", "bis", "WS_CBPOL", "REF_AREA", BIS_AREA, "D", None, None, None),
+    ("CPI 同比", "bis_cpi_url", "bis", "WS_LONG_CPI", "REF_AREA", BIS_AREA, "M", None, None, None),
+    ("经常账户", "imf_bop_url", "imf", "BOP", "COUNTRY", IMF_AREA, "Q", SDMX_CSV_ACCEPT, None, None),
+    # 有效汇率:闭合「估值说法只有标题、没有可引的数」那条。BIS 的 EER 五个
+    # 经济体全覆盖,PH/TH 不比别人慢一档(实测 2026-08-21 五国同为期 2026-07)。
+    # 月频,只能当**存量估值锚**用,锚不了当日的汇率变动 —— 一个月里 29 天
+    # 印同一个数,写成"今天变了"就是把刷新当成行情。
+    ("名义有效汇率", "bis_neer_url", "bis", "WS_EER", "REF_AREA", BIS_AREA, "M", None, "WS_EER/N", {"EER_TYPE": "N"}),
+    ("实际有效汇率", "bis_reer_url", "bis", "WS_EER", "REF_AREA", BIS_AREA, "M", None, "WS_EER/R", {"EER_TYPE": "R"}),
 )
 
 
@@ -145,7 +193,8 @@ def _sdmx_table(cfg, gaps):
     endpoints = endpoints if isinstance(endpoints, dict) else {}
     tracked = {(i.get("economy"), i.get("indicator")) for i in cfg["indicators"]}
     out = {}
-    for indicator, key, source, dataflow, area_col, area_map, freq, accept in SDMX_SOURCES:
+    for (indicator, key, source, dataflow, area_col, area_map, freq, accept,
+         series_tag, expect) in SDMX_SOURCES:
         wanted = [(e, a) for e, a in area_map.items() if (e, indicator) in tracked]
         if not wanted:
             continue        # 该指标一个经济体都没跟踪 → 不发这次 GET,也不记 gap
@@ -155,7 +204,7 @@ def _sdmx_table(cfg, gaps):
         try:
             text = util.fetch_text(url, cfg["timeout_s"],
                                    {"Accept": accept} if accept else None)
-            by_area = _sdmx_parse(text, area_col)
+            by_area = _sdmx_parse(text, area_col, expect)
         except Exception as e:
             # 整体失败也逐指标记:受影响的是这几条,不是"一个 dataflow"
             for economy, _area in wanted:
@@ -173,7 +222,8 @@ def _sdmx_table(cfg, gaps):
                     "%s %s 响应中 %s=%s 无可用观测,该指标本次无观测"
                     % (source.upper(), dataflow, area_col, area)))
                 continue
-            series_id = "%s/%s/%s" % (source.upper(), dataflow, area)
+            series_id = "%s/%s/%s" % (
+                source.upper(), dataflow if series_tag is None else series_tag, area)
             out[(economy, indicator)] = {
                 "value": value, "prev": prev, "period": period,
                 "prev_period": prev_period, "source": source,

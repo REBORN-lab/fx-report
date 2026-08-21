@@ -4671,6 +4671,10 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     # 砍掉的恰好总是时限那一截 —— `claim.horizon` 于是合法地登记成 open,
     # 观点永不到期(docs/known-gate-escapes.md 逃逸 8)。
     "DECISION_TRIGGER_TRUNCATED_DEADLINE": "DISPOSITION_TRUNCATED_DEADLINE",
+    # 2026-08-21:BIS 的许可是**有条件的** —— 再现统计时必须署名。实测十二天
+    # 里 12/12 的快照含 BIS 序列而 7/12 的报告正文零提及,条件一直没满足而
+    # 闸门全绿。串写死在 BIS_ATTRIBUTION_LINE,报告只准逐字抄。
+    "BIS_ATTRIBUTION_MISSING": "DISPOSITION_BIS_ATTRIBUTION",
     "NUMBER_WRONG_SECTION": "DISPOSITION_WRONG_SECTION",
     "SUMMARY_NUMBER_NOT_IN_BODY": "DISPOSITION_SUMMARY_BODY",
     "SUMMARY_NUMBER_WRONG_CURRENCY": "DISPOSITION_SUMMARY_CURRENCY",
@@ -4836,7 +4840,9 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # 75 → 76(2026-08-19,登记逃逸 5):WEEKLY_THEME_SCOPE_MISSING(声明)。
         # 只加声明不加违规:抄袭本身由既有的 INVALIDATION_COLUMN_IS_FLIP_RESTATED
         # 判,本轮改的是它的**比对池**,不是新增一类违规。
-        self.assertEqual(len(want), 76, len(want))
+        # 76 → 77(2026-08-21):BIS_ATTRIBUTION_MISSING。只加违规不加声明 ——
+        # 前件(快照里有 BIS 序列)不成立时本码整条不适用,没有"跳过"这一态。
+        self.assertEqual(len(want), 77, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -4968,6 +4974,18 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 check_report.main(argv)
             out.append(("assumption-vintage", buf.getvalue()))
+        # 第六次三分之二:复现了 BIS 序列却没有来源声明。宿主是快照的 macro 节
+        # 与报告全文,与上面几份都不同 —— 否则 BIS_ATTRIBUTION_MISSING 只有
+        # 映射、没有任何用例触发。
+        with tempfile.TemporaryDirectory() as tmp:
+            argv, _ = daily_files(
+                tmp, report_text=OVERVIEW_REPORT,
+                snapshot_text=bis_snap([BIS_MACRO_ROW]),
+                extra=("--mode", "daily"))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                check_report.main(argv)
+            out.append(("bis-attribution", buf.getvalue()))
         # 第六次七分之八:日志的 trigger 把时限截在登记之外。宿主同为速览表
         # 那份报告,但违规在日志与格的**差集**上 —— 否则
         # DECISION_TRIGGER_TRUNCATED_DEADLINE 只有映射、没有任何用例触发。
@@ -6940,3 +6958,71 @@ class WeeklyThemeScopeTest(unittest.TestCase):
         check_report.check_weekly(
             self.landing("戊位 99.9 一次都没有出现", "主线一"), notes=notes)
         self.assertNotIn("WEEKLY_THEME_SCOPE_MISSING", "\n".join(notes))
+
+
+BIS_MACRO_ROW = {"economy": "PH", "indicator": "CPI 同比", "source": "bis",
+                 "period": "2026-06", "value": 6.362922,
+                 "series_id": "BIS/WS_LONG_CPI/PH", "lag_months": 2}
+
+
+def bis_snap(rows):
+    return json.dumps({"date": "2026-08-10", "rates": {}, "macro": rows,
+                       "events": {}, "gaps": []}, ensure_ascii=False)
+
+
+class BisAttributionTest(unittest.TestCase):
+    """`BIS_ATTRIBUTION_MISSING` —— 复现了 BIS 的统计,报告必须署名。
+
+    ---- 为什么是不变量而不是叮嘱(2026-08-21)----
+    BIS 统计条款逐字:*"The use of the statistics is unrestricted, provided that:
+    if the statistics are reproduced, **the BIS must be cited** in your
+    publication or product as the source of the statistics ... No other use is
+    permissible."* 它不是文风建议,是**许可的前置条件**。
+
+    实测(2026-08-21,先跑后抄):`data/*.json` 十二天里 **12/12** 的快照含
+    `source == "bis"` 的序列,而十二份日报里 **7/12 正文一次都没提过 BIS**
+    (任何大小写);提到过的五份里有四份只是附录出处行里的小写 `bis`。
+    也就是说这个条件**一直没满足**,而全部闸门一路绿灯。
+
+    本仓对同类问题的既定处置是**消除**不是记录(dbnomics 那次是换源消除)。
+    判据取整串子串包含 —— 与结论句、复盘句同规矩:**串由规则给死,报告只准抄**。
+    """
+
+    def check(self, report, rows=(BIS_MACRO_ROW,)):
+        return check_report.check_bis_attribution(
+            check_report.sections(report), json.loads(bis_snap(list(rows))))
+
+    def test_a_report_reproducing_bis_series_must_carry_the_line(self):
+        v = self.check("# 外汇日报 2026-08-10\n\n## 附录 C:数据缺漏与影响\n无\n")
+        self.assertTrue(any("BIS_ATTRIBUTION_MISSING" in x for x in v), v)
+
+    def test_the_fixed_line_satisfies_it(self):
+        v = self.check("# 外汇日报 2026-08-10\n\n## 附录 D:数据来源声明\n"
+                       "- 本报告的政策利率、CPI 同比与有效汇率取自 BIS。\n")
+        self.assertEqual(v, [])
+
+    def test_a_lowercase_mention_in_an_appendix_is_not_attribution(self):
+        """附录出处行里的「来源 bis」是口径注,不是署名 ——
+        条款要的是把 BIS 标成 the source of the statistics。"""
+        v = self.check("# 外汇日报 2026-08-10\n\n## 附录 B:出处\n"
+                       "- CPI 同比 最新 6.362922(来源 bis)\n")
+        self.assertTrue(any("BIS_ATTRIBUTION_MISSING" in x for x in v), v)
+
+    def test_a_snapshot_without_bis_rows_is_not_charged(self):
+        """没复现 BIS 的统计就没有署名义务 —— 条件句的前件不成立时不许打红。"""
+        row = dict(BIS_MACRO_ROW, source="psa", series_id="PSA/2M4ACP23/PH")
+        v = self.check("# 外汇日报 2026-08-10\n", rows=(row,))
+        self.assertEqual(v, [])
+
+    def test_the_violation_names_how_many_bis_series_were_reproduced(self):
+        """没有计数的违规等于没有证据:读者要能看出这份报告引了几条。"""
+        rows = (BIS_MACRO_ROW,
+                dict(BIS_MACRO_ROW, indicator="政策利率",
+                     series_id="BIS/WS_CBPOL/PH"))
+        v = self.check("# 外汇日报 2026-08-10\n", rows=rows)
+        self.assertTrue(any("2" in x for x in v), v)
+
+    def test_a_malformed_snapshot_is_not_charged(self):
+        v = check_report.check_bis_attribution(
+            check_report.sections("# 外汇日报 2026-08-10\n"), "不是 dict")
+        self.assertEqual(v, [])

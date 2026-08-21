@@ -247,6 +247,17 @@ DISPOSITION_THEME_ATTRIBUTION = (
     "处置:「主线归属」格必须逐字命名**本周报里真实存在的**主线段"
     "(`### 主线N:…` 的段名);写一个不存在的名字等于让被查方自选宿主,"
     "翻转指标的比对当场落空")
+# BIS 统计条款要求的署名。**串写死在这里**,与结论句、复盘句同规矩:
+# 串由规则给死,报告只准逐字抄 —— 让报告自己组织措辞,等于把闸门的判据
+# 交给被查方(本仓最贵的一类缺陷)。
+BIS_ATTRIBUTION_LINE = "本报告的政策利率、CPI 同比与有效汇率取自 BIS。"
+DISPOSITION_BIS_ATTRIBUTION = (
+    "处置:在「附录 D:数据来源声明」里逐字写上「%s」;"
+    "BIS 统计条款的原文是 \"if the statistics are reproduced, the BIS must be "
+    "cited in your publication or product as the source of the statistics ... "
+    "No other use is permissible.\" —— 这不是文风建议,是许可的前置条件。"
+    "附录出处行里的「来源 bis」是口径注,不算署名"
+    % BIS_ATTRIBUTION_LINE)
 DISPOSITION_TRUNCATED_DEADLINE = (
     "处置:用 `python3 scripts/log_decision.py amend-trigger` 把日志的 trigger "
     "补成速览那一格的**整格原文**(时限那一半也要),再用 `set-claim` 把 "
@@ -813,6 +824,35 @@ def overview_rows(secs, notes=None):
                      "这些币种的速览表判据未校验"
                      % (len(absent), len(CURRENCIES), "、".join(absent)))
     return out
+
+
+def check_bis_attribution(secs, snap):
+    """`BIS_ATTRIBUTION_MISSING` —— 复现了 BIS 的统计就必须署名。
+
+    ---- 为什么必须由校验器管(2026-08-21)----
+    BIS 的许可是**有条件的**:统计可以自由使用,**前提是**再现时把 BIS 标为
+    来源。实测十二天:12/12 的快照含 `source == "bis"` 的序列,而 7/12 的日报
+    正文一次都没提过 BIS(任何大小写)。也就是说这个条件一直没满足,
+    而全部闸门一路绿灯 —— 又一条「散文规则、零求值」。
+
+    判据是**整串逐字包含**,串写死在 `BIS_ATTRIBUTION_LINE`。不做"提到了 BIS
+    就算"的宽松判定:那会把附录出处行里的口径注「来源 bis」也算进来,
+    而条款要的是把 BIS 标成 the source of the statistics。
+
+    前件不成立时不打红:快照里没有 BIS 序列就没有署名义务。
+    """
+    rows = snap.get("macro") if isinstance(snap, dict) else None
+    if not isinstance(rows, list):
+        return []
+    n = sum(1 for r in rows if isinstance(r, dict) and r.get("source") == "bis")
+    if not n:
+        return []
+    body = "\n".join(b for _h, b in secs)
+    if BIS_ATTRIBUTION_LINE in body:
+        return []
+    return ["BIS_ATTRIBUTION_MISSING: 本份报告复现了快照里 %d 条来自 BIS 的"
+            "统计序列,而全文没有逐字出现来源声明「%s」;%s"
+            % (n, BIS_ATTRIBUTION_LINE, DISPOSITION_BIS_ATTRIBUTION)]
 
 
 def check_overview_row_present(secs, covered):
@@ -2339,6 +2379,7 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
     #    不判定的 FLIP_INDICATOR_TABLE_COLUMN_IS_FLIP,理由与它的死因见该函数。
     # 解析放在这里而不是各自解析:两处各解析一次会各打一遍
     # OVERVIEW_TABLE_* 声明,读者看到的是同一件事说两遍。
+    v.extend(check_bis_attribution(secs, snap))
     if OVERVIEW_SECTION_KEY not in amb:
         rows = overview_rows(secs, notes=notes)
         v.extend(check_overview_row_present(secs, covered))

@@ -1039,3 +1039,88 @@ class UnchangedRefWordingInSkillTest(SkillDocTestCase):
             with self.subTest(word=word):
                 self.assertNotIn(word, t,
                                  "SKILL 仍在教 LLM 断言原因:「%s」" % word)
+
+
+class EerParagraphTest(SkillDocTestCase):
+    """有效汇率那一段的**内容**必须被钉住。
+
+    ---- 为什么(2026-08-21 对抗证伪查出)----
+    这一段是本轮新加的散文,而 `tests/test_skill_docs.py` 是全仓唯一对 SKILL
+    内容做断言的地方。实测五个变异全部存活(45 tests OK):整段删除、
+    把「禁止写成当日变动」改成「允许」(**语义整个反转**)、删掉
+    「不得混用或相加」、存量事实清单里删掉有效汇率、「月频」改「日频」。
+    也就是说这段规则当时的强制力是零。
+
+    断言一律写**正向**(要求某句在),不写反向(要求某词不在)——
+    反向锚点换个说法就静默失守,本文件开头已为此警告过。
+    """
+
+    def eer(self):
+        seg = block(raw(DAILY), r"- 有效汇率:名义.*?- 年历命中")
+        self.assertIsNotNone(seg, "没摘到有效汇率那一段,文档结构变了")
+        return seg
+
+    def test_the_paragraph_is_in_the_brief_template(self):
+        self.assertIn("名义", self.eer())
+        self.assertIn("实际", self.eer())
+
+    def test_it_is_a_fixed_line_not_gated_on_new_release(self):
+        """一年只有十二天能列出来的话,「拿它当存量锚」这条授权就执行不了。"""
+        seg = self.eer()
+        self.assertIn("固定行", seg)
+        self.assertIn("is_new_release", seg)
+
+    def test_the_index_is_declared_not_to_be_an_equilibrium(self):
+        """C1:基期不是均衡值。缺了这句,「88.47 说明比索被低估」就没人拦。"""
+        seg = self.eer()
+        # `block()` 会把空白压平,所以这里比的是压平后的形态
+        self.assertIn("2020=100", seg)
+        self.assertIn("基期", seg)
+        self.assertIn("均衡", seg)
+
+    def test_deriving_undervaluation_from_the_base_is_banned(self):
+        seg = self.eer()
+        self.assertRegex(seg, r"禁止[^。]*低估")
+
+    def test_the_direction_is_stated_and_opposite_to_the_reference_rate(self):
+        """Ma3:指数上升 = 本币升值,参考价上升 = 本币贬值。同节引两者必分开写。"""
+        seg = self.eer()
+        self.assertIn("升值", seg)
+        self.assertIn("贬值", seg)
+        self.assertIn("appreciation", seg)
+        # 光有两个方向词不够:「方向与参考价相反」这句本身是承重的,
+        # 删掉它只留下两个词,读者拿不到"两者反向"这个结论。
+        self.assertIn("方向与参考价相反", seg)
+
+    def test_nominal_and_real_must_not_be_conflated(self):
+        seg = self.eer()
+        self.assertRegex(seg, r"不得混用")
+        self.assertRegex(seg, r"不得相加|不得.{0,4}相加")
+
+    def test_the_change_verb_rule_is_a_ban_not_a_permission(self):
+        """变异靶点:把「禁止」改成「允许」必须打红。"""
+        seg = self.eer()
+        self.assertRegex(seg, r"禁止[^。]*当日的变动")
+
+    def test_the_monthly_slice_is_our_choice_not_the_sources_limit(self):
+        """Mi11:WS_EER 有日频名义序列。写成「它是月频指数」是把本轮的切片
+        选择说成了源的属性,下一个读的人会以为 BIS 没有日频。"""
+        seg = self.eer()
+        self.assertIn("日频", seg)
+        self.assertIn("本仓的选择", seg)
+        # 「取的是哪一档」本身要钉住:把「月频」改成「日频」时,
+        # 上面两条断言都还成立(两个词都在段里),规则却已经反了。
+        self.assertIn("既然取的是月频", seg)
+
+    def test_the_thin_day_stock_fact_list_includes_it(self):
+        seg = self.seg_or_fail(
+            DAILY, r"\*\*数据薄的那一天怎么写\*\*.*?不许当成判断写出来",
+            "数据薄的那一天怎么写")
+        self.assertIn("有效汇率", seg)
+
+    def test_the_bis_attribution_section_is_in_the_template(self):
+        """C2:署名是许可的前置条件,模板里必须有它,且串要与校验器同源。"""
+        from scripts import check_report
+        t = raw(DAILY)
+        self.assertIn("附录 D:数据来源声明", t)
+        self.assertIn(check_report.BIS_ATTRIBUTION_LINE, t)

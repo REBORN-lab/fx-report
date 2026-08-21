@@ -31,13 +31,17 @@ TBD - created by archiving change fx-daily-report-skill. Update Purpose after ar
 - **THEN** `prev_ref_date` 记为 null,采集与后续比对退回按数值比较的既有行为
 
 ### Requirement: 宏观数据增量采集
-系统 SHALL 采集五经济体关键宏观指标的最新值与前值,全部取自官方直连源:美国 CPI 走 **BLS**(优先于 BIS),CPI 同比与政策利率走 **BIS**,经常账户走 **IMF**。系统 MUST NOT 保留任何镜像回落层。
+系统 SHALL 采集五经济体关键宏观指标的最新值与前值,全部取自官方直连源:美国 CPI 走 **BLS**(优先于 BIS),菲律宾 CPI 走 **PSA OpenSTAT**(优先于 BIS),其余 CPI 同比、政策利率与名义/实际有效汇率走 **BIS**,经常账户走 **IMF**。系统 MUST NOT 保留任何镜像回落层。
 
 系统 SHALL 保证:每个被 `config/indicators.json` 跟踪的(经济体, 指标),要么在快照中产出一行,要么产出至少一条 scope 定位到它(`经济体/指标`)的缺漏。MUST NOT 让被跟踪的指标既无观测行、又无缺漏——两者同时缺席时,"整块数据消失"与"这一期确实没有发布"在快照里完全同形,下游结论句会把前者说成后者。
 
 美国 CPI SHALL 优先取自 BLS 公共 API(零 key);该 API 返回指数点位时,同比 SHALL 由采集脚本按同月同比确定性计算,MUST NOT 用相邻月份近似替代;上月同比 SHALL 由同一份响应算出作为 `prev`(基期缺失时记 null),使报告不必自找比较基准;BLS 路径失败或同月基期缺失时 SHALL 记入缺漏并交由 BIS 接手。BIS MUST NOT 覆盖已由 BLS 取得的美国 CPI。
 
-五经济体的 CPI 同比与政策利率 SHALL 直连 BIS Stats API 取得(`WS_LONG_CPI` 与 `WS_CBPOL`);五经济体的经常账户 SHALL 直连 IMF 官方 SDMX 取得(dataflow `IMF.STA,BOP,21.0.0`)。三者 MUST NOT 经由第三方镜像:实测该镜像滞后 8–17 个月、政策利率给出过期值,且其 API 域的 `robots.txt` 为 `User-agent: *` / `Disallow: /`(整站禁爬),与 BSP 出局适用同一条合规纪律。
+五经济体的 CPI 同比、政策利率与名义/实际有效汇率 SHALL 直连 BIS Stats API 取得(`WS_LONG_CPI`、`WS_CBPOL` 与 `WS_EER`);五经济体的经常账户 SHALL 直连 IMF 官方 SDMX 取得(dataflow `IMF.STA,BOP,21.0.0`)。三者 MUST NOT 经由第三方镜像:实测该镜像滞后 8–17 个月、政策利率给出过期值,且其 API 域的 `robots.txt` 为 `User-agent: *` / `Disallow: /`(整站禁爬),与 BSP 出局适用同一条合规纪律。
+
+同一个 dataflow 下可以有多条指标(`WS_EER` 的 `EER_TYPE` 维:名义 `N` / 实际 `R`)。此时每条指标的 `series_id` SHALL 带各自的判别位,MUST NOT 让两条指标算出同一个 `series_id`——`_is_new` 按 `series_id` 在上一份快照里线性查找并取首个命中,id 相撞时一条指标的期号会替另一条作答。
+
+端点声称取哪一个切片时,响应 SHALL 自证:采集层 SHALL 逐行核对声明的维度值(如 `EER_TYPE=N`),不匹配或该列整列缺席即整片作废并记入缺漏,MUST NOT 只在配置或注释里声明切片而不核对——两条 EER 端点只差一个字符,写错时不会报错,只会让快照里"名义"那一行装着实际值,并因两条指标挤进同一个地区桶而取出 `prev_period == period` 的一对凭空"变动"。
 
 SDMX 响应 SHALL 按**列名**解析(地区列 + `TIME_PERIOD` + `OBS_VALUE`;地区列 BIS 为 `REF_AREA`、IMF BOP 为 `COUNTRY`),MUST NOT 按列位置索引——IMF SDMX-CSV 实测 53 列,按位置取不会报错,只会静默取错列。IMF 请求 SHALL 携带 `Accept: application/vnd.sdmx.data+csv`:实测 `api.imf.org` 无视 `?format=csv` 查询参数,不发该头返回的是 SDMX-ML。地区码映射 SHALL 写死:IMF BOP 的欧元区代码为 `G163`,`U2` / `XM` / `EA` 在该 dataflow 中均查无此码。
 
@@ -70,12 +74,12 @@ SDMX 取数 SHALL 只覆盖 `config/indicators.json` 实际跟踪的(经济体, 
 - **THEN** 记入缺漏并回落后续来源,MUST NOT 用相邻月份近似计算同比
 
 #### Scenario: BIS 直连取得五经济体指标
-- **WHEN** 两个 BIS dataflow 均可达且含必需列
-- **THEN** 五经济体的 CPI 同比与政策利率取自 BIS,条目标注来源为 BIS,美国 CPI 仍标注来源为 BLS
+- **WHEN** 三个 BIS dataflow 均可达且含必需列
+- **THEN** 五经济体的 CPI 同比、政策利率与名义/实际有效汇率取自 BIS,条目标注来源为 BIS;美国 CPI 仍标注来源为 BLS,菲律宾 CPI 仍标注来源为 PSA
 
 #### Scenario: BIS 整体不可达
 - **WHEN** BIS 请求失败或响应无法解析
-- **THEN** 受影响的 10 个指标本次均无观测,并**逐条**记入缺漏(scope 为"经济体/指标"),经常账户等未走 BIS 的指标不受影响
+- **THEN** 受影响的 **20** 个指标本次均无观测(实测 `config/indicators.json` 共 25 条,其中走 BIS 的为 CPI 同比 ×5 + 政策利率 ×5 + 名义有效汇率 ×5 + 实际有效汇率 ×5),并**逐条**记入缺漏(scope 为"经济体/指标"),经常账户等未走 BIS 的指标不受影响
 
 #### Scenario: BIS 缺少某经济体
 - **WHEN** BIS 响应中某个**被跟踪的**经济体没有任何可用观测(缺席或全 `NaN`)

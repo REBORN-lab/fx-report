@@ -13,5 +13,15 @@
   {"economy": "EA", "indicator": "经常账户"},
   {"economy": "PH", "indicator": "经常账户"},
   {"economy": "TH", "indicator": "经常账户"},
-  {"economy": "BR", "indicator": "经常账户"}
+  {"economy": "BR", "indicator": "经常账户"},
+  {"economy": "US", "indicator": "名义有效汇率"},
+  {"economy": "EA", "indicator": "名义有效汇率"},
+  {"economy": "PH", "indicator": "名义有效汇率"},
+  {"economy": "TH", "indicator": "名义有效汇率"},
+  {"economy": "BR", "indicator": "名义有效汇率"},
+  {"economy": "US", "indicator": "实际有效汇率"},
+  {"economy": "EA", "indicator": "实际有效汇率"},
+  {"economy": "PH", "indicator": "实际有效汇率"},
+  {"economy": "TH", "indicator": "实际有效汇率"},
+  {"economy": "BR", "indicator": "实际有效汇率"}
 ]
