@@ -203,6 +203,38 @@ def cmd_amend_trigger(args):
     return 2
 
 
+def cmd_amend_scenario(args):
+    """更正已登记条目的 `scenario`。与 `amend-trigger` 同规格。
+
+    ---- 为什么需要它(2026-08-21)----
+    `scenario` 与 `trigger` 一样被 `scripts/review.py` **逐字**抄进复盘材料,
+    因此也会逐字进入往后每一天的要点表。而在此之前全仓只有 `trigger` 与
+    `claim` 有更正入口:当天 USD 那条把「美元是回购计划的最大输家」写反成
+    「回购计划是美元的最大输家」,报告改得了、日志改不了,错的那一句会跟着
+    复盘材料一路传下去。手工编辑 jsonl 是禁止的,所以缺的是命令。
+
+    **不做 claim 校验**:`scenario` 里不含阈值与时限,claim 不挂在它上面 ——
+    在这里跑一遍 `validate_claim` 会把"改一句描述"卡在一条与它无关的判据上。
+    """
+    entries = load(args.root)
+    for e in entries:
+        if e.get("date") == args.date and e.get("currency") == args.currency:
+            old = e.get("scenario")
+            if old == args.scenario:
+                # 值没变就不留"改过"的痕迹:审计链里多一条假记录比少一条更难查
+                print("scenario 已是该值,未改动: %s %s"
+                      % (args.date, args.currency))
+                return 0
+            if "scenario_superseded" not in e and isinstance(old, str):
+                e["scenario_superseded"] = old
+            e["scenario"] = args.scenario
+            save(args.root, entries)
+            print("scenario amended: %s %s" % (args.date, args.currency))
+            return 0
+    print("未找到条目 %s/%s" % (args.date, args.currency), file=sys.stderr)
+    return 2
+
+
 def cmd_migrate_review(args):
     """旧 review(direction_outcome / trigger_judgement / verdict)整体搬进
     `review_superseded`,新 review 置空,等 `resolve_claim` 重新给结论。
@@ -277,6 +309,12 @@ def build_parser():
     p.add_argument("--trigger", required=True)
     p.add_argument("--root", default=ROOT)
     p.set_defaults(fn=cmd_amend_trigger)
+    p = sub.add_parser("amend-scenario")
+    p.add_argument("--date", required=True)
+    p.add_argument("--currency", required=True)
+    p.add_argument("--scenario", required=True)
+    p.add_argument("--root", default=ROOT)
+    p.set_defaults(fn=cmd_amend_scenario)
     p = sub.add_parser("migrate-review")
     p.add_argument("--root", default=ROOT)
     p.set_defaults(fn=cmd_migrate_review)

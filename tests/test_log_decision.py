@@ -159,9 +159,13 @@ class SetReviewIsGoneTest(unittest.TestCase):
     def test_subcommand_table_is_frozen(self):
         """参数表冻结:读 `parser._actions` 而不是 `--help`,以覆盖
         `argparse.SUPPRESS` 隐藏项。多长出一个能表达结论的入口即红。"""
+        # 2026-08-21 加 `amend-scenario`:`scenario` 与 `trigger` 一样被
+        # review.py 逐字抄进复盘材料,却是三个可传播字段里唯一没有更正入口
+        # 的一个(实测当天 USD 那条把主宾写反,报告改得了、日志改不了)。
+        # 它不表达结论,过得了本类另外三条禁令。
         self.assertEqual(sorted(log_decision.subcommand_names()),
-                         ["add", "amend-trigger", "migrate-review",
-                          "set-claim", "stats"])
+                         ["add", "amend-scenario", "amend-trigger",
+                          "migrate-review", "set-claim", "stats"])
 
     def test_no_option_can_express_a_verdict(self):
         for name, options in sorted(log_decision.option_names().items()):
@@ -406,3 +410,72 @@ class AmendTriggerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AmendScenarioTest(unittest.TestCase):
+    """`amend-scenario`:更正**已登记**条目的 `scenario`。
+
+    ---- 为什么需要它(2026-08-21 实测)----
+    `scenario` 与 `trigger` 一样会被 `scripts/review.py` **逐字**抄进复盘材料,
+    因此也会逐字进入往后每一天的要点表。而修前全仓只有 `trigger` 与 `claim`
+    有更正入口 —— 当天 2026-08-21 的 USD 条目把「美元是回购计划的最大输家」
+    写反成「回购计划是美元的最大输家」,报告改得了,日志改不了,
+    错的那一句会跟着复盘材料一路传下去。手工编辑 jsonl 是禁止的,
+    所以缺的是命令而不是"下不为例"。
+
+    ---- 与 amend-trigger 同规格 ----
+    旧值搬进 `scenario_superseded` 且**只写一次**(它记的是"最初登记的是什么",
+    不是"上次改之前是什么");找不到条目报错而不是静默 no-op;值没变时不改动。
+    不做 claim 校验 —— `scenario` 里不含阈值与时限,claim 不挂在它上面。
+    """
+
+    def test_amend_replaces_the_scenario(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-scenario", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--scenario", "改过的情景"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(read_log(root)[0]["scenario"], "改过的情景")
+
+    def test_amend_keeps_the_superseded_value(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            run_cmd(["amend-scenario", "--root", root, "--date", "2026-08-10",
+                     "--currency", "PHP", "--scenario", "改过的情景"])
+            self.assertEqual(read_log(root)[0]["scenario_superseded"],
+                             ENTRY["scenario"])
+
+    def test_amending_twice_keeps_the_original_not_the_intermediate(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            for s in ("第二版情景", "第三版情景"):
+                run_cmd(["amend-scenario", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--scenario", s])
+            row = read_log(root)[0]
+            self.assertEqual(row["scenario"], "第三版情景")
+            self.assertEqual(row["scenario_superseded"], ENTRY["scenario"])
+
+    def test_unknown_entry_is_an_error_not_a_silent_noop(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-scenario", "--root", root, "--date", "2026-08-99",
+                         "--currency", "PHP", "--scenario", "改过的情景"])
+            self.assertEqual(r.returncode, 2)
+
+    def test_same_value_is_a_noop_without_a_superseded_key(self):
+        """值没变就不该留下一条"改过"的痕迹 —— 审计链里多一条假记录
+        比少一条更难查。"""
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-scenario", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--scenario", ENTRY["scenario"]])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("scenario_superseded", read_log(root)[0])
+
+    def test_the_claim_is_untouched(self):
+        """情景里不含阈值与时限,改它不该动 claim,也不该被 claim 拦下。"""
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            run_cmd(["amend-scenario", "--root", root, "--date", "2026-08-10",
+                     "--currency", "PHP", "--scenario", "与阈值无关的一句话"])
+            self.assertEqual(read_log(root)[0]["claim"], ENTRY["claim"])
