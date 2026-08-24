@@ -235,3 +235,56 @@ grep -c "horizon" scripts/check_report.py
 依据句点名了缺的是哪一次观测(采集断档 2026-08-15~17)。
 剩下 4 条 08-14 的登记本来就有 `running_days n=1`(quote 写的是「在下一次定盘」),
 它们已定论,只补 trigger、不动已下过结论的 claim。
+
+---
+
+## 六、周报覆盖声明:整格与聚合文件零对账(2026-08-24 登记,未修)
+
+### 9. 覆盖日报份数、缺失日期、覆盖区间三项都可以随手写
+
+**状态:已知、未修。**
+
+周报文首那一段引用块是读者判断"这份周报站在多少素材上"的唯一入口,而
+`scripts/check_report.py` 对它只有一条判据:`COVERAGE_RE` 抓「覆盖日报:N 份」
+是否存在,以及 **N < 3 时**报告里有没有出现「缺失日期」四个字。**N 本身、
+缺哪几天、覆盖区间两端,一律不与 digest 对账** —— 而这三项 digest 全都有
+(`generated_from` / `missing_dates` / `window_from` / `window_to`,后两项自
+2026-08-24 起还有 `week_start` / `week_end`)。
+
+复现命令(在 `reports/weekly/2026-W34.md` 的副本上做):
+
+```
+python3 scripts/check_report.py reports/weekly/2026-W34.md --mode weekly \
+  --digest state/weekly-digest-2026-W34.json \
+  --daily reports/daily/2026-08-18.md --daily reports/daily/2026-08-19.md \
+  --daily reports/daily/2026-08-20.md --daily reports/daily/2026-08-21.md
+```
+
+实测读数(先跑后抄,digest 实为 4 份、缺 3 天、区间 2026-08-18 至 2026-08-21):
+
+```
+基线(未改)                                        → rc=0  CHECK PASSED
+「覆盖日报:4 份」→「覆盖日报:7 份」               → rc=0  CHECK PASSED
+「缺失日期:2026-08-17、2026-08-22、2026-08-23」
+    →「缺失日期:无」                               → rc=0  CHECK PASSED
+「覆盖区间 2026-08-18 至 2026-08-21」
+    →「覆盖区间 2026-08-12 至 2026-08-21」          → rc=0  CHECK PASSED
+```
+
+三条变异全部存活。第二条尤其要紧:它把"三天没有素材"写成"一天都不缺",
+是一句可以直接误导读者的假话,而闸门全绿。
+
+**这条不是假想的滥用 —— 同型事故当天刚发生过一次。** `state/weekly-digest-2026-W33.json`
+在 HEAD 上的 `generated_from` 是 08-12,08-13,08-14,08-18,08-19,08-20,08-21
+(跨 W33/W34 两周),而 `reports/weekly/2026-W33.md` 声称 5 份 08-10 至 08-14。
+digest 侧的成因(`--week` 只当文件名)已于 620691f 修掉;**报告侧这一格
+仍然没有任何东西在核对**。
+
+**为什么这次没顺手修:** 修法本身很短(N 对 `len(generated_from)`、
+`missing_dates` 逐条出现、区间两端逐字出现),但既有测试夹具当场会红 ——
+`tests/test_check_report.py` 的 `WEEKLY_OK` 写「覆盖日报:3 份(2026-08-07,
+2026-08-08, 2026-08-10)」,与之配对的 digest 夹具 `generated_from` 只有
+`["2026-08-07", "2026-08-10"]` **两条**。也就是说夹具自己就是这条漂移的样本。
+改夹具会牵动数字白名单(`numbers_in(digest_text)`),要另起一轮测量;
+在一次以交付周报为目标的改动里顺手做,正是本仓栽过的"改规则 + 改内容
+同时发生"。**登记在此,排期是另一次决策。**
