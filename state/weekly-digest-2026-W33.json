@@ -1,5 +1,11 @@
 {
   "week": "2026-W33",
+  "week_start": "2026-08-10",
+  "week_end": "2026-08-16",
+  "missing_dates": [
+    "2026-08-15",
+    "2026-08-16"
+  ],
   "generated_from": [
     "2026-08-10",
     "2026-08-11",
@@ -464,11 +470,11 @@
     "gdelt": 7
   },
   "verdicts": {
-    "命中": 4,
-    "未命中": 0,
-    "无法判定": 7,
-    "未到期": 9,
-    "未复盘": 5
+    "命中": 10,
+    "未命中": 2,
+    "无法判定": 11,
+    "未到期": 2,
+    "未复盘": 0
   },
   "verdict_details": [
     {
@@ -524,12 +530,12 @@
     {
       "date": "2026-08-12",
       "currency": "BRL",
-      "verdict": "未到期"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-12",
       "currency": "EUR",
-      "verdict": "未到期"
+      "verdict": "命中"
     },
     {
       "date": "2026-08-12",
@@ -539,32 +545,32 @@
     {
       "date": "2026-08-12",
       "currency": "THB",
-      "verdict": "未到期"
+      "verdict": "命中"
     },
     {
       "date": "2026-08-12",
       "currency": "USD",
-      "verdict": "未到期"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-13",
       "currency": "BRL",
-      "verdict": "未到期"
+      "verdict": "命中"
     },
     {
       "date": "2026-08-13",
       "currency": "EUR",
-      "verdict": "未到期"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-13",
       "currency": "PHP",
-      "verdict": "未到期"
+      "verdict": "命中"
     },
     {
       "date": "2026-08-13",
       "currency": "THB",
-      "verdict": "未到期"
+      "verdict": "无法判定"
     },
     {
       "date": "2026-08-13",
@@ -574,27 +580,27 @@
     {
       "date": "2026-08-14",
       "currency": "BRL",
-      "verdict": "未复盘"
+      "verdict": "命中"
     },
     {
       "date": "2026-08-14",
       "currency": "EUR",
-      "verdict": "未复盘"
+      "verdict": "未命中"
     },
     {
       "date": "2026-08-14",
       "currency": "PHP",
-      "verdict": "未复盘"
+      "verdict": "命中"
     },
     {
       "date": "2026-08-14",
       "currency": "THB",
-      "verdict": "未复盘"
+      "verdict": "未命中"
     },
     {
       "date": "2026-08-14",
       "currency": "USD",
-      "verdict": "未复盘"
+      "verdict": "未到期"
     }
   ]
 }

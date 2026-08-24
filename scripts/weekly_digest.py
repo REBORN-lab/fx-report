@@ -669,7 +669,8 @@ def _verdicts(log_entries, dates):
     return counts
 
 
-def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", "BRL")):
+def build(snapshots, log_entries, week,
+          currencies=("USD", "EUR", "PHP", "THB", "BRL"), as_of=None):
     """纯函数:snapshots 快照 list(内部按 date 排序);log_entries 为 None
     表示决策日志不可用(与"日志为空"区分)。返回 (digest, problems)。"""
     good, problems = [], []
@@ -695,6 +696,17 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
         verdicts = _verdicts(entries, dates)
         verdict_details = _verdict_details(entries, dates)
     wk_start, wk_end = week_range(week)
+    # 缺失日期由脚本枚举,不交给读报告的人或写报告的模型去比对日历。
+    # `as_of` 给周中途运行用:还没到的那几天不是"缺失",不给时按整周算。
+    last = wk_end.isoformat()
+    if as_of is not None and as_of < last:
+        last = as_of
+    week_days = []
+    d = wk_start
+    while d <= wk_end:
+        week_days.append(d.isoformat())
+        d += timedelta(days=1)
+    missing = [x for x in week_days if x <= last and x not in set(dates)]
     digest = {
         "week": week,
         # 日历周边界(与 window_from/window_to 不同:那两个是**实际覆盖**到的
@@ -702,6 +714,7 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
         # 周报的覆盖声明要照这个差额写。
         "week_start": wk_start.isoformat(),
         "week_end": wk_end.isoformat(),
+        "missing_dates": missing,
         "generated_from": dates,
         "skipped": skipped_snapshots,
         "rates": _rates_digest(good, currencies,
@@ -770,7 +783,7 @@ def main(argv=None):
                         continue
         except (OSError, UnicodeDecodeError):
             entries = None
-    digest, problems = build(snapshots, entries, args.week)
+    digest, problems = build(snapshots, entries, args.week, as_of=today)
     out_dir = os.path.join(args.root, "state")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "weekly-digest-%s.json" % args.week)
@@ -781,6 +794,7 @@ def main(argv=None):
     print("window: %s = %s … %s(日历 7 天)" % (args.week, lo, hi))
     print("covered: %d 份(%s)" % (len(digest["generated_from"]),
                                   ", ".join(digest["generated_from"]) or "无"))
+    print("missing: %s" % (", ".join(digest["missing_dates"]) or "无"))
     for p in problems:
         print("  - %s" % p)
     return 0

@@ -1650,6 +1650,20 @@ class WeekWindowTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(d["generated_from"], ["2026-08-17", "2026-08-23"])
 
+    def test_missing_dates_listed_by_the_script(self):
+        """覆盖声明里的"缺失日期"必须由脚本枚举 —— 手工比对日历正是禁止项。"""
+        r, d = self._run("2026-W34")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(d["missing_dates"],
+                         ["2026-08-19", "2026-08-20", "2026-08-22", "2026-08-23"])
+        self.assertIn("2026-08-22", r.stdout)
+
+    def test_missing_dates_stop_at_as_of(self):
+        """周中途跑时,还没到的那几天不算"缺失" —— 否则覆盖声明会把明天说成缺失。"""
+        d, _ = wd.build([snap("2026-08-17", 60.75, "2026-08-17")], [],
+                        "2026-W34", as_of="2026-08-18")
+        self.assertEqual(d["missing_dates"], ["2026-08-18"])
+
     def test_days_option_removed(self):
         """窗口改由周号决定后,`--days` 不得留成静默无效的兼容开关。"""
         r, _ = self._run("2026-W34", extra=["--days", "7"])
