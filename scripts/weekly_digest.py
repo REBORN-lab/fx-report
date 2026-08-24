@@ -13,7 +13,7 @@ import json
 import os
 import re
 import sys
-from datetime import date
+from datetime import date, timedelta
 from email.utils import parsedate_to_datetime
 
 if __package__ in (None, ""):   # 直接 `python3 scripts/weekly_digest.py` 时补 path
@@ -36,6 +36,27 @@ VERDICTS = ["命中", "未命中", "无法判定", CLAIM_STATUSES[0], UNREVIEWED
 SNAPSHOT_NAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 WEEK_RE = re.compile(r"\d{4}-W\d{2}")
 SEEN_DATE_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})T")
+
+
+def week_range(week):
+    """ISO 周号 → 该周的周一与周日(两个 `date`)。格式或周号非法时抛 ValueError。
+
+    `--week` 此前只做两件事:正则校格式、给输出文件命名;窗口另由
+    `sorted(names)[-days:]`(文件名最后 N 份)决定。于是标签与载荷可以完全无关 ——
+    2026-08-24 按"周一出上周周报"跑 `--week 2026-W34`,实测选进了
+    2026-08-12/13/14 三天(属 W33,且已被 reports/weekly/2026-W33.md 覆盖)。
+    窗口只能有一个来源,就是周号本身。
+    """
+    if not WEEK_RE.fullmatch(week):
+        raise ValueError("ISO 周号需形如 YYYY-Www(如 2026-W33),收到 %r" % (week,))
+    try:
+        start = date.fromisocalendar(int(week[:4]), int(week[6:]), 1)
+    except ValueError as exc:
+        # 点名周号本身。若只说 "Invalid week: 99",调用方的错误信息就与
+        # 「那一周没有快照」长得一样,而"非法周号静默回落到 W01"这个失败模式
+        # 恰好也表现为"没有快照" —— 两者必须在输出上可区分。
+        raise ValueError("ISO 周号 %s 不存在:%s" % (week, exc)) from None
+    return start, start + timedelta(days=6)
 
 
 def _rate_entries(snapshots, currency):
@@ -673,8 +694,14 @@ def build(snapshots, log_entries, week, currencies=("USD", "EUR", "PHP", "THB", 
         entries = log_entries if isinstance(log_entries, list) else []
         verdicts = _verdicts(entries, dates)
         verdict_details = _verdict_details(entries, dates)
+    wk_start, wk_end = week_range(week)
     digest = {
         "week": week,
+        # 日历周边界(与 window_from/window_to 不同:那两个是**实际覆盖**到的
+        # 首末快照日,这两个是该周号**应当**覆盖的七天)。两者不等就是缺天,
+        # 周报的覆盖声明要照这个差额写。
+        "week_start": wk_start.isoformat(),
+        "week_end": wk_end.isoformat(),
         "generated_from": dates,
         "skipped": skipped_snapshots,
         "rates": _rates_digest(good, currencies,
@@ -705,23 +732,28 @@ def _load_json(path):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 scripts/weekly_digest.py")
     ap.add_argument("--week", required=True, help="ISO 周号,如 2026-W33")
-    ap.add_argument("--days", type=int, default=7)
+    # `--days` 已删除,不留成 no-op:窗口只由 --week 决定,再留一个看似能调窗口
+    # 的开关,陈旧调用点会静默地什么都不做。argparse 见到它即 rc=2。
     ap.add_argument("--root", default=ROOT)
     args = ap.parse_args(argv)
-    if not WEEK_RE.fullmatch(args.week):
-        ap.error("--week 需形如 YYYY-Www(如 2026-W33)")
-    if args.days < 1:
-        ap.error("--days 需为正整数")
+    try:
+        wk_start, wk_end = week_range(args.week)
+    except ValueError as exc:
+        ap.error(str(exc))
+    lo, hi = wk_start.isoformat(), wk_end.isoformat()
     data_dir = os.path.join(args.root, "data")
     today = date.today().isoformat()
     names = []
     for path in glob.glob(os.path.join(data_dir, "*.json")):
         name = os.path.basename(path)[:-len(".json")]
-        # 误放的非快照文件不得进入窗口(字典序会让 zz-*.json 冒充"最新一天");
-        # 未来日期同样排除
-        if SNAPSHOT_NAME_RE.fullmatch(name) and name <= today:
+        # 三道过滤:① 误放的非快照文件不得进入窗口(字典序会让 zz-*.json 冒充
+        # "最新一天");② 必须落在 --week 指定的那七天里;③ 未来日期排除
+        if (SNAPSHOT_NAME_RE.fullmatch(name) and lo <= name <= hi
+                and name <= today):
             names.append(name)
-    selected = sorted(names)[-args.days:]
+    selected = sorted(names)
+    if not selected:
+        ap.error("%s(%s … %s)窗口内没有任何快照,不生成周报" % (args.week, lo, hi))
     snapshots = [_load_json(os.path.join(data_dir, n + ".json")) for n in selected]
     log_path = os.path.join(args.root, "state", "decision-log.jsonl")
     entries = None
@@ -746,6 +778,7 @@ def main(argv=None):
         json.dump(digest, f, ensure_ascii=False, indent=2)
     os.replace(out_path + ".tmp", out_path)
     print("digest: %s" % out_path)
+    print("window: %s = %s … %s(日历 7 天)" % (args.week, lo, hi))
     print("covered: %d 份(%s)" % (len(digest["generated_from"]),
                                   ", ".join(digest["generated_from"]) or "无"))
     for p in problems:

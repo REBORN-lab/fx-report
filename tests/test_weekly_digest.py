@@ -265,11 +265,13 @@ class CliTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("digest:", r.stdout)
 
-    def test_rejects_bad_week_and_days(self):
+    def test_rejects_bad_week_and_removed_days_option(self):
         import subprocess, sys, os
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(root, "scripts", "weekly_digest.py")
-        for argv in (["--week", "a/b"], ["--week", "2026-W33", "--days", "0"]):
+        # 第二条此前给的是 `--days 0`(非法值);`--days` 整个删掉之后,
+        # 这里改用一个**合法的旧值**,断言它同样被拒 —— 比原来更强。
+        for argv in (["--week", "a/b"], ["--week", "2026-W33", "--days", "7"]):
             r = subprocess.run([sys.executable, script] + argv,
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 2, argv)
@@ -1576,3 +1578,102 @@ class LegacySnapshotCapParityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WeekWindowTest(unittest.TestCase):
+    """`--week` 必须**决定窗口**,不能只当输出文件名。
+
+    2026-08-24(周一)按"周一出上周周报"的节奏跑 `--week 2026-W34` 实测:
+    `covered: 7 份(2026-08-12, 2026-08-13, 2026-08-14, 2026-08-18, 2026-08-19,
+    2026-08-20, 2026-08-21)` —— 选中的是文件名最后 7 份,把已被 2026-W33 周报
+    覆盖的三天一起算了进去。标签由调用方声称、载荷从不核验,与 BIS EER 的
+    `series_id` 是同一种形态。
+    """
+
+    # 2026-08-13/14 属 W33;08-17/18/21 属 W34
+    FILES = ["2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-21"]
+
+    def _run(self, week, extra=(), files=None):
+        import subprocess, sys, tempfile, os, json as _json
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(root, "scripts", "weekly_digest.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            data = os.path.join(tmp, "data")
+            os.makedirs(data)
+            for name in (self.FILES if files is None else files):
+                with open(os.path.join(data, name + ".json"), "w",
+                          encoding="utf-8") as f:
+                    _json.dump(snap(name, 60.75, name), f)
+            r = subprocess.run([sys.executable, script, "--week", week,
+                                "--root", tmp] + list(extra),
+                               capture_output=True, text=True)
+            out = os.path.join(tmp, "state", "weekly-digest-%s.json" % week)
+            digest = None
+            if os.path.exists(out):
+                with open(out, encoding="utf-8") as f:
+                    digest = _json.load(f)
+        return r, digest
+
+    def test_named_week_selects_only_that_week(self):
+        r, d = self._run("2026-W34")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(d["generated_from"],
+                         ["2026-08-17", "2026-08-18", "2026-08-21"])
+
+    def test_earlier_week_selected_despite_newer_snapshots(self):
+        """"取最后 N 份"这个实现在这一条上必红:W33 比 W34 旧。"""
+        r, d = self._run("2026-W33")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(d["generated_from"], ["2026-08-13", "2026-08-14"])
+
+    def test_digest_records_the_calendar_week(self):
+        r, d = self._run("2026-W34")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(d["week_start"], "2026-08-17")
+        self.assertEqual(d["week_end"], "2026-08-23")
+
+    def test_window_printed_so_coverage_is_auditable(self):
+        r, _ = self._run("2026-W34")
+        self.assertIn("2026-08-17", r.stdout)
+        self.assertIn("2026-08-23", r.stdout)
+
+    def test_empty_week_is_an_error_not_an_empty_digest(self):
+        """SKILL:「N 为 0 时终止并报错(无素材不生成周报)」。"""
+        r, d = self._run("2026-W30")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIsNone(d)
+
+    def test_both_week_boundaries_are_inclusive(self):
+        """周一与周日都要进窗口 —— 任一端的 off-by-one 都会静默少算一天。"""
+        r, d = self._run("2026-W34", files=["2026-08-16", "2026-08-17",
+                                            "2026-08-23", "2026-08-24"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(d["generated_from"], ["2026-08-17", "2026-08-23"])
+
+    def test_days_option_removed(self):
+        """窗口改由周号决定后,`--days` 不得留成静默无效的兼容开关。"""
+        r, _ = self._run("2026-W34", extra=["--days", "7"])
+        self.assertEqual(r.returncode, 2)
+
+    def test_impossible_iso_week_rejected(self):
+        """必须因**周号非法**被拒,不能因为"那一周碰巧没快照"而看起来被拒。
+
+        后者会放过"非法周号静默回落到 W01"这个变异体:回落目标周同样空,
+        rc 照样是 2。所以窗口里放一份回落目标周(2026-W01 =
+        2025-12-29 … 2026-01-04)的快照,并核对错误信息点的是周号。
+        """
+        r, _ = self._run("2026-W99", files=["2025-12-31"])
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("2026-W99", r.stderr)
+        self.assertIn("不存在", r.stderr)
+
+    def test_future_dated_snapshot_inside_the_week_excluded(self):
+        """周内的未来日期照旧排除 —— 这条守卫不能被新的周窗口顺手架空。"""
+        import datetime
+        today = datetime.date.today()
+        tomorrow = today + datetime.timedelta(days=1)
+        y, w, _ = today.isocalendar()
+        r, d = self._run("%04d-W%02d" % (y, w),
+                         files=[today.isoformat(), tomorrow.isoformat()])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(d["generated_from"], [today.isoformat()])
