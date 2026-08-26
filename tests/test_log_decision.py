@@ -163,9 +163,14 @@ class SetReviewIsGoneTest(unittest.TestCase):
         # review.py 逐字抄进复盘材料,却是三个可传播字段里唯一没有更正入口
         # 的一个(实测当天 USD 那条把主宾写反,报告改得了、日志改不了)。
         # 它不表达结论,过得了本类另外三条禁令。
+        # 2026-08-26 加 `amend-watch`:同一件事的第三次 —— 当天 EUR 那条把
+        # 方向位写反(判断是欧元走强,登记成 "up" 即该币对美元走弱),
+        # 报告/trigger/claim 三处都改得了,只有它改不了。同样不表达结论:
+        # up/down/null 是方向不是判定,四档结论词一个都碰不到。
         self.assertEqual(sorted(log_decision.subcommand_names()),
                          ["add", "amend-scenario", "amend-trigger",
-                          "migrate-review", "set-claim", "stats"])
+                          "amend-watch", "migrate-review", "set-claim",
+                          "stats"])
 
     def test_no_option_can_express_a_verdict(self):
         for name, options in sorted(log_decision.option_names().items()):
@@ -479,3 +484,82 @@ class AmendScenarioTest(unittest.TestCase):
             run_cmd(["amend-scenario", "--root", root, "--date", "2026-08-10",
                      "--currency", "PHP", "--scenario", "与阈值无关的一句话"])
             self.assertEqual(read_log(root)[0]["claim"], ENTRY["claim"])
+
+
+class AmendWatchTest(unittest.TestCase):
+    """`amend-watch`:更正**已登记**条目的 `watch_direction`。
+
+    ---- 为什么需要它(2026-08-26 实测)----
+    这是第三个栽在同一件事上的字段:`trigger` 有 amend-trigger、`scenario` 于
+    2026-08-21 补了 amend-scenario,而 `watch_direction` 一直没有更正入口。
+    当天 EUR 那条把方向写反了——判断是「ECB 9 月加息进价 → 欧元走强」,
+    而登记成 `"up"`(按 SKILL 第 530 行,"up" = 该币对美元**走弱**)。
+    报告改得了、trigger 改得了、claim 改得了,只有这一个字段改不了,
+    而手工编辑 jsonl 是禁止的。
+
+    ---- 与 amend-scenario 同规格 ----
+    旧值搬进 `watch_direction_superseded` 且**只写一次**;找不到条目报错而不是
+    静默 no-op;值没变时不改动。取值仍受 add 那套约束:up / down / null 三选一,
+    别的一律 rc=2 —— 更正入口不得比登记入口松,否则它就成了绕过校验的后门。
+    """
+
+    def test_amend_replaces_the_watch_direction(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-watch", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--watch-direction", "down"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(read_log(root)[0]["watch_direction"], "down")
+
+    def test_amend_keeps_the_superseded_value(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            run_cmd(["amend-watch", "--root", root, "--date", "2026-08-10",
+                     "--currency", "PHP", "--watch-direction", "down"])
+            self.assertEqual(read_log(root)[0]["watch_direction_superseded"],
+                             ENTRY["watch_direction"])
+
+    def test_amending_twice_keeps_the_original_not_the_intermediate(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            for v in ("down", "null"):
+                run_cmd(["amend-watch", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--watch-direction", v])
+            row = read_log(root)[0]
+            self.assertIsNone(row["watch_direction"])
+            self.assertEqual(row["watch_direction_superseded"],
+                             ENTRY["watch_direction"])
+
+    def test_null_is_accepted_and_stored_as_none(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-watch", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--watch-direction", "null"])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIsNone(read_log(root)[0]["watch_direction"])
+
+    def test_invalid_value_rejected_as_hard_as_on_add(self):
+        """更正入口不得比登记入口松 —— 否则它就是绕过校验的后门。"""
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-watch", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--watch-direction", "sideways"])
+            self.assertEqual(r.returncode, 2)
+            self.assertEqual(read_log(root)[0]["watch_direction"],
+                             ENTRY["watch_direction"])
+
+    def test_same_value_is_a_noop_without_superseded(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-watch", "--root", root, "--date", "2026-08-10",
+                         "--currency", "PHP", "--watch-direction",
+                         ENTRY["watch_direction"]])
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("watch_direction_superseded", read_log(root)[0])
+
+    def test_unknown_entry_is_an_error_not_a_silent_noop(self):
+        with tempfile.TemporaryDirectory() as root:
+            run_cmd(["add", "--root", root], json.dumps([ENTRY]))
+            r = run_cmd(["amend-watch", "--root", root, "--date", "2026-09-09",
+                         "--currency", "PHP", "--watch-direction", "down"])
+            self.assertEqual(r.returncode, 2)

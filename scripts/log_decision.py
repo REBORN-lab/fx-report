@@ -203,6 +203,46 @@ def cmd_amend_trigger(args):
     return 2
 
 
+def cmd_amend_watch(args):
+    """更正已登记条目的 `watch_direction`。与 `amend-scenario` 同规格。
+
+    ---- 为什么需要它(2026-08-26)----
+    这是第三个栽在同一件事上的字段:`trigger` 一直有 amend-trigger,
+    `scenario` 于 2026-08-21 补了 amend-scenario,而方向位没有更正入口。
+    当天 EUR 那条把方向写反 —— 判断是「ECB 9 月加息进价 → 欧元走强」,
+    却登记成 "up"(SKILL 的语义:"up" = 该币对美元**走弱**)。报告、trigger、
+    claim 三处都改得了,只有它改不了,而手工编辑 jsonl 是禁止的。
+
+    **取值校验与 `add` 同一把尺子**:up / down / null 三选一,别的一律 rc=2。
+    更正入口比登记入口松,它就成了绕过校验的后门 —— 这一条要写死在这里,
+    不能靠调用方自觉。
+    """
+    raw = args.watch_direction
+    value = None if raw == "null" else raw
+    if value not in ("up", "down", None):
+        print("watch_direction 须为 up/down/null,收到 %r" % (raw,),
+              file=sys.stderr)
+        return 2
+    entries = load(args.root)
+    for e in entries:
+        if e.get("date") == args.date and e.get("currency") == args.currency:
+            old = e.get("watch_direction")
+            if old == value:
+                # 值没变就不留"改过"的痕迹:审计链里多一条假记录比少一条更难查
+                print("watch_direction 已是该值,未改动: %s %s"
+                      % (args.date, args.currency))
+                return 0
+            if "watch_direction_superseded" not in e:
+                e["watch_direction_superseded"] = old
+            e["watch_direction"] = value
+            save(args.root, entries)
+            print("watch_direction amended: %s %s (%r -> %r)"
+                  % (args.date, args.currency, old, value))
+            return 0
+    print("未找到条目 %s/%s" % (args.date, args.currency), file=sys.stderr)
+    return 2
+
+
 def cmd_amend_scenario(args):
     """更正已登记条目的 `scenario`。与 `amend-trigger` 同规格。
 
@@ -315,6 +355,13 @@ def build_parser():
     p.add_argument("--scenario", required=True)
     p.add_argument("--root", default=ROOT)
     p.set_defaults(fn=cmd_amend_scenario)
+    p = sub.add_parser("amend-watch")
+    p.add_argument("--date", required=True)
+    p.add_argument("--currency", required=True)
+    p.add_argument("--watch-direction", dest="watch_direction", required=True,
+                   help="up / down / null")
+    p.add_argument("--root", default=ROOT)
+    p.set_defaults(fn=cmd_amend_watch)
     p = sub.add_parser("migrate-review")
     p.add_argument("--root", default=ROOT)
     p.set_defaults(fn=cmd_migrate_review)
