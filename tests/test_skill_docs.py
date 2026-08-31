@@ -108,8 +108,8 @@ W_WRITE_ORDER_RE = r"(?m)^### 写作顺序.*?(?=\n只依据第 1 步素材)"
 W_THEME_TMPL_RE = r"(?m)^    ### 主线一:.*?(?=\n\n    \(### 主线二)"
 W_HARD_FORM_RE = r"(?m)^\*\*本周主线的硬形态:\*\*.*?(?=\n\n)"
 W_ECB_RE = r"(?m)^\*\*引 ECB 政策传导做归因时.*?(?=\n\n)"
-W_CHANGE_SPEC_RE = r"(?m)^## 「本周相对上周的变化」怎么写.*?(?=\n## )"
-W_CHANGE_TMPL_RE = r"(?m)^    ## 本周相对上周的变化.*?(?=\n\n)"
+W_CHANGE_SPEC_RE = r"(?m)^## 「上周相对上上周的变化」怎么写.*?(?=\n## )"
+W_CHANGE_TMPL_RE = r"(?m)^    ## 上周相对上上周的变化.*?(?=\n\n)"
 W_BAN7_RE = r"(?m)^7\. \*\*零效应判断.*?(?=\n8\. )"
 W_BAN8_RE = r"(?m)^8\. \*\*无关素材.*?(?=\n\n)"
 
@@ -629,12 +629,12 @@ class PeriodOverPeriodChangeTest(SkillDocTestCase):
                       "丢了数字硬约束 —— 照写会当场炸 NUMBER_UNTRACEABLE")
 
     def test_weekly_section_is_in_the_template(self):
-        seg = self.seg_or_fail(WEEKLY, W_CHANGE_TMPL_RE, "周报模板「本周相对上周」节")
+        seg = self.seg_or_fail(WEEKLY, W_CHANGE_TMPL_RE, "周报模板「上周相对上上周」节")
         self.assertIn("每条主线一行", seg, "模板不再要求逐主线各占一行")
         self.assertIn("首次运行,无上期可比", seg, "模板缺首次运行的出口")
 
     def test_weekly_change_rules_forbid_boilerplate_and_blanks(self):
-        seg = self.seg_or_fail(WEEKLY, W_CHANGE_SPEC_RE, "周报「本周相对上周」细则")
+        seg = self.seg_or_fail(WEEKLY, W_CHANGE_SPEC_RE, "周报「上周相对上上周」细则")
         for opt in ("方向变了", "翻转位变了", "依据变了", "无实质变化"):
             self.assertIn(opt, seg, "四选一少了「%s」" % opt)
         self.assertIn("必须写明为什么没变", seg, "「无实质变化」不再需要给理由")

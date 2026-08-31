@@ -346,7 +346,7 @@ def make_weekly(coverage="覆盖日报:5 份(2026-08-04 至 2026-08-08);缺失�
         "各币种一周归因": currency_body if currency_body is not None else
             "USD 观望;EUR 震荡;PHP 通胀回落主导;THB 出口疲弱;BRL 政策预期反复。",
         "复盘汇总": review_body,
-        "下周关注": "- 关注五央行表态",
+        "本周关注": "- 关注五央行表态",
         "缺漏汇总": "- 2026-08-06: [gdelt/THB] rate-limited after retry",
     }
     for name, b in body.items():
@@ -441,7 +441,7 @@ USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%
 ## 复盘汇总
 - 命中 1、未命中 0、无法判定 15、未到期 4、未复盘 6
 
-## 下周关注
+## 本周关注
 - 关注定盘更新
 
 ## 缺漏汇总
@@ -902,7 +902,7 @@ class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
     def test_declaration_still_printed_when_the_report_is_violating(self):
         """rc=1 那条路径上同样要出声:少查了什么与查出了什么互不替代。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rp = self._report(tmp, WEEKLY_OK.replace("## 下周关注", "## 删掉了"))
+            rp = self._report(tmp, WEEKLY_OK.replace("## 本周关注", "## 删掉了"))
             rc, out = self._run([rp, "--mode", "weekly"])
         self.assertEqual(rc, 1)
         self.assertIn(self.LINE, out)
@@ -4293,7 +4293,7 @@ class SectionKeyMustResolveUniquelyTest(unittest.TestCase):
         self.assertEqual(check_report.BRIEF_SECTION_KEYS,
                          ("USD", "EUR", "PHP", "THB", "BRL", "跨币种共同主线"))
         self.assertEqual(check_report.WEEKLY_REPORT_SECTION_KEYS,
-                         ("本周主线", "各币种", "复盘汇总", "下周关注", "缺漏汇总"))
+                         ("本周主线", "各币种", "复盘汇总", "本周关注", "缺漏汇总"))
 
     def test_every_key_reachable_by_find_section_is_in_a_frozen_list(self):
         """闭合件:源码里传给 `find_section` 的常量键,必须都在某份冻结清单里。
@@ -5459,7 +5459,7 @@ USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%
 ## 复盘汇总
 - 命中 1、未命中 0、无法判定 15、未到期 4、未复盘 6
 
-## 下周关注
+## 本周关注
 - 关注定盘更新
 
 ## 缺漏汇总

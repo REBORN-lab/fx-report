@@ -4,7 +4,7 @@
 TBD - created by archiving change fx-daily-report-skill. Update Purpose after archive.
 ## Requirements
 ### Requirement: 周报按主题重聚类生成
-系统 SHALL 读取最近 7 个自然日内的全部日报与决策日志,生成中文周报,结构为:本周主线(≤3 条)、各币种一周走势归因、观点复盘汇总、下周关注;周报一级结构 MUST 按主题组织,MUST NOT 按日期逐日罗列。
+系统 SHALL 读取最近 7 个自然日内的全部日报与决策日志,生成中文周报,结构为:本周主线(≤3 条)、各币种一周走势归因、观点复盘汇总、本周关注;周报一级结构 MUST 按主题组织,MUST NOT 按日期逐日罗列。
 
 #### Scenario: 正常周聚合
 - **WHEN** 最近 7 天内存在至少 3 份日报

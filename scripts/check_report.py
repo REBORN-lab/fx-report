@@ -149,7 +149,7 @@ REVIEW_LINE_RES = (
 # 病灶原样保留。
 REVIEW_TOKENS = claims.STATUSES
 MAX_THEME_ITEMS = 3
-WEEKLY_SECTIONS = ["本周主线", "各币种", "复盘汇总", "下周关注", "缺漏汇总"]
+WEEKLY_SECTIONS = ["本周主线", "各币种", "复盘汇总", "本周关注", "缺漏汇总"]
 COVERAGE_RE = re.compile(r"覆盖日报[::]\s*(\d+)\s*份")
 DATE_HEADING_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 # 结论句字段名**显式枚举**,禁止按 *verdict* 模式扫:digest 顶层的 `verdicts`
