@@ -233,7 +233,7 @@ DISPOSITION_INVALIDATION_VACUOUS = (
     "期限内一次都没有出现,这一行就作废;数只准从快照与要点表里抄。"
     "写不出保质期时要改的是判断本身,不是这一格")
 DISPOSITION_INVALIDATION_MIRROR = (
-    "处置:这一格要么带一个同行触发列(日报「条件方向」/周报「下周判断」)"
+    "处置:这一格要么带一个同行触发列(日报「条件方向」/周报「本周判断」)"
     "没有的可核对量(区间另一端、"
     "上一次定盘价、政策利率/CPI 当前值 —— 都得见于快照或要点表),"
     "要么写出它**自己的**时限(年历上的发布日或议息日,与触发窗口不同长)。"
@@ -1043,7 +1043,7 @@ def check_invalidation_independent(pairs, scope, notes=None,
             调用点的 `*_ROW_MISSING` 点名);空串 = 行在、格空着,那是 ② 的事。
     scope : 打进违规行与声明里的宿主名(`INVALIDATION_SCOPE_*`)。
     trigger_label : 同行那个"触发"列的**真名**。日报叫「条件方向」,周报叫
-            「下周判断」;写死一个会让另一侧的回执说一件不存在的事,而
+            「本周判断」;写死一个会让另一侧的回执说一件不存在的事,而
             「打印通过但守的不是它声称的东西」是本仓最贵的一类缺陷。
     notes : **出参**,同 check_daily。恒打一条正向回执,且**两层各带一个分数** ——
             「查过且全过」与「取不到载荷、根本没得查」在返回值上完全同形。
@@ -1942,13 +1942,13 @@ def theme_subsections(secs):
 
 # ---- 周报侧「失效条件」列的宿主:`## 各币种一周落点` 表 + 「主线归属」列 ----
 # 表结构逐字见 reports/weekly/2026-W33.md:
-#   | 币种 | 主线归属 | 周内价格落点 | 下周判断(时限) | 失效条件 |
+#   | 币种 | 主线归属 | 周内价格落点 | 本周判断(时限) | 失效条件 |
 # 与日报侧同规矩:**按表头列名解析,不按列序号硬取**(理由见 OVERVIEW_COLUMNS
 # 那一段)。宿主由「主线归属」格点名的主线段决定 —— 凭标题猜哪一段是宿主那条
 # 路刻意不选,猜就是编造(与 check_weekly_judgement_ring 拒绝猜同一条理由)。
 WEEKLY_LANDING_SECTION_KEY = "各币种一周落点"
 WEEKLY_COL_THEME = "主线归属"
-WEEKLY_COL_TRIGGER = "下周判断"
+WEEKLY_COL_TRIGGER = "本周判断"
 WEEKLY_LANDING_COLUMNS = (OVERVIEW_COL_CURRENCY, WEEKLY_COL_THEME,
                           WEEKLY_COL_TRIGGER, OVERVIEW_COL_INVALIDATION)
 

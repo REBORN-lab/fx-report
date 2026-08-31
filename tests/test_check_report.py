@@ -5481,7 +5481,7 @@ def weekly_landing(cell, belong="主线一"):
     row = ("| PHP | %s | 周涨跌 -0.192%% | 若比索升破 60.9 → 关注甲(T+3) | %s |"
            % (belong, cell))
     table = "\n".join(("## 各币种一周落点", "",
-                       "| 币种 | 主线归属 | 周内价格落点 | 下周判断(时限)"
+                       "| 币种 | 主线归属 | 周内价格落点 | 本周判断(时限)"
                        " | 失效条件 |",
                        "| --- | --- | --- | --- | --- |", row, "", ""))
     return WEEKLY_RING.replace("## 复盘汇总", table + "## 复盘汇总")
@@ -6504,7 +6504,7 @@ class ThemeNamingSingleSourceTest(unittest.TestCase):
 class InvalidationReceiptNamesTheRightColumnTest(unittest.TestCase):
     """回执与违规行里的**列名**必须是被查的那一列的真名。
 
-    日报第 2 列叫「条件方向」,周报第 4 列叫「下周判断」;两侧共用同一个判定
+    日报第 2 列叫「条件方向」,周报第 4 列叫「本周判断」;两侧共用同一个判定
     函数,列名若写死成日报那一个,周报的回执就在说一件不存在的事 ——
     「打印通过但守的不是它声称的东西」在本仓库是最贵的一类缺陷。
     """

@@ -14,7 +14,7 @@ import os
 import re
 import unittest
 
-from scripts import claims, review
+from scripts import check_report, claims, review
 from tests.test_review import UNCHANGED_REF_CAUSE_WORDS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -833,6 +833,29 @@ class InvalidationAndFlipAreDecoupledTest(SkillDocTestCase):
         seg = self.seg_or_fail(WEEKLY, W_LANDING_TMPL_RE, "周报落点表模板段")
         self.assertIn("WEEKLY_THEME_ATTRIBUTION_UNKNOWN", seg,
                       "归属格那条码没在落点表模板段点名")
+
+    def test_skill_table_headers_carry_every_column_the_checker_looks_up(self):
+        """闭合件:校验器按**列名**在表头里找列,而列名在 SKILL 模板表头里
+        还有第二份拷贝。改一份漏另一份时,取列失败**不是违规**——
+        `weekly_invalidation_pairs` 直接返回 None,只落一条
+        `WEEKLY_INVALIDATION_COLUMN_SKIPPED` 提示行,退出码仍是 0。
+        闸门就此静默关掉,而输出看上去仍然是 CHECK PASSED —— 正是本仓库
+        「打印通过、守的不是它声称的东西」那一类。断言从常量取列名、
+        不另抄一份,漏改哪一侧都在这里当场变红。
+        (实测来源:2026-08-31 把 `WEEKLY_COL_TRIGGER` 由「下周判断」改成
+         「本周判断」而三份周报表头未同步,三份全部 rc=0、独立性一行未校验。)
+        """
+        for path, pattern, name, columns in (
+                (DAILY, D_OVERVIEW_TMPL_RE, "日报速览表模板段",
+                 check_report.OVERVIEW_COLUMNS),
+                (WEEKLY, W_LANDING_TMPL_RE, "周报落点表模板段",
+                 check_report.WEEKLY_LANDING_COLUMNS)):
+            seg = self.seg_or_fail(path, pattern, name)
+            for col in columns:
+                self.assertIn(col, seg,
+                              "%s 的表头没有校验器要找的列名「%s」;"
+                              "取不到列时闸门静默跳过、退出码仍是 0"
+                              % (name, col))
 
     def test_weekly_states_both_definitions_side_by_side(self):
         seg = self.seg_or_fail(WEEKLY, W_INVALIDATION_RE, "周报两条定义并列段")
