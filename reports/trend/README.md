@@ -1,8 +1,13 @@
 # 趋势页
 
-`fx-trend.html` 是发布成 artifact 的那一份源文件,**自包含**:数据内联在两个
-`<script type="application/json">` 块里(`series` 与 `facts`),外部引用只有一条
-Google Fonts。因此它是"一个文件
+`fx-trend.html` 是趋势页的源文件(交付方式:提交进 git,不发布 artifact),
+**自包含**:数据内联在两个 `<script type="application/json">` 块里,外部引用
+只有一条 Google Fonts。
+
+- `series` —— 定盘/区间/实际利率/复盘序列与已算好的结论字段(连走、贴沿、
+  连续未变份数、总数),出自 `scripts/trend.py --mode series`;
+- `page` —— 蒸馏后的标题/要点/判断表/复盘分析/往前看。它是从已过校验的
+  报告里蒸馏并逐项对抗核查过的,没有确定性脚本能重算它。因此它是"一个文件
 就能搬走"的东西 —— 换账号、换机器都不必带数据文件、不必配服务、不必改路径。
 
 ## 刷新数据
@@ -10,10 +15,10 @@ Google Fonts。因此它是"一个文件
     python3 scripts/trend_page.py            # 全窗口
     python3 scripts/trend_page.py --date 2026-09-01
 
-它只替换那两段内联 JSON —— `series` 出自 `scripts/trend.py`(定盘、区间、
-实际利率、复盘序列),`facts` 出自 `scripts/highlights.py`(从已过校验的报告里
-**抽取**的要点:速览表、判断环、「本期相对上期的变化」四类标签、复盘结论、
-周主线与翻转指标)。页面结构与样式一个字符都不动,页面自己不重述任何一句话。序列化口与
+它只刷新 `series` 那一段;`page` 是蒸馏产物,不会被它改写 —— 但当 `page`
+落后于最新报告时它会在 stderr 里把话说明白(退出码仍为 0:落后是事实,
+不是错误;静默才是错误)。要更新 `page`,重新蒸馏、逐项核对数字后替换该块,
+`tests/test_trend.py` 会机械复查块里每个数字都逐字见于其声称的源。序列化口与
 `scripts/trend.py --mode series` 一致(`sort_keys=True`),所以同一份数据重嵌
 一次逐字节不变 —— git diff 上只会出现真正变了的部分。
 

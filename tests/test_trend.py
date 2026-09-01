@@ -228,14 +228,54 @@ class TrendPageTest(unittest.TestCase):
                          "页面内联的序列键集与 series_payload 不一致;"
                          "页面读一个不存在的键只会在浏览器控制台报错")
 
-    def test_facts_block_carries_what_the_page_reads(self):
-        """页面读 facts 的哪些键,这里就钉哪些 —— 抽取器改了字段名而页面
+    def test_page_block_carries_what_the_page_reads(self):
+        """页面读 page 块的哪些键,这里就钉哪些 —— 蒸馏产物改了字段名而页面
         没跟着改时,浏览器控制台里报错,而没有任何测试会红。"""
-        facts = self._embedded(self._page(), "facts")
-        for key in ("date", "prior_date", "currencies", "change_kinds",
-                    "summary", "overview", "rings", "changes", "review",
-                    "deltas", "week"):
-            self.assertIn(key, facts, key)
+        page = self._embedded(self._page(), "page")
+        for key in ("based_on", "prior", "week", "headline", "dek",
+                    "points", "calls", "review_findings"):
+            self.assertIn(key, page, key)
+        for row in page["calls"]:
+            for key in ("ccy", "watch", "trigger_level", "flip_level",
+                        "horizon", "change_kind", "change_gist"):
+                self.assertIn(key, row, key)
+
+    def test_every_number_in_the_page_block_is_traceable(self):
+        """蒸馏块里的每个数字 token 必须逐字出自它声称的源:蒸馏当期的日报、
+        周报或序列 JSON。这是把仓库的 NUMBER_UNTRACEABLE 纪律搬到页面上 ——
+        蒸馏是人做的,人会四舍五入、会把 0.85889 记成 0.8589,而那正是
+        报告校验器天天在拦的东西。以后每次重新蒸馏,这条都会自动重查。"""
+        from scripts import check_report
+        page = self._embedded(self._page(), "page")
+        sources = []
+        for rel in ("reports/daily/%s.md" % page["based_on"],
+                    "reports/weekly/%s.md" % page["week"]):
+            path = os.path.join(ROOT, rel)
+            self.assertTrue(os.path.exists(path), rel)
+            with open(path, encoding="utf-8") as f:
+                sources.append(f.read())
+        sources.append(json.dumps(self._embedded(self._page(), "series"),
+                                  ensure_ascii=False))
+        allowed = set()
+        for text in sources:
+            allowed |= check_report.numbers_in(text)
+        allowed |= check_report.ALLOWED_SMALL
+
+        def texts(node):
+            if isinstance(node, str):
+                yield node
+            elif isinstance(node, dict):
+                for v in node.values():
+                    yield from texts(v)
+            elif isinstance(node, list):
+                for v in node:
+                    yield from texts(v)
+
+        bad = sorted(set().union(*(check_report.numbers_in(t)
+                                   for t in texts(page))) - allowed)
+        self.assertEqual(bad, [],
+                         "页面蒸馏块里有 %d 个数字不见于其声称的源:%s"
+                         % (len(bad), bad))
 
     def test_rebuild_is_byte_stable(self):
         """同一份数据重嵌一次必须逐字节不变 —— 否则每次刷新都在 git 上

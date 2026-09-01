@@ -399,8 +399,41 @@ def weekly_trend(digests, week, lang="zh"):
 
 # ------------------------------------------------------- 序列(给可视化用)
 
+def _latest_band(snapshots, ccy):
+    """最新一份带完整 5 运行日区间的快照条目,没有则 None。"""
+    for _date, snap in reversed(snapshots):
+        row = _slice(snap, "derived", "rates", ccy)
+        if not isinstance(row, dict):
+            continue
+        lo, hi = _num_or_none(row.get("range_5d_low")), \
+            _num_or_none(row.get("range_5d_high"))
+        if lo is not None and hi is not None:
+            return {"low": lo, "high": hi}
+    return None
+
+
+def _run_summary(snapshots, ccy):
+    """一对货币的连走 + 贴沿结论。**结论在这里落,消费端只读**:
+    「最新定盘贴不贴区间沿」是一个判定,让页面在浏览器里现比较一遍,
+    等于把结论交回给渲染端 —— 正是本仓反复修掉的那类第二判定点。"""
+    series = fixing_series(snapshots, ccy)
+    n, direction = trailing_run(series)
+    out = {"n": n, "direction": direction, "at_edge": None,
+           "latest": None}
+    if series:
+        ref, v = series[-1]
+        out["latest"] = {"ref_date": ref, "value": v}
+        band = _latest_band(snapshots, ccy)
+        if band is not None:
+            out["at_edge"] = ("high" if v >= band["high"]
+                              else ("low" if v <= band["low"] else None))
+    return out
+
+
 def series_payload(snapshots, decisions, digests, skipped=()):
-    """趋势序列 JSON。**所有聚合在这里算完**,消费端只负责画,不再算第二遍。"""
+    """趋势序列 JSON。**所有聚合与结论在这里算完**,消费端只负责画,
+    不再算第二遍、也不再判第二遍。"""
+    counts = verdict_counts(decisions)
     return {
         "generated_from": [d for d, _ in snapshots],
         "skipped": list(skipped),
@@ -423,10 +456,15 @@ def series_payload(snapshots, decisions, digests, skipped=()):
             econ: [{"date": d, "value": v}
                    for d, v in real_rate_series(snapshots, econ)]
             for econ in ECONOMY_NAME},
-        "runs": {ccy: dict(zip(("n", "direction"),
-                               trailing_run(fixing_series(snapshots, ccy))))
+        "runs": {ccy: _run_summary(snapshots, ccy)
                  for ccy in PAIR_CURRENCIES},
-        "verdict_totals": verdict_counts(decisions),
+        "real_rate_latest": {
+            econ: {"date": s[-1][0], "value": s[-1][1],
+                   "held": _unchanged_run(s)}
+            for econ, s in ((e, real_rate_series(snapshots, e))
+                            for e in ECONOMY_NAME) if s},
+        "verdict_totals": counts,
+        "verdict_total": sum(counts.values()),
         "verdicts_by_date": _verdicts_by_date(decisions),
         "weekly": [{"week": w,
                     "rates": _weekly_rates(p),
