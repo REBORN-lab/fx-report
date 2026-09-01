@@ -11,6 +11,7 @@
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -191,3 +192,56 @@ class CliTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrendPageTest(unittest.TestCase):
+    """趋势页(artifact 的源文件)与序列的契约。
+
+    页面之所以要**自包含**(数据内联、外部只有一处字体),是为了让它成为
+    "一个文件就能搬走"的东西 —— 换账号发布、换机器打开都不必带数据文件。
+    这里守两件会让搬走这件事悄悄失效的性质:内联那段仍是可解析的 JSON,
+    以及它的键集与 `series_payload` 一致(页面读了却不存在的键只会在浏览器
+    控制台里报错,没有任何测试会红)。
+    """
+
+    PAGE = os.path.join(ROOT, "reports", "trend", "fx-trend.html")
+
+    def _page(self):
+        with open(self.PAGE, encoding="utf-8") as f:
+            return f.read()
+
+    def _embedded(self, html):
+        head = '<script id="series" type="application/json">'
+        i = html.index(head) + len(head)
+        return json.loads(html[i:html.index("</script>", i)])
+
+    def test_embedded_series_parses(self):
+        self._embedded(self._page())
+
+    def test_embedded_keys_match_the_payload(self):
+        page_keys = sorted(self._embedded(self._page()))
+        payload = trend.series_payload([], [], [])
+        self.assertEqual(page_keys, sorted(payload),
+                         "页面内联的序列键集与 series_payload 不一致;"
+                         "页面读一个不存在的键只会在浏览器控制台报错")
+
+    def test_rebuild_is_byte_stable(self):
+        """同一份数据重嵌一次必须逐字节不变 —— 否则每次刷新都在 git 上
+        制造噪声,"页面真的变了吗"就再也看不出来。"""
+        from scripts import trend_page
+        html = self._page()
+        payload = self._embedded(html)
+        self.assertEqual(trend_page.rebuild(html, payload), html)
+
+    def test_rebuild_refuses_to_inline_a_closing_script_tag(self):
+        from scripts import trend_page
+        with self.assertRaises(ValueError):
+            trend_page.rebuild(self._page(), {"x": "</script>"})
+
+    def test_the_page_is_self_contained_except_the_font_link(self):
+        """外部引用只许有 Google Fonts 那一条。多一条外链,搬到别处就会
+        遇到 CSP 拦截或静默回落,而两者在页面上都看不出来。"""
+        html = self._page()
+        for url in re.findall(r'(?:src|href)="(https?://[^"]+)"', html):
+            self.assertTrue(url.startswith("https://fonts.googleapis.com/"),
+                            "页面引了一个外部资源:%s" % url)
