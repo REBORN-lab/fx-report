@@ -1,28 +1,28 @@
 <title>五币种定盘趋势</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
 <style>
 :root{
-  --paper:#eceeed; --card:#f7f9f8; --ink:#14181a; --muted:#66716e;
+  --paper:#eceeed; --card:#f7f9f8; --sunk:#e5e9e8; --ink:#14181a; --muted:#66716e;
   --rule:#d3d9d7; --rule-soft:#e2e7e5; --accent:#0f6d63;
-  --weak:#9c3f2e; --strong:#2f6b52;
+  --weak:#9c3f2e; --strong:#2f6b52; --weak-wash:rgba(156,63,46,.10); --strong-wash:rgba(47,107,82,.10);
   --hit:#2f6b52; --miss:#9c3f2e; --undec:#8a7245; --pending:#0f6d63; --unrev:#aeb8b5;
   --band:rgba(15,109,99,.13); --tick:#7d8785;
-  --shadow:0 1px 0 rgba(20,24,26,.05), 0 1px 3px rgba(20,24,26,.06);
+  --shadow:0 1px 0 rgba(20,24,26,.045), 0 1px 3px rgba(20,24,26,.055);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --paper:#0c1011; --card:#141a1b; --ink:#e2e8e6; --muted:#8d9996;
-    --rule:#242c2d; --rule-soft:#1b2223; --accent:#47c4b1;
-    --weak:#dd7a60; --strong:#63b98c;
+    --paper:#0c1011; --card:#141a1b; --sunk:#101617; --ink:#e2e8e6; --muted:#8d9996;
+    --rule:#242c2d; --rule-soft:#1c2324; --accent:#47c4b1;
+    --weak:#dd7a60; --strong:#63b98c; --weak-wash:rgba(221,122,96,.13); --strong-wash:rgba(99,185,140,.13);
     --hit:#63b98c; --miss:#dd7a60; --undec:#c2a76f; --pending:#47c4b1; --unrev:#4a5453;
     --band:rgba(71,196,177,.14); --tick:#6d7876;
     --shadow:0 1px 0 rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.35);
   }
 }
 :root[data-theme="dark"]{
-  --paper:#0c1011; --card:#141a1b; --ink:#e2e8e6; --muted:#8d9996;
-  --rule:#242c2d; --rule-soft:#1b2223; --accent:#47c4b1;
-  --weak:#dd7a60; --strong:#63b98c;
+  --paper:#0c1011; --card:#141a1b; --sunk:#101617; --ink:#e2e8e6; --muted:#8d9996;
+  --rule:#242c2d; --rule-soft:#1c2324; --accent:#47c4b1;
+  --weak:#dd7a60; --strong:#63b98c; --weak-wash:rgba(221,122,96,.13); --strong-wash:rgba(99,185,140,.13);
   --hit:#63b98c; --miss:#dd7a60; --undec:#c2a76f; --pending:#47c4b1; --unrev:#4a5453;
   --band:rgba(71,196,177,.14); --tick:#6d7876;
   --shadow:0 1px 0 rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.35);
@@ -30,73 +30,135 @@
 
 *{box-sizing:border-box}
 body{
-  background:var(--paper); color:var(--ink);
+  background:var(--paper); color:var(--ink); margin:0;
   font-family:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC",system-ui,sans-serif;
-  font-size:15px; line-height:1.65; margin:0;
-  -webkit-font-smoothing:antialiased;
+  font-size:15px; line-height:1.68; -webkit-font-smoothing:antialiased;
 }
-.sheet{max-width:1080px; margin:0 auto; padding:0 22px 72px}
+.sheet{max-width:1120px; margin:0 auto; padding:0 22px 76px}
 .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums}
+.lab{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--muted)}
 
-/* ---------- masthead ---------- */
-header{padding:44px 0 26px; border-bottom:2px solid var(--ink)}
-.kicker{
-  font-family:"IBM Plex Mono",monospace; font-size:11.5px; letter-spacing:.14em;
-  text-transform:uppercase; color:var(--muted); margin:0 0 12px
-}
-h1{
-  font-family:Archivo,"PingFang SC","Microsoft YaHei",sans-serif; font-weight:700;
-  font-size:clamp(30px,5.2vw,46px); line-height:1.08; letter-spacing:-.02em;
-  margin:0 0 14px; text-wrap:balance
-}
-.standfirst{max-width:60ch; margin:0; color:var(--muted); font-size:15.5px}
-.readout{
-  display:flex; flex-wrap:wrap; gap:0 34px; margin-top:26px;
-  border-top:1px solid var(--rule-soft); padding-top:18px
-}
-.readout div{display:flex; flex-direction:column; gap:2px}
-.readout dt, .readout .lab{
-  font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.12em;
-  text-transform:uppercase; color:var(--muted)
-}
-.readout .val{
-  font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
-  font-size:20px; font-weight:500
+/* ---------------- masthead ---------------- */
+header{padding:46px 0 24px; border-bottom:2px solid var(--ink)}
+.dateline{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px}
+.dateline .now{font-family:"IBM Plex Mono",monospace; font-size:12.5px; font-weight:600; letter-spacing:.06em}
+.dateline .vs{font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--muted)}
+h1{font-family:Archivo,"PingFang SC","Microsoft YaHei",sans-serif; font-weight:700;
+  font-size:clamp(29px,4.9vw,44px); line-height:1.1; letter-spacing:-.021em;
+  margin:0 0 15px; text-wrap:balance}
+.standfirst{max-width:62ch; margin:0; color:var(--muted); font-size:15px}
+.tally{display:flex; flex-wrap:wrap; gap:8px; margin-top:22px}
+
+/* change-kind chips: 分级来自 SKILL 的四类,方向 > 触发位 > 依据 > 无 */
+.kind{display:inline-flex; align-items:center; gap:7px; padding:4px 11px 4px 9px;
+  border-radius:2px; font-size:12.5px; line-height:1.5; white-space:nowrap;
+  font-family:"IBM Plex Mono",monospace; border:1px solid transparent}
+.kind b{font-weight:600; font-variant-numeric:tabular-nums}
+.kind.k-dir{background:var(--accent); color:var(--paper); border-color:var(--accent)}
+.kind.k-lvl{border-color:var(--accent); color:var(--accent)}
+.kind.k-evi{border-color:var(--muted); color:var(--ink); border-style:dashed}
+.kind.k-none{border-color:var(--rule); color:var(--muted)}
+.kind.k-unk{border-color:var(--rule); color:var(--muted); font-style:italic}
+
+/* ---------------- sections ---------------- */
+section{padding-top:48px}
+.head{display:flex; align-items:baseline; justify-content:space-between; gap:20px; flex-wrap:wrap;
+  border-bottom:1px solid var(--rule); padding-bottom:9px; margin-bottom:0}
+h2{font-family:Archivo,"PingFang SC","Microsoft YaHei",sans-serif; font-weight:700;
+  font-size:19px; letter-spacing:-.01em; margin:0}
+.note{font-size:12.5px; color:var(--muted); margin:0; max-width:64ch}
+.head .note{text-align:right; flex:1 1 260px}
+
+/* ---------------- 变化台账 ---------------- */
+.ledger{display:flex; flex-direction:column}
+.row{display:grid; grid-template-columns:104px 1fr; gap:0 20px;
+  padding:20px 0 18px; border-bottom:1px solid var(--rule-soft)}
+.row:last-child{border-bottom:0}
+.rail{display:flex; flex-direction:column; gap:3px}
+.rail .code{font-family:Archivo,sans-serif; font-weight:700; font-size:26px;
+  letter-spacing:-.01em; line-height:1}
+.rail .cn{font-size:12px; color:var(--muted)}
+.row-main{display:flex; flex-direction:column; gap:11px; min-width:0}
+.delta{display:flex; flex-wrap:wrap; align-items:center; gap:10px 22px}
+.move{display:flex; align-items:baseline; gap:8px; font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums}
+.move .from{color:var(--muted); font-size:14px}
+.move .arrow{color:var(--muted); font-size:13px}
+.move .to{font-size:20px; font-weight:600}
+.move.weak .to{color:var(--weak)} .move.strong .to{color:var(--strong)}
+.sub{display:flex; align-items:center; gap:7px; font-family:"IBM Plex Mono",monospace;
+  font-size:12px; color:var(--muted)}
+.flag{display:inline-block; padding:2px 7px; border-radius:2px; font-size:11px;
+  font-family:"IBM Plex Mono",monospace; background:var(--weak-wash); color:var(--weak)}
+.flag.low{background:var(--strong-wash); color:var(--strong)}
+.flag.plain{background:var(--sunk); color:var(--muted)}
+.say{margin:0; font-size:14.5px; max-width:78ch}
+.say strong{font-weight:500}
+.spark{height:26px; width:100%; max-width:210px; display:block}
+@media (max-width:640px){
+  .row{grid-template-columns:1fr; gap:10px}
+  .rail{flex-direction:row; align-items:baseline; gap:10px}
 }
 
-/* ---------- sections ---------- */
-section{padding-top:46px}
-.head{display:flex; align-items:baseline; justify-content:space-between; gap:18px; flex-wrap:wrap;
-  border-bottom:1px solid var(--rule); padding-bottom:9px; margin-bottom:22px}
-h2{
-  font-family:Archivo,"PingFang SC","Microsoft YaHei",sans-serif; font-weight:700;
-  font-size:19px; letter-spacing:-.01em; margin:0
-}
-.note{font-size:12.5px; color:var(--muted); margin:0; max-width:62ch}
-.head .note{text-align:right; flex:1 1 240px}
+/* ---------------- 今日判断卡 ---------------- */
+.cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:16px; margin-top:22px}
+.card{background:var(--card); border:1px solid var(--rule-soft); border-radius:3px;
+  padding:16px 17px 14px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:11px}
+.card-top{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+.card-top .code{font-family:Archivo,sans-serif; font-weight:700; font-size:16px; letter-spacing:.01em}
+.card-top .px{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
+  font-size:16px; font-weight:500}
+.dl{display:flex; flex-direction:column; gap:9px}
+.dl > div{display:flex; flex-direction:column; gap:2px}
+.dl p{margin:0; font-size:13.5px; line-height:1.6}
+.dl .lab{font-size:10px}
+.tape-foot{display:flex; justify-content:space-between; font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px; color:var(--muted); margin-top:-4px}
+.card svg.tape{display:block; width:100%; height:auto}
 
-/* ---------- fixing tapes ---------- */
-.tapes{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px}
-.tape{background:var(--card); border:1px solid var(--rule-soft); border-radius:3px;
-  padding:15px 16px 12px; box-shadow:var(--shadow)}
-.tape-top{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:2px}
-.pair{font-family:Archivo,sans-serif; font-weight:700; font-size:15px; letter-spacing:.02em}
-.last{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:16px; font-weight:500}
-.tape-sub{font-size:11.5px; color:var(--muted); margin:0 0 8px;
-  font-family:"IBM Plex Mono",monospace}
-.run{font-weight:500}
-.run.weak{color:var(--weak)} .run.strong{color:var(--strong)}
-.tape svg{display:block; width:100%; height:auto}
-.tape-foot{display:flex; justify-content:space-between; margin-top:6px;
-  font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--muted)}
+/* ---------------- 复盘 ---------------- */
+.calls-wrap{background:var(--card); border:1px solid var(--rule-soft); border-radius:3px;
+  padding:16px 16px 10px; box-shadow:var(--shadow); margin-top:22px}
+.calls-wrap svg{display:block; width:100%; height:auto}
+.legend{display:flex; flex-wrap:wrap; gap:6px 20px; margin-top:13px;
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted)}
+.legend span{display:inline-flex; align-items:center; gap:7px}
+.legend i{width:10px; height:10px; border-radius:1px; flex:none}
+.totals{display:grid; grid-template-columns:repeat(auto-fit,minmax(112px,1fr)); gap:1px;
+  background:var(--rule-soft); border:1px solid var(--rule-soft); border-radius:3px;
+  overflow:hidden; margin-top:16px}
+.totals div{background:var(--card); padding:12px 15px}
+.totals .n{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
+  font-size:23px; font-weight:500; display:block; line-height:1.35}
+.resolved{margin:18px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:8px}
+.resolved li{font-size:13.5px; padding-left:13px; border-left:2px solid var(--rule);
+  color:var(--ink)}
+.resolved li.hit{border-left-color:var(--hit)}
+.resolved li.miss{border-left-color:var(--miss)}
+.resolved li.undec{border-left-color:var(--undec)}
+.decl{margin:16px 0 0; font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--muted)}
 
-/* ---------- real-rate ladder ---------- */
+/* ---------------- 周主线 ---------------- */
+.themes{display:flex; flex-direction:column; gap:0; margin-top:6px}
+.theme{display:grid; grid-template-columns:76px 1fr; gap:0 18px;
+  padding:17px 0; border-bottom:1px solid var(--rule-soft)}
+.theme:last-child{border-bottom:0}
+.theme .tid{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted); padding-top:3px}
+.theme h3{margin:0 0 7px; font-size:15px; font-weight:500; line-height:1.55; text-wrap:balance}
+.scope{display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px}
+.scope span{font-family:"IBM Plex Mono",monospace; font-size:10.5px; padding:1px 6px;
+  border:1px solid var(--rule); border-radius:2px; color:var(--muted)}
+.theme .flip{margin:0; font-size:13px; color:var(--muted); max-width:78ch}
+.theme .flip b{color:var(--ink); font-weight:500}
+
+/* ---------------- 序列 ---------------- */
 .ladder{display:flex; flex-direction:column; gap:1px; background:var(--rule-soft);
-  border:1px solid var(--rule-soft); border-radius:3px; overflow:hidden}
-.rung{display:grid; grid-template-columns:96px 1fr 74px 132px; align-items:center; gap:14px;
+  border:1px solid var(--rule-soft); border-radius:3px; overflow:hidden; margin-top:22px}
+.rung{display:grid; grid-template-columns:96px 1fr 74px 152px; align-items:center; gap:14px;
   background:var(--card); padding:11px 15px}
 .rung .econ{font-weight:500}
-.rung .bar{position:relative; height:9px; background:var(--rule-soft); border-radius:1px}
+.rung .bar{position:relative; height:9px; background:var(--sunk); border-radius:1px}
 .rung .fill{position:absolute; top:0; height:100%; border-radius:1px}
 .rung .zero{position:absolute; top:-4px; bottom:-4px; width:1px; background:var(--muted); opacity:.55}
 .rung .num{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
@@ -106,10 +168,9 @@ h2{
   .rung{grid-template-columns:78px 1fr 66px; row-gap:4px}
   .rung .held{grid-column:1 / -1; text-align:left}
 }
-
-/* ---------- weekly matrix ---------- */
-.scroll{overflow-x:auto; border:1px solid var(--rule-soft); border-radius:3px; background:var(--card)}
-table{border-collapse:collapse; width:100%; min-width:560px}
+.scroll{overflow-x:auto; border:1px solid var(--rule-soft); border-radius:3px;
+  background:var(--card); margin-top:22px}
+table{border-collapse:collapse; width:100%; min-width:580px}
 th,td{padding:11px 14px; text-align:right; border-bottom:1px solid var(--rule-soft)}
 th:first-child,td:first-child{text-align:left}
 thead th{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em;
@@ -118,62 +179,81 @@ tbody tr:last-child td{border-bottom:0}
 td.pair-cell{font-family:Archivo,sans-serif; font-weight:700; letter-spacing:.02em}
 .cell{display:flex; align-items:center; justify-content:flex-end; gap:9px}
 .cell .v{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-size:14px}
-.chip{width:52px; height:8px; background:var(--rule-soft); position:relative; border-radius:1px; flex:none}
+.chip{width:52px; height:8px; background:var(--sunk); position:relative; border-radius:1px; flex:none}
 .chip i{position:absolute; top:0; height:100%; border-radius:1px}
 .chip .mid{position:absolute; top:-3px; bottom:-3px; left:50%; width:1px; background:var(--muted); opacity:.5}
 
-/* ---------- calls ---------- */
-.calls-wrap{background:var(--card); border:1px solid var(--rule-soft); border-radius:3px;
-  padding:16px 16px 10px; box-shadow:var(--shadow)}
-.calls-wrap svg{display:block; width:100%; height:auto}
-.legend{display:flex; flex-wrap:wrap; gap:6px 20px; margin-top:14px;
-  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted)}
-.legend span{display:inline-flex; align-items:center; gap:7px}
-.legend i{width:10px; height:10px; border-radius:1px; flex:none}
-.totals{display:grid; grid-template-columns:repeat(auto-fit,minmax(112px,1fr)); gap:1px;
-  background:var(--rule-soft); border:1px solid var(--rule-soft); border-radius:3px;
-  overflow:hidden; margin-top:20px}
-.totals div{background:var(--card); padding:13px 15px}
-.totals .lab{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em;
-  color:var(--muted); display:block}
-.totals .n{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums;
-  font-size:24px; font-weight:500; display:block; line-height:1.3}
-
-/* ---------- colophon ---------- */
-footer{margin-top:52px; padding-top:18px; border-top:1px solid var(--rule); color:var(--muted); font-size:12.5px}
-footer p{margin:0 0 7px; max-width:68ch}
+footer{margin-top:56px; padding-top:18px; border-top:1px solid var(--rule); color:var(--muted); font-size:12.5px}
+footer p{margin:0 0 7px; max-width:70ch}
 footer code{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink)}
 a{color:var(--accent)}
 :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-@media (prefers-reduced-motion:no-preference){
-  .tape,.calls-wrap{transition:border-color .18s ease}
-}
 </style>
 
 <div class="sheet">
 
 <header>
-  <p class="kicker">五币种外汇日报 / 趋势序列</p>
-  <h1>四条本币兑美元，同号走到区间上沿</h1>
+  <div class="dateline">
+    <span class="lab">五币种外汇日报</span>
+    <span class="now mono" id="dl-now"></span>
+    <span class="vs mono" id="dl-prior"></span>
+  </div>
+  <h1 id="headline">本期相对上期，变了哪一样</h1>
   <p class="standfirst">
-    这一页把 19 份日度快照、3 份周度聚合与 95 条已登记观点摊平在一张纸上。
-    每一格数字都逐字取自 <code class="mono">state/trend-series.json</code>，
-    由 <code class="mono">scripts/trend.py</code> 从快照与决策日志直接读出——
-    页面本身不产生任何新的数值。
+    每一句判断、每一个数字都逐字取自已经过 <code class="mono">check_report.py</code>
+    的那几份报告，由 <code class="mono">scripts/highlights.py</code> 与
+    <code class="mono">scripts/trend.py</code> 抽取——这一页不重述、不归纳、不补算。
+    抽不到的地方留白。
   </p>
-  <div class="readout mono" id="readout"></div>
+  <div class="tally" id="tally"></div>
 </header>
 
 <section>
   <div class="head">
-    <h2>定盘走势</h2>
+    <h2>变化台账</h2>
     <p class="note">
-      参考价是<strong>每日一次</strong>的定盘，不是连续行情。所以这里画的是离散刻度，
-      不是曲线——把它连成线会让读者以为有日内数据。阴影是当前的 5 运行日区间。
-      刻度朝上着色表示该次定盘本币兑美元走弱。
+      类型是报告自己在行首标出来的四类之一，不是这一页分的。
+      左边是上期那一位到本期这一位，右边那句是报告原文。
     </p>
   </div>
-  <div class="tapes" id="tapes"></div>
+  <div class="ledger" id="ledger"></div>
+</section>
+
+<section>
+  <div class="head">
+    <h2>今日判断</h2>
+    <p class="note">
+      条件方向与失效条件取自速览表，关键假设与翻转指标取自该币种节的判断环。
+      失效条件问「什么没发生这条判断就作废」，翻转指标问「什么一旦出现就改判」——
+      两个相反的判据，不是同一句。
+    </p>
+  </div>
+  <div class="cards" id="cards"></div>
+</section>
+
+<section>
+  <div class="head">
+    <h2>观点复盘</h2>
+    <p class="note">
+      结论由 <code class="mono">scripts/claims.py</code> 按每条观点自己登记的时限算出，
+      不是事后议定的。「未到期」是时限还没到，「无法判定」是时限已到而观测缺失。
+    </p>
+  </div>
+  <p class="decl mono" id="decl"></p>
+  <ul class="resolved" id="resolved"></ul>
+  <div class="calls-wrap">
+    <svg id="calls" viewBox="0 0 960 200" role="img" aria-label="按登记日分组的观点复盘结果分布"></svg>
+    <div class="legend" id="calls-legend"></div>
+  </div>
+  <div class="totals" id="totals"></div>
+</section>
+
+<section id="week-section">
+  <div class="head">
+    <h2>本周主线</h2>
+    <p class="note" id="week-note"></p>
+  </div>
+  <div class="themes" id="themes"></div>
 </section>
 
 <section>
@@ -181,8 +261,7 @@ a{color:var(--accent)}
     <h2>实际利率</h2>
     <p class="note">
       按当前读数从高到低排。右侧报的是<strong>连续多少份读数未变</strong>，
-      不是窗口两端相减——分母 CPI 在 2026-08-11 换过口径，两端相减的差里混着口径差，
-      那不是行情。
+      不是窗口两端相减——分母 CPI 在 2026-08-11 换过口径，两端相减的差里混着口径差。
     </p>
   </div>
   <div class="ladder" id="ladder"></div>
@@ -191,9 +270,7 @@ a{color:var(--accent)}
 <section>
   <div class="head">
     <h2>逐周变动</h2>
-    <p class="note">
-      正值＝该周本币兑美元走弱。条形以各周的最大绝对值为满格，只用于比较同一行的三周。
-    </p>
+    <p class="note">正值＝该周本币兑美元走弱。条形以各行三周的最大绝对值为满格。</p>
   </div>
   <div class="scroll">
     <table id="weekly">
@@ -203,25 +280,11 @@ a{color:var(--accent)}
   </div>
 </section>
 
-<section>
-  <div class="head">
-    <h2>观点复盘</h2>
-    <p class="note">
-      按<strong>登记日</strong>分组、按<strong>最新复盘结果</strong>着色。
-      「未到期」是时限还没到，「无法判定」是时限已到而观测缺失——两者不是一回事。
-    </p>
-  </div>
-  <div class="calls-wrap">
-    <svg id="calls" viewBox="0 0 960 210" role="img" aria-label="按登记日分组的观点复盘结果分布"></svg>
-    <div class="legend" id="calls-legend"></div>
-  </div>
-  <div class="totals" id="totals"></div>
-</section>
-
 <footer>
   <p><strong>口径。</strong>观察窗 <span class="mono" id="win"></span>。
      定盘序列按定盘日（<code>ref_date</code>）去重：周一那份快照报的仍是上周五的定盘，
-     按快照日排会把同一次定盘数成两次。</p>
+     按快照日排会把同一次定盘数成两次。参考价是每日一次的定盘，卡片里的刻度因此是离散的，
+     连成线会让人以为有日内数据。</p>
   <p><strong>方向。</strong>参考价是 USD/本币，上行＝本币兑美元走弱；美元自身没有这条序列。</p>
   <p><strong>数据来源。</strong>本报告的政策利率、CPI 同比与有效汇率取自 BIS。</p>
 </footer>
@@ -229,48 +292,149 @@ a{color:var(--accent)}
 </div>
 
 <script id="series" type="application/json">{"bands":{"BRL":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":5.0998,"low":5.0856},{"chg_pct_1d":0.38,"date":"2026-08-11","high":5.1049,"low":5.0856},{"chg_pct_1d":null,"date":"2026-08-12","high":5.1049,"low":5.0856},{"chg_pct_1d":1.493,"date":"2026-08-13","high":5.1811,"low":5.0856},{"chg_pct_1d":null,"date":"2026-08-14","high":5.1811,"low":5.0856},{"chg_pct_1d":null,"date":"2026-08-18","high":5.2102,"low":5.0856},{"chg_pct_1d":-0.054,"date":"2026-08-19","high":5.2102,"low":5.0856},{"chg_pct_1d":-0.063,"date":"2026-08-20","high":5.2102,"low":5.1049},{"chg_pct_1d":-0.202,"date":"2026-08-21","high":5.2102,"low":5.1811},{"chg_pct_1d":-0.399,"date":"2026-08-22","high":5.2102,"low":5.1729},{"chg_pct_1d":-0.445,"date":"2026-08-25","high":5.2074,"low":5.1499},{"chg_pct_1d":0.157,"date":"2026-08-26","high":5.2041,"low":5.1499},{"chg_pct_1d":-0.223,"date":"2026-08-27","high":5.1936,"low":5.1465},{"chg_pct_1d":-0.087,"date":"2026-08-28","high":5.1729,"low":5.142},{"chg_pct_1d":0.43,"date":"2026-08-29","high":5.1641,"low":5.142},{"chg_pct_1d":0.149,"date":"2026-09-01","high":5.1718,"low":5.142}],"EUR":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":0.86693,"low":0.86543},{"chg_pct_1d":0.129,"date":"2026-08-11","high":0.86693,"low":0.86543},{"chg_pct_1d":null,"date":"2026-08-12","high":0.86693,"low":0.86543},{"chg_pct_1d":0.052,"date":"2026-08-13","high":0.867,"low":0.86543},{"chg_pct_1d":null,"date":"2026-08-14","high":0.867,"low":0.86543},{"chg_pct_1d":null,"date":"2026-08-18","high":0.867,"low":0.86259},{"chg_pct_1d":0.147,"date":"2026-08-19","high":0.867,"low":0.86259},{"chg_pct_1d":-0.25,"date":"2026-08-20","high":0.867,"low":0.8617},{"chg_pct_1d":-0.651,"date":"2026-08-21","high":0.867,"low":0.85609},{"chg_pct_1d":-0.154,"date":"2026-08-22","high":0.86386,"low":0.85477},{"chg_pct_1d":0.301,"date":"2026-08-25","high":0.86386,"low":0.85477},{"chg_pct_1d":0.017,"date":"2026-08-26","high":0.8617,"low":0.85477},{"chg_pct_1d":-0.061,"date":"2026-08-27","high":0.85749,"low":0.85477},{"chg_pct_1d":0.207,"date":"2026-08-28","high":0.85874,"low":0.85477},{"chg_pct_1d":0.017,"date":"2026-08-29","high":0.85889,"low":0.85697},{"chg_pct_1d":0.405,"date":"2026-09-01","high":0.86237,"low":0.85697}],"PHP":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":60.867,"low":60.75},{"chg_pct_1d":0.705,"date":"2026-08-11","high":61.178,"low":60.75},{"chg_pct_1d":null,"date":"2026-08-12","high":61.178,"low":60.75},{"chg_pct_1d":0.24,"date":"2026-08-13","high":61.325,"low":60.75},{"chg_pct_1d":null,"date":"2026-08-14","high":61.325,"low":60.75},{"chg_pct_1d":null,"date":"2026-08-18","high":61.509,"low":60.75},{"chg_pct_1d":0.441,"date":"2026-08-19","high":61.78,"low":60.75},{"chg_pct_1d":0.066,"date":"2026-08-20","high":61.821,"low":61.178},{"chg_pct_1d":-0.15,"date":"2026-08-21","high":61.821,"low":61.325},{"chg_pct_1d":-0.11,"date":"2026-08-22","high":61.821,"low":61.509},{"chg_pct_1d":0.096,"date":"2026-08-25","high":61.821,"low":61.66},{"chg_pct_1d":-0.003,"date":"2026-08-26","high":61.821,"low":61.66},{"chg_pct_1d":-0.091,"date":"2026-08-27","high":61.728,"low":61.66},{"chg_pct_1d":0.391,"date":"2026-08-28","high":61.902,"low":61.66},{"chg_pct_1d":0.569,"date":"2026-08-29","high":62.254,"low":61.661},{"chg_pct_1d":0.23,"date":"2026-09-01","high":62.397,"low":61.661}],"THB":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":33.055,"low":33.013},{"chg_pct_1d":0.279,"date":"2026-08-11","high":33.105,"low":33.013},{"chg_pct_1d":null,"date":"2026-08-12","high":33.105,"low":33.013},{"chg_pct_1d":0.076,"date":"2026-08-13","high":33.13,"low":33.013},{"chg_pct_1d":null,"date":"2026-08-14","high":33.13,"low":33.013},{"chg_pct_1d":null,"date":"2026-08-18","high":33.13,"low":33.013},{"chg_pct_1d":0.106,"date":"2026-08-19","high":33.13,"low":33.013},{"chg_pct_1d":0.015,"date":"2026-08-20","high":33.13,"low":33.025},{"chg_pct_1d":-0.454,"date":"2026-08-21","high":33.13,"low":32.915},{"chg_pct_1d":-0.729,"date":"2026-08-22","high":33.065,"low":32.675},{"chg_pct_1d":0.031,"date":"2026-08-25","high":33.065,"low":32.675},{"chg_pct_1d":0.153,"date":"2026-08-26","high":33.065,"low":32.675},{"chg_pct_1d":0.031,"date":"2026-08-27","high":32.915,"low":32.675},{"chg_pct_1d":0.336,"date":"2026-08-28","high":32.855,"low":32.675},{"chg_pct_1d":0.304,"date":"2026-08-29","high":32.955,"low":32.685},{"chg_pct_1d":0.637,"date":"2026-09-01","high":33.165,"low":32.735}]},"currency_economy":{"BRL":"BR","EUR":"EA","PHP":"PH","THB":"TH","USD":"US"},"economy_name":{"BR":"巴西","EA":"欧元区","PH":"菲律宾","TH":"泰国","US":"美国"},"fixings":{"BRL":[{"primary":5.1049,"ref_date":"2026-08-11"},{"primary":5.1811,"ref_date":"2026-08-13"},{"primary":5.2102,"ref_date":"2026-08-17"},{"primary":5.2074,"ref_date":"2026-08-18"},{"primary":5.2041,"ref_date":"2026-08-19"},{"primary":5.1936,"ref_date":"2026-08-20"},{"primary":5.1729,"ref_date":"2026-08-21"},{"primary":5.1499,"ref_date":"2026-08-24"},{"primary":5.158,"ref_date":"2026-08-25"},{"primary":5.1465,"ref_date":"2026-08-26"},{"primary":5.142,"ref_date":"2026-08-27"},{"primary":5.1641,"ref_date":"2026-08-28"},{"primary":5.1718,"ref_date":"2026-08-31"}],"EUR":[{"primary":0.86655,"ref_date":"2026-08-11"},{"primary":0.867,"ref_date":"2026-08-13"},{"primary":0.86259,"ref_date":"2026-08-17"},{"primary":0.86386,"ref_date":"2026-08-18"},{"primary":0.8617,"ref_date":"2026-08-19"},{"primary":0.85609,"ref_date":"2026-08-20"},{"primary":0.85477,"ref_date":"2026-08-21"},{"primary":0.85734,"ref_date":"2026-08-24"},{"primary":0.85749,"ref_date":"2026-08-25"},{"primary":0.85697,"ref_date":"2026-08-26"},{"primary":0.85874,"ref_date":"2026-08-27"},{"primary":0.85889,"ref_date":"2026-08-28"},{"primary":0.86237,"ref_date":"2026-08-31"}],"PHP":[{"primary":61.178,"ref_date":"2026-08-11"},{"primary":61.325,"ref_date":"2026-08-13"},{"primary":61.509,"ref_date":"2026-08-17"},{"primary":61.78,"ref_date":"2026-08-18"},{"primary":61.821,"ref_date":"2026-08-19"},{"primary":61.728,"ref_date":"2026-08-20"},{"primary":61.66,"ref_date":"2026-08-21"},{"primary":61.719,"ref_date":"2026-08-24"},{"primary":61.717,"ref_date":"2026-08-25"},{"primary":61.661,"ref_date":"2026-08-26"},{"primary":61.902,"ref_date":"2026-08-27"},{"primary":62.254,"ref_date":"2026-08-28"},{"primary":62.397,"ref_date":"2026-08-31"}],"THB":[{"primary":33.105,"ref_date":"2026-08-11"},{"primary":33.13,"ref_date":"2026-08-13"},{"primary":33.025,"ref_date":"2026-08-17"},{"primary":33.06,"ref_date":"2026-08-18"},{"primary":33.065,"ref_date":"2026-08-19"},{"primary":32.915,"ref_date":"2026-08-20"},{"primary":32.675,"ref_date":"2026-08-21"},{"primary":32.685,"ref_date":"2026-08-24"},{"primary":32.735,"ref_date":"2026-08-25"},{"primary":32.745,"ref_date":"2026-08-26"},{"primary":32.855,"ref_date":"2026-08-27"},{"primary":32.955,"ref_date":"2026-08-28"},{"primary":33.165,"ref_date":"2026-08-31"}]},"generated_from":["2026-08-07","2026-08-08","2026-08-09","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-18","2026-08-19","2026-08-20","2026-08-21","2026-08-22","2026-08-25","2026-08-26","2026-08-27","2026-08-28","2026-08-29","2026-09-01"],"real_rate":{"BR":[{"date":"2026-08-10","value":9.775},{"date":"2026-08-11","value":9.609},{"date":"2026-08-12","value":9.609},{"date":"2026-08-13","value":9.359},{"date":"2026-08-14","value":9.359},{"date":"2026-08-18","value":9.359},{"date":"2026-08-19","value":9.359},{"date":"2026-08-20","value":9.359},{"date":"2026-08-21","value":9.359},{"date":"2026-08-22","value":9.359},{"date":"2026-08-25","value":9.359},{"date":"2026-08-26","value":9.359},{"date":"2026-08-27","value":9.359},{"date":"2026-08-28","value":9.557},{"date":"2026-08-29","value":9.557},{"date":"2026-09-01","value":9.557}],"EA":[{"date":"2026-08-10","value":0.1},{"date":"2026-08-11","value":-0.499},{"date":"2026-08-12","value":-0.499},{"date":"2026-08-13","value":-0.499},{"date":"2026-08-14","value":-0.499},{"date":"2026-08-18","value":-0.499},{"date":"2026-08-19","value":-0.499},{"date":"2026-08-20","value":-0.499},{"date":"2026-08-21","value":-0.499},{"date":"2026-08-22","value":-0.499},{"date":"2026-08-25","value":-0.499},{"date":"2026-08-26","value":-0.499},{"date":"2026-08-27","value":-0.499},{"date":"2026-08-28","value":-0.693},{"date":"2026-08-29","value":-0.693},{"date":"2026-09-01","value":-0.693}],"PH":[{"date":"2026-08-10","value":3.976},{"date":"2026-08-11","value":-1.613},{"date":"2026-08-12","value":-1.613},{"date":"2026-08-13","value":-1.613},{"date":"2026-08-14","value":-1.613},{"date":"2026-08-18","value":-1.613},{"date":"2026-08-19","value":-1.45},{"date":"2026-08-20","value":-1.45},{"date":"2026-08-21","value":-1.45},{"date":"2026-08-22","value":-1.45},{"date":"2026-08-25","value":-1.45},{"date":"2026-08-26","value":-1.45},{"date":"2026-08-27","value":-1.45},{"date":"2026-08-28","value":-1.45},{"date":"2026-08-29","value":-1.45},{"date":"2026-09-01","value":-1.45}],"TH":[{"date":"2026-08-11","value":-1.42},{"date":"2026-08-12","value":-1.42},{"date":"2026-08-13","value":-1.42},{"date":"2026-08-14","value":-1.42},{"date":"2026-08-18","value":-1.42},{"date":"2026-08-19","value":-1.42},{"date":"2026-08-20","value":-1.42},{"date":"2026-08-21","value":-1.42},{"date":"2026-08-22","value":-1.42},{"date":"2026-08-25","value":-1.42},{"date":"2026-08-26","value":-1.42},{"date":"2026-08-27","value":-1.42},{"date":"2026-08-28","value":-0.947},{"date":"2026-08-29","value":-0.947},{"date":"2026-09-01","value":-0.947}],"US":[{"date":"2026-08-10","value":1.67},{"date":"2026-08-11","value":0.094},{"date":"2026-08-12","value":0.094},{"date":"2026-08-13","value":0.26},{"date":"2026-08-14","value":0.26},{"date":"2026-08-18","value":0.26},{"date":"2026-08-19","value":0.26},{"date":"2026-08-20","value":0.26},{"date":"2026-08-21","value":0.26},{"date":"2026-08-22","value":0.26},{"date":"2026-08-25","value":0.26},{"date":"2026-08-26","value":0.26},{"date":"2026-08-27","value":0.26},{"date":"2026-08-28","value":0.26},{"date":"2026-08-29","value":0.26},{"date":"2026-09-01","value":0.26}]},"runs":{"BRL":{"direction":"weak","n":2},"EUR":{"direction":"weak","n":3},"PHP":{"direction":"weak","n":3},"THB":{"direction":"weak","n":6}},"skipped":[],"verdict_order":["命中","未命中","无法判定","未到期","未复盘"],"verdict_totals":{"命中":29,"无法判定":12,"未到期":7,"未命中":27,"未复盘":20},"verdicts_by_date":{"2026-08-07":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5},"2026-08-08":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5},"2026-08-09":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5},"2026-08-10":{"命中":1,"无法判定":4,"未到期":0,"未命中":0,"未复盘":0},"2026-08-11":{"命中":2,"无法判定":3,"未到期":0,"未命中":0,"未复盘":0},"2026-08-12":{"命中":3,"无法判定":2,"未到期":0,"未命中":0,"未复盘":0},"2026-08-13":{"命中":2,"无法判定":2,"未到期":1,"未命中":0,"未复盘":0},"2026-08-14":{"命中":2,"无法判定":0,"未到期":1,"未命中":2,"未复盘":0},"2026-08-18":{"命中":2,"无法判定":1,"未到期":0,"未命中":2,"未复盘":0},"2026-08-19":{"命中":1,"无法判定":0,"未到期":0,"未命中":4,"未复盘":0},"2026-08-20":{"命中":2,"无法判定":0,"未到期":0,"未命中":3,"未复盘":0},"2026-08-21":{"命中":4,"无法判定":0,"未到期":0,"未命中":1,"未复盘":0},"2026-08-22":{"命中":0,"无法判定":0,"未到期":0,"未命中":5,"未复盘":0},"2026-08-25":{"命中":0,"无法判定":0,"未到期":0,"未命中":5,"未复盘":0},"2026-08-26":{"命中":1,"无法判定":0,"未到期":1,"未命中":3,"未复盘":0},"2026-08-27":{"命中":2,"无法判定":0,"未到期":1,"未命中":2,"未复盘":0},"2026-08-28":{"命中":3,"无法判定":0,"未到期":2,"未命中":0,"未复盘":0},"2026-08-29":{"命中":4,"无法判定":0,"未到期":1,"未命中":0,"未复盘":0},"2026-09-01":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5}},"weekly":[{"rates":{"BRL":{"chg_pct_week":1.878,"days_observed":5,"fixings":3,"range_high":5.1811,"range_low":5.0856},"EUR":{"chg_pct_week":0.181,"days_observed":5,"fixings":3,"range_high":0.867,"range_low":0.86543},"PHP":{"chg_pct_week":0.947,"days_observed":5,"fixings":3,"range_high":61.325,"range_low":60.75},"THB":{"chg_pct_week":0.354,"days_observed":5,"fixings":3,"range_high":33.13,"range_low":33.013}},"verdicts":{"命中":10,"无法判定":11,"未到期":2,"未命中":2,"未复盘":0},"week":"2026-W33"},{"rates":{"BRL":{"chg_pct_week":-0.716,"days_observed":5,"fixings":5,"range_high":5.2102,"range_low":5.1729},"EUR":{"chg_pct_week":-0.907,"days_observed":5,"fixings":5,"range_high":0.86386,"range_low":0.85477},"PHP":{"chg_pct_week":0.245,"days_observed":5,"fixings":5,"range_high":61.821,"range_low":61.509},"THB":{"chg_pct_week":-1.06,"days_observed":5,"fixings":5,"range_high":33.065,"range_low":32.675}},"verdicts":{"命中":9,"无法判定":0,"未到期":8,"未命中":3,"未复盘":5},"week":"2026-W34"},{"rates":{"BRL":{"chg_pct_week":0.276,"days_observed":5,"fixings":5,"range_high":5.1641,"range_low":5.142},"EUR":{"chg_pct_week":0.181,"days_observed":5,"fixings":5,"range_high":0.85889,"range_low":0.85697},"PHP":{"chg_pct_week":0.867,"days_observed":5,"fixings":5,"range_high":62.254,"range_low":61.661},"THB":{"chg_pct_week":0.826,"days_observed":5,"fixings":5,"range_high":32.955,"range_low":32.685}},"verdicts":{"命中":5,"无法判定":0,"未到期":9,"未命中":6,"未复盘":5},"week":"2026-W35"}]}</script>
+<script id="facts" type="application/json">{"change_kinds":["方向变了","触发位变了","依据变了","无实质变化"],"changes":{"BRL":{"body":"方向没动;触发位随上沿一起上移到 5.1718,上期那一位 5.1641 已经在本次定盘被越过。同一环里另有一件:驱动由存量的套息垫结构,换成两条本地报道 —— 降息之后仍居全球实际利率榜首,以及 9 月 Copom、联储与选举三件事同时排在前面。","kind":"触发位变了","text":"**触发位变了**。方向没动;触发位随上沿一起上移到 5.1718,上期那一位 5.1641 已经在本次定盘被越过。同一环里另有一件:驱动由存量的套息垫结构,换成两条本地报道 —— 降息之后仍居全球实际利率榜首,以及 9 月 Copom、联储与选举三件事同时排在前面。"},"EUR":{"body":"方向与触发位都没动,仍是跌破 0.85697;换掉的是驱动那一环 —— 由\"通胀率将升至 2023 年以来最高\"这条前瞻预期,换成德国通胀走高这条已经出来的成员国读数。同一环里另有一件:欧元的幅度从四条里最小的一档挪到了第二大的一档,而方向一步没改。","kind":"依据变了","text":"**依据变了**。方向与触发位都没动,仍是跌破 0.85697;换掉的是驱动那一环 —— 由\"通胀率将升至 2023 年以来最高\"这条前瞻预期,换成德国通胀走高这条已经出来的成员国读数。同一环里另有一件:欧元的幅度从四条里最小的一档挪到了第二大的一档,而方向一步没改。"},"PHP":{"body":"方向没动,仍关注继续升破上沿;触发位随上沿一起上移到 62.397,上期那一位 62.254 已经在本次定盘被越过。同一环里另有一件:驱动由关口失守与干预风险这一对,换成组合流量这一侧 —— 净流入骤降 91% 与\"亚洲最弱的一环\"这个称呼,传导也随之从风险溢价改挂到资金流。","kind":"触发位变了","text":"**触发位变了**。方向没动,仍关注继续升破上沿;触发位随上沿一起上移到 62.397,上期那一位 62.254 已经在本次定盘被越过。同一环里另有一件:驱动由关口失守与干预风险这一对,换成组合流量这一侧 —— 净流入骤降 91% 与\"亚洲最弱的一环\"这个称呼,传导也随之从风险溢价改挂到资金流。"},"THB":{"body":",而且是整段区间一起被抬走的一次。方向没动;上沿上移到 33.165、下沿同时上移到 32.735,上期那一位 32.955 已经在本次定盘被越过。同一环里另有一件:驱动由行长的口头表态,换成全球债券利率这条外部变量,分歧点也从政策空间挪到了利差。","kind":"触发位变了","text":"**触发位变了**,而且是整段区间一起被抬走的一次。方向没动;上沿上移到 33.165、下沿同时上移到 32.735,上期那一位 32.955 已经在本次定盘被越过。同一环里另有一件:驱动由行长的口头表态,换成全球债券利率这条外部变量,分歧点也从政策空间挪到了利差。"},"USD":{"body":"方向没动,仍关注加息押注压过各自的本地驱动;触发位随 5 运行日区间上沿一起上移到 0.86237,上期那一位 0.85889 已经在本次定盘被越过。同一环里另有一件:驱动由新任主席\"暗示可能需要加息\",推进到市场把他读成为 9 月那一次会议背书 —— 叙事从\"会不会\"落到了\"哪一次\"。","kind":"触发位变了","text":"**触发位变了**。方向没动,仍关注加息押注压过各自的本地驱动;触发位随 5 运行日区间上沿一起上移到 0.86237,上期那一位 0.85889 已经在本次定盘被越过。同一环里另有一件:驱动由新任主席\"暗示可能需要加息\",推进到市场把他读成为 9 月那一次会议背书 —— 叙事从\"会不会\"落到了\"哪一次\"。"}},"currencies":["USD","EUR","PHP","THB","BRL"],"date":"2026-09-01","deltas":{"BRL":{"at_high":true,"at_low":false,"band":{"high":5.1718,"low":5.142},"band_move":"up","direction":"weak","latest_fixing":{"ref_date":"2026-08-31","value":5.1718},"prior_band":{"high":5.1641,"low":5.142},"prior_fixing":{"ref_date":"2026-08-28","value":5.1641}},"EUR":{"at_high":true,"at_low":false,"band":{"high":0.86237,"low":0.85697},"band_move":"up","direction":"weak","latest_fixing":{"ref_date":"2026-08-31","value":0.86237},"prior_band":{"high":0.85889,"low":0.85697},"prior_fixing":{"ref_date":"2026-08-28","value":0.85889}},"PHP":{"at_high":true,"at_low":false,"band":{"high":62.397,"low":61.661},"band_move":"up","direction":"weak","latest_fixing":{"ref_date":"2026-08-31","value":62.397},"prior_band":{"high":62.254,"low":61.661},"prior_fixing":{"ref_date":"2026-08-28","value":62.254}},"THB":{"at_high":true,"at_low":false,"band":{"high":33.165,"low":32.735},"band_move":"up","direction":"weak","latest_fixing":{"ref_date":"2026-08-31","value":33.165},"prior_band":{"high":32.955,"low":32.685},"prior_fixing":{"ref_date":"2026-08-28","value":32.955}}},"overview":{"BRL":{"basis":"据报道降息后仍居全球实际利率榜首 [@BRLa];实际利率 9.557 [@RR-BR]","invalidation":"到 2026-09-16 的 COPOM 为止,政策利率 14.0 与实际利率 9.557 这一对一次都没有换过(时限:2026-09-16)","trigger":"雷亚尔参考价在下一次定盘继续升破 5 运行日区间上沿 5.1718 → 关注 9.557 的套息垫失守(T+5)"},"EUR":{"basis":"据报道德国通胀走高强化 ECB 加息理由 [@EURa];实际利率 -0.693 [@RR-EA]","invalidation":"到 2026-09-10 的 ECB 货币政策会议为止,政策利率 2.25 与 CPI 同比 2.942874 这一对一次都没有换过(时限:2026-09-10)","trigger":"欧元参考价在下一次定盘跌破 5 运行日区间下沿 0.85697 → 关注欧元区自己的加息理由开始进价(T+3)"},"PHP":{"basis":"据报道 7 月\"热钱\"净流入骤降 91%、比索被称亚洲最弱的一环 [@PHPa][@PHPb];实际利率 -1.45 [@RR-PH]","invalidation":"到 2026-09-04 下一期 CPI 发布为止,序列里的政策利率 4.75 与实际利率 -1.45 一次都没有动过(时限:2026-09-04)","trigger":"比索参考价在下一次定盘继续升破 5 运行日区间上沿 62.397 → 关注组合流量缺口压不住比索这条关系延续(T+3)"},"THB":{"basis":"据报道全球债券利率威胁泰国市场 [@THBb];实际利率 -0.947 [@RR-TH]","invalidation":"至 T+10,政策利率 1.0 一次都没有被下调,-0.947 也没有再改善","trigger":"泰铢参考价在下一次定盘继续升破 5 运行日区间上沿 33.165 → 关注全球债券利率这一层继续落到汇率上(T+3)"},"USD":{"basis":"据报道美元逼近两周高位、市场读作为 9 月加息背书 [@USDa][@USDb];实际利率 0.26 [@RR-US]","invalidation":"到 2026-09-04 的就业读数落地为止,政策利率 3.625 与实际利率 0.26 一次都没有动过(时限:2026-09-04)","trigger":"下一次定盘欧元继续升破 5 运行日区间上沿 0.86237 → 关注加息押注继续压过各自的本地驱动(T+5)"}},"prior_date":"2026-08-29","review":{"declaration":"到期复盘 9 条;未到期 7 条顺延;已定论 59 条不再复盘;结构化字段之前的历史观点 15 条不在本节复盘范围","lines":["2026-08-29 USD 命中(时限 T+5、按 5 个运行日计、第 1 个运行日 2026-09-01 EUR 参考价 0.86237 高于 0.85889) —— 分歧点(加息预期能否继续压过各自的本地驱动)被检验,第一个运行日四条又一起朝同一侧走了。","2026-08-29 PHP 命中(时限 T+3、按 3 个运行日计、第 1 个运行日 2026-09-01 PHP 参考价 62.397 高于 62.254) —— 分歧点(干预风险能否压住比索)被检验,第一个运行日比索就走过了那一位。","2026-08-29 THB 命中(时限 T+3、按 3 个运行日计、第 1 个运行日 2026-09-01 THB 参考价 33.165 高于 32.955) —— 分歧点(政策空间被压缩这一层是否继续落到汇率上)被检验,第一个运行日泰铢以四条里最大的一档走过那一位。","2026-08-29 BRL 命中(时限 T+5、按 5 个运行日计、第 1 个运行日 2026-09-01 BRL 参考价 5.1718 高于 5.1641) —— 分歧点(套息垫会不会失守)被检验,第一个运行日就走过那一位,而垫本身一分没薄。","2026-08-26 USD 命中(时限 T+5、按 5 个运行日计、第 4 个运行日 2026-09-01 EUR 参考价 0.86237 高于 0.8617) —— 分歧点(加息主张能否在价里取得权重)被检验,拖到第四个运行日才走过,而那一位比本期这一档低。","2026-08-25 USD 未命中(时限 T+5、按 5 个运行日计、窗口内 5 个运行日均未满足、末次 EUR 参考价 0.86237 未低于 0.85477) —— 分歧点(制裁推力会不会断、美元一端回吐重启)被检验,整段推力一次都没有回吐。","2026-08-25 BRL 未命中(时限 T+5、按 5 个运行日计、窗口内 5 个运行日均未满足、末次 BRL 参考价 5.1718 未高于 5.2074) —— 分歧点(套息垫会不会失守)在更高的那一位上没有被检验到,雷亚尔整段都留在那一位之内。","2026-08-27 EUR 未命中(时限 T+3、按 3 个运行日计、窗口内 3 个运行日均未满足、末次 EUR 参考价 0.86237 未低于 0.85477) —— 分歧点(9 月加息会不会真正进价)被检验,三个运行日里欧元一路走到区间上沿,一次都没有走到那一侧。","2026-08-27 PHP 未命中(时限 T+3、按 3 个运行日计、窗口内 3 个运行日均未满足、末次 PHP 参考价 62.397 未低于 61.66) —— 分歧点(紧缩领先关系能否继续被定价)被检验,三个运行日里比索一直朝相反方向走。","另有 7 条顺延,来自 2026-08-13、2026-08-14、2026-08-26、2026-08-27、2026-08-28、2026-08-29 这几天的观点,时限都还没有到。"]},"rings":{"BRL":{"传导":"全球最高的实际利率 → 做多套息的头寸在这一端拿到的持有收益仍最厚 → 利差 → 汇率;要价的正是这批头寸,而 9 月那三件事同时排在前面,它们要的补偿里多了一层日程风险。","关键假设":"政策利率 14.0 期 2026-08-25 到 2026-09-16 的 COPOM 之前不再降一档,9.557 因此保持(不成立则垫变薄,本行方向反过来)","分歧与判断":"关键假设:政策利率 14.0 期 2026-08-25 到 2026-09-16 的 COPOM 之前不再降一档,9.557 因此保持(不成立则垫变薄,本行方向反过来);替代解释:据报道 Focus 预计 2026 年通胀与 GDP 双双下修 [@BRLc],通胀下修把垫加厚、GDP 下修削弱本币资产的吸引力,两者相抵才是这一档最小幅度的成因(其翻转指标:下一次定盘雷亚尔与另外三条不再同号);翻转指标:雷亚尔跌回 5.142(T+5)。","是否已反映":"反映了一部分:5.1718 仍把区间上沿刷成它自己,但 0.149% 是四条里最小的一档,而实际利率 9.557 与政策利率 14.0 期 2026-08-25 较前一日未变。","替代解释":"据报道 Focus 预计 2026 年通胀与 GDP 双双下修 [@BRLc],通胀下修把垫加厚、GDP 下修削弱本币资产的吸引力,两者相抵才是这一档最小幅度的成因(其翻转指标:下一次定盘雷亚尔与另外三条不再同号)","翻转指标":"雷亚尔跌回 5.142(T+5)。","驱动":"据报道降息之后巴西仍居全球实际利率排行榜首 [@BRLa];同日另一条称 9 月面对 Copom、联储与选举三件事,美元偏强 [@BRLb]。"},"EUR":{"传导":"成员国通胀读数走高 → 欧元区短端政策路径的定价被上修 → 利差 → 汇率;要价的是持有欧元区短端债券的配置盘,而 -0.693 这个负实际利率仍在削掉它们能拿到的补偿。","关键假设":"政策利率 2.25 期 2026-08-25 到 2026-09-10 的决议之前不变,-0.693 因此保持(不成立则驱动换成决议本身,本行作废)","分歧与判断":"关键假设:政策利率 2.25 期 2026-08-25 到 2026-09-10 的决议之前不变,-0.693 因此保持(不成立则驱动换成决议本身,本行作废);替代解释:0.405% 只是四条同号里分给欧元的那一份,与德国那条读数无关(其翻转指标:下一次定盘欧元与泰铢的幅度次序互换);翻转指标:欧元跌破 0.85697(T+3)。","是否已反映":"没有:欧元 0.405% 仍朝美元走弱,0.86237 把区间上沿刷成它自己 —— 加息理由被强化的同一天,价里认的还是美元一端。","替代解释":"0.405% 只是四条同号里分给欧元的那一份,与德国那条读数无关(其翻转指标:下一次定盘欧元与泰铢的幅度次序互换)","翻转指标":"欧元跌破 0.85697(T+3)。","驱动":"据报道德国通胀走高,强化了 ECB 加息的理由 [@EURa]。"},"PHP":{"传导":"组合投资净流入塌方 → 本币资产的边际买盘消失 → 资金流 → 汇率;要价的是这批组合盘,它们撤走的那一份没有别的买家接过去。","关键假设":"政策利率 4.75 期 2026-08-20 这一档到 2026-09-04 之前不变,-1.45 仍是五条里最深的负实际利率(不成立则分歧点当场换回利率路径本身)","分歧与判断":"关键假设:政策利率 4.75 期 2026-08-20 这一档到 2026-09-04 之前不变,-1.45 仍是五条里最深的负实际利率(不成立则分歧点当场换回利率路径本身);替代解释:据报道 8 月通胀可能已放缓到 6.0% [@PHPc],若兑现则实际利率一端改善,走弱来自美元而不是本地流量缺口(其翻转指标:2026-09-04 的读数确认放缓、而比索当日不再刷出新的上沿);翻转指标:比索跌回 61.661(T+3)。","是否已反映":"只反映了一部分:62.397 把区间上沿刷成它自己,但 0.23% 只排在四条的第三档,而政策利率 4.75 期 2026-08-20 与实际利率 -1.45 较前一日未变。","替代解释":"据报道 8 月通胀可能已放缓到 6.0% [@PHPc],若兑现则实际利率一端改善,走弱来自美元而不是本地流量缺口(其翻转指标:2026-09-04 的读数确认放缓、而比索当日不再刷出新的上沿)","翻转指标":"比索跌回 61.661(T+3)。","驱动":"据报道比索被点名为亚洲\"最弱的一环\" [@PHPa];同日另一条称 7 月菲律宾\"热钱\"净流入骤降 91% [@PHPb]。"},"THB":{"传导":"全球债券利率抬升 → 泰国本地债的相对吸引力下降、持有人要求的补偿上移 → 利差 → 汇率;要价的是持有泰铢债的那批人,而政策利率 1.0 没有给他们任何加价空间。","关键假设":"政策利率 1.0 期 2026-08-20 在下一次会议之前不变,-0.947 因此保持(不成立则调整份额回到利率一端,本行作废)","分歧与判断":"关键假设:政策利率 1.0 期 2026-08-20 在下一次会议之前不变,-0.947 因此保持(不成立则调整份额回到利率一端,本行作废);替代解释:0.637% 是四条同号里最大的一份,推力来自美元一端而非本地债市(其翻转指标:下一次定盘泰铢幅度回落到四条的中间一档);翻转指标:泰铢跌回 32.735(T+3)。另据报道央行称 7 月贸易账户处于平衡 [@THBc],该项不构成汇率方向上的影响,收支两侧相抵,不落在利差、风险溢价、资金流、政策空间任何一条上。","是否已反映":"已反映:33.165 就是区间上沿本身,下沿也跟着上移到 32.735,而政策利率 1.0 期 2026-08-20 与实际利率 -0.947 较前一日未变。","替代解释":"0.637% 是四条同号里最大的一份,推力来自美元一端而非本地债市(其翻转指标:下一次定盘泰铢幅度回落到四条的中间一档)","翻转指标":"泰铢跌回 32.735(T+3)。另据报道央行称 7 月贸易账户处于平衡 [@THBc],该项不构成汇率方向上的影响,收支两侧相抵,不落在利差、风险溢价、资金流、政策空间任何一条上。","驱动":"据报道泰国央行驳斥了把泰国比作\"日本化\"停滞的说法 [@THBa];同日另一条称全球债券利率正在威胁泰国市场 [@THBb]。泰铢 0.637% 是四条里最大的一档。"},"USD":{"传导":"加息押注被再推高一档 → 持有美元短端资产的预期补偿随之上移 → 利差 → 汇率;要价的是跨境配置盘与套息头寸的融资端,它们按这条预期给同一条利差重新报价。","关键假设":"期 2026-07 的 3.365 与期 2026-08-25 的政策利率 3.625 这一对到 2026-09-11 之前不变,押的仍是预期而不是已兑现的利差(不成立则驱动换成加息本身,预期先行这一层作废)","分歧与判断":"关键假设:期 2026-07 的 3.365 与期 2026-08-25 的政策利率 3.625 这一对到 2026-09-11 之前不变,押的仍是预期而不是已兑现的利差(不成立则驱动换成加息本身,预期先行这一层作废);替代解释:同一天另一条称美元下滑、交易员已在看周五的就业数据 [@USDc],推力其实已经转到就业这一侧(其翻转指标:2026-09-04 就业读数落地当日四条不再同号);翻转指标:欧元跌破 0.85697(T+5)。","是否已反映":"已反映:四条当次定盘全部再刷出各自区间上沿(欧元 0.86237、比索 62.397、泰铢 33.165、雷亚尔 5.1718),而实际利率 0.26 与政策利率 3.625 仍然一次未动。","替代解释":"同一天另一条称美元下滑、交易员已在看周五的就业数据 [@USDc],推力其实已经转到就业这一侧(其翻转指标:2026-09-04 就业读数落地当日四条不再同号)","翻转指标":"欧元跌破 0.85697(T+5)。","驱动":"据报道美元因 Warsh 推高加息押注逼近两周高位,日元同时跌破 160 [@USDa];同日另一条称市场把他读成为 9 月加息背书,但并非所有人被说服 [@USDb]。"}},"summary":["USD:据报道美元因 Warsh 推高加息押注逼近两周高位、日元跌破 160 [@USDa],市场把他读成为 9 月加息背书,但并非所有人被说服 [@USDb];四条当次定盘再次全部朝美元走弱、又一起刷出各自区间上沿,而实际利率 0.26 仍未动;若下一次定盘欧元继续升破 0.86237,关注加息押注继续压过各自的本地驱动(T+5)[@RR-US]","THB:据报道泰国央行驳斥把泰国比作\"日本化\"停滞的说法 [@THBa],同日另一条称全球债券利率正在威胁泰国市场 [@THBb];泰铢 0.637% 是四条里最大的一档,33.165 与下沿 32.735 把整段区间一起抬走;若下一次定盘继续升破 33.165,关注全球债券利率这一层继续落到汇率上(T+3)[@RR-TH]","PHP:据报道比索被点名为亚洲\"最弱的一环\" [@PHPa],同日另一条称 7 月\"热钱\"净流入骤降 91% [@PHPb];62.397 把区间上沿刷成它自己,而 0.23% 只排在四条的第三档;若下一次定盘继续升破 62.397,关注组合流量缺口压不住比索这条关系延续(T+3)[@RR-PH]","EUR:据报道德国通胀走高强化了 ECB 加息的理由 [@EURa];但欧元 0.405% 仍朝美元走弱、0.86237 刷出区间上沿,而实际利率 -0.693 较前一日未变;若下一次定盘跌破 0.85697,关注欧元区自己的加息理由开始进价(T+3)[@RR-EA]","BRL:据报道降息之后巴西仍居全球实际利率排行榜首 [@BRLa],同日另一条称 9 月面对 Copom、联储与选举三件事,美元偏强 [@BRLb];雷亚尔 0.149% 是四条里最小的一档;若下一次定盘继续升破 5.1718,关注 9.557 的套息垫失守(T+5)[@RR-BR]"],"week":{"landing":{"BRL":{"call":"雷亚尔参考价在下一次定盘继续升破 5.1641 → 关注 9.557 的套息垫失守(T+5)","invalidation":"到 2026-09-16 的 COPOM 为止,政策利率 14.0 一次都没有再降一档(时限:2026-09-16)","level":"周涨跌 0.276%,周区间 5.142–5.1641","theme":"主线五"},"EUR":{"call":"欧元参考价在下一次定盘跌破 0.85697 → 关注欧元区自己的鹰派叙事终于取得定价权重(T+3)","invalidation":"到 2026-09-10 的 ECB 货币政策会议为止,政策利率 2.25 一次都没有变过(时限:2026-09-10)","level":"周涨跌 0.181%,周区间 0.85697–0.85889","theme":"主线四"},"PHP":{"call":"比索参考价在下一次定盘继续升破 62.254 → 关注干预风险这一层继续压过利差(T+3)","invalidation":"至 T+8,序列里的政策利率 4.75 一次都没有被上调,-1.45 仍是五条里最深的负值","level":"周涨跌 0.867%,周区间 61.661–62.254","theme":"主线二"},"THB":{"call":"泰铢参考价在下一次定盘继续升破 32.955 → 关注政策空间被压缩这一层继续落到汇率上(T+3)","invalidation":"至 T+10,政策利率 1.0 一次都没有被下调","level":"周涨跌 0.826%,周区间 32.685–32.955","theme":"主线三"},"USD":{"call":"下一次定盘欧元继续升破 0.85889、且政策利率仍为 3.625 → 关注加息预期继续统一四条的方向(T+5)","invalidation":"到 2026-09-11 参考月 2026-08 的 CPI 发布为止,3.365 一次都没有被换成新的一期(时限:2026-09-11)","level":"基准货币,聚合文件无自身汇率读数","theme":"主线一"}},"themes":[{"flip":"下一次定盘四条本币不再同号、至少一条朝本币走强 —— 一旦出现即改判美元一端的统一推力已经断掉,本线作废。","horizon":"T+5","id":"主线一","scope":["USD","EUR","PHP","THB","BRL"],"title":"美元一端的加息叙事连着五天换人开口,四条本币同号朝美元走弱"},{"flip":"下一次定盘比索跌回 61.661 —— 一旦出现即改判溢价这一层,加息给出的补偿开始被承接。","horizon":"T+3","id":"主线二","scope":["PHP"],"title":"加息真的落地了,比索反而以区间内最大的一档走弱,分歧点从利差搬到风险溢价"},{"flip":"下一次定盘泰铢跌回 32.685 —— 一旦出现即改判调整份额回到利率一端,汇率不再是唯一出口。","horizon":"T+3","id":"主线三","scope":["THB"],"title":"泰国把当前的问题定义在利率解决不了的那一类上,调整份额全额落到汇率"},{"flip":"下一次定盘欧元跌破 0.85697 —— 一旦出现即改判鹰派叙事终于取得定价权重,本线的\"叙事与价格背离\"作废。","horizon":"T+3","id":"主线四","scope":["EUR"],"title":"欧元区五天里鹰派表述连着出,而欧元是四条里挪得最少的一条"},{"flip":"下一次定盘雷亚尔跌回 5.142 —— 一旦出现即改判套息垫重新取得定价权重,本线的方向反过来。","horizon":"T+5","id":"主线五","scope":["BRL"],"title":"套息垫最厚的那一端,在这一区间里也没有走出自己的路径"}],"week":"2026-W35"}}</script>
 <script>
 (function () {
   "use strict";
   var D = JSON.parse(document.getElementById("series").textContent);
+  var F = JSON.parse(document.getElementById("facts").textContent);
+  var CCY = F.currencies;
   var PAIRS = ["EUR", "PHP", "THB", "BRL"];
-  var NAME = { EUR: "欧元", PHP: "菲律宾比索", THB: "泰铢", BRL: "巴西雷亚尔" };
-  var css = function (n) {
-    return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  };
-  var esc = function (s) {
-    return String(s).replace(/[&<>"]/g, function (c) {
+  var NAME = { USD: "美元", EUR: "欧元", PHP: "菲律宾比索", THB: "泰铢", BRL: "巴西雷亚尔" };
+  var KIND_CLASS = { "方向变了": "k-dir", "触发位变了": "k-lvl",
+                     "依据变了": "k-evi", "无实质变化": "k-none" };
+
+  function esc(s) {
+    return String(s === null || s === undefined ? "" : s).replace(/[&<>"]/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
-  };
-  var el = function (tag, attrs) {
+  }
+  // 报告里的 **粗体** 是作者标出来的重点，保留它，其余一律转义。
+  function md(s) {
+    return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  }
+  function svg(tag, attrs) {
     var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
     for (var k in attrs) n.setAttribute(k, attrs[k]);
     return n;
-  };
+  }
+  function set(id, html) { document.getElementById(id).innerHTML = html; }
 
-  /* ---------- masthead readout ---------- */
+  /* ---------- masthead ---------- */
+  document.getElementById("dl-now").textContent = F.date;
+  document.getElementById("dl-prior").textContent =
+    F.prior_date ? "相对 " + F.prior_date : "首次运行";
   var days = D.generated_from;
-  var totals = D.verdict_totals;
-  var callCount = D.verdict_order.reduce(function (s, k) { return s + (totals[k] || 0); }, 0);
-  var readout = [
-    ["日度读数", days.length],
-    ["定盘（每对）", D.fixings.EUR.length],
-    ["覆盖周数", D.weekly.length],
-    ["已登记观点", callCount],
-    ["同号走弱", PAIRS.filter(function (p) { return D.runs[p].direction === "weak"; }).length + " / 4"]
-  ];
-  document.getElementById("readout").innerHTML = readout.map(function (r) {
-    return '<div><span class="lab">' + esc(r[0]) + '</span><span class="val">' + esc(r[1]) + "</span></div>";
-  }).join("");
   document.getElementById("win").textContent = days[0] + " → " + days[days.length - 1];
 
-  /* ---------- fixing tapes ---------- */
-  var W = 420, H = 132, PAD_L = 8, PAD_R = 58, PAD_T = 14, PAD_B = 16;
-  var tapes = document.getElementById("tapes");
-  PAIRS.forEach(function (p) {
-    var series = D.fixings[p];
-    var bands = D.bands[p];
+  var tally = {};
+  CCY.forEach(function (c) {
+    var k = (F.changes[c] || {}).kind || "未标注";
+    tally[k] = (tally[k] || 0) + 1;
+  });
+  var order = F.change_kinds.concat(["未标注"]);
+  set("tally", order.filter(function (k) { return tally[k]; }).map(function (k) {
+    return '<span class="kind ' + (KIND_CLASS[k] || "k-unk") + '">' +
+      esc(k) + " <b>×" + tally[k] + "</b></span>";
+  }).join(""));
+
+  // 标题只说数得出来的那件事，不下判断：哪一类占了最多条，占了几条。
+  var top = order.filter(function (k) { return tally[k]; })
+    .sort(function (a, b) { return tally[b] - tally[a]; })[0];
+  var PHRASE = {
+    "方向变了": "条换了方向", "触发位变了": "条的触发位变了",
+    "依据变了": "条换了依据", "无实质变化": "条没有实质变化",
+    "未标注": "条未标注变化类型"
+  };
+  document.getElementById("headline").textContent =
+    CCY.length + " 条判断里，" + tally[top] + " " + PHRASE[top];
+
+  /* ---------- 变化台账 ---------- */
+  function sparkline(pair) {
+    var series = D.fixings[pair];
+    if (!series || series.length < 2) return "";
+    var vals = series.map(function (f) { return f.primary; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var span = (hi - lo) || 1;
+    var W = 210, H = 26, pad = 3;
+    var s = svg("svg", { viewBox: "0 0 " + W + " " + H, "class": "spark",
+                         role: "img", "aria-hidden": "true" });
+    series.forEach(function (f, i) {
+      var x = pad + (W - pad * 2) * (i / (series.length - 1));
+      var y = pad + (H - pad * 2) * (1 - (f.primary - lo) / span);
+      var prev = i > 0 ? series[i - 1].primary : null;
+      var col = prev === null || f.primary === prev ? "var(--tick)"
+        : (f.primary > prev ? "var(--weak)" : "var(--strong)");
+      var last = i === series.length - 1;
+      s.appendChild(svg("line", { x1: x, x2: x, y1: y - (last ? 6 : 4),
+        y2: y + (last ? 6 : 4), stroke: col, "stroke-width": last ? 2.4 : 1.5 }));
+    });
+    return s.outerHTML;
+  }
+
+  set("ledger", CCY.map(function (c) {
+    var ch = F.changes[c] || {};
+    var d = F.deltas[c];
+    var head, sub = "";
+    if (d && d.latest_fixing && d.prior_fixing) {
+      var dir = d.direction === "weak" ? "weak" : d.direction === "strong" ? "strong" : "";
+      var glyph = d.direction === "weak" ? "↑" : d.direction === "strong" ? "↓" : "→";
+      head = '<span class="move ' + dir + '"><span class="from">' + esc(d.prior_fixing.value) +
+        '</span><span class="arrow">' + glyph + '</span><span class="to">' +
+        esc(d.latest_fixing.value) + "</span></span>";
+      var band = d.band ? esc(d.band.low) + "–" + esc(d.band.high) : "—";
+      var moveWord = d.band_move === "up" ? "区间上移" : d.band_move === "down"
+        ? "区间下移" : "区间未动";
+      sub = '<span class="sub">' + moveWord + " " + band +
+        (d.at_high ? ' <span class="flag">贴上沿</span>'
+          : d.at_low ? ' <span class="flag low">贴下沿</span>' : "") +
+        "</span>";
+    } else {
+      head = '<span class="sub"><span class="flag plain">基准货币，无自身定盘序列</span></span>';
+    }
+    return '<div class="row">' +
+      '<div class="rail"><span class="code">' + esc(c) + '</span>' +
+      '<span class="cn">' + esc(NAME[c] || "") + "</span></div>" +
+      '<div class="row-main">' +
+      '<div class="delta">' + head + sub +
+      '<span class="kind ' + (KIND_CLASS[ch.kind] || "k-unk") + '">' +
+      esc(ch.kind || "未标注类型") + "</span>" + sparkline(c) + "</div>" +
+      '<p class="say">' + md(ch.body || ch.text || "报告未写这一行。") + "</p>" +
+      "</div></div>";
+  }).join(""));
+
+  /* ---------- 今日判断卡 ---------- */
+  set("cards", CCY.map(function (c) {
+    var ov = F.overview[c] || {};
+    var ring = F.rings[c] || {};
+    var d = F.deltas[c];
+    var px = d && d.latest_fixing ? d.latest_fixing.value : "—";
+    var rows = [
+      ["条件方向（时限）", ov.trigger],
+      ["核心依据", ov.basis],
+      ["失效条件 · 什么没发生就作废", ov.invalidation],
+      ["翻转指标 · 什么一出现就改判", ring["翻转指标"]],
+      ["关键假设", ring["关键假设"]]
+    ].filter(function (r) { return r[1]; });
+    var tape = "";
+    if (D.fixings[c] && D.fixings[c].length > 1) {
+      var s = D.fixings[c];
+      tape = '<div>' + tapeSvg(c) + '<div class="tape-foot"><span>' +
+        esc(s[0].ref_date) + "</span><span>" + esc(s[s.length - 1].ref_date) +
+        "</span></div></div>";
+    }
+    return '<div class="card"><div class="card-top">' +
+      '<span class="code">' + esc(c) + ' <span style="font-weight:400;font-size:12px;color:var(--muted)">' +
+      esc(NAME[c] || "") + '</span></span><span class="px">' + esc(px) + "</span></div>" +
+      tape +
+      '<div class="dl">' + rows.map(function (r) {
+        return '<div><span class="lab">' + esc(r[0]) + '</span><p>' + md(r[1]) + "</p></div>";
+      }).join("") + "</div></div>";
+  }).join(""));
+
+  function tapeSvg(pair) {
+    var series = D.fixings[pair];
+    var bands = D.bands[pair] || [];
     var band = null, i;
     for (i = bands.length - 1; i >= 0; i--) {
       if (bands[i].low !== null && bands[i].high !== null) { band = bands[i]; break; }
@@ -278,95 +442,135 @@ a{color:var(--accent)}
     var vals = series.map(function (f) { return f.primary; });
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     if (band) { lo = Math.min(lo, band.low); hi = Math.max(hi, band.high); }
-    var span = hi - lo || 1;
-    lo -= span * 0.16; hi += span * 0.16; span = hi - lo;
-    var x = function (idx) {
-      return PAD_L + (W - PAD_L - PAD_R) * (series.length < 2 ? 0.5 : idx / (series.length - 1));
-    };
-    var y = function (v) { return PAD_T + (H - PAD_T - PAD_B) * (1 - (v - lo) / span); };
-
-    var svg = el("svg", { viewBox: "0 0 " + W + " " + H, role: "img" });
-    svg.setAttribute("aria-label", NAME[p] + " 的 " + series.length + " 次定盘与 5 运行日区间");
-
+    var span = (hi - lo) || 1;
+    lo -= span * 0.18; hi += span * 0.18; span = hi - lo;
+    var W = 420, H = 104, L = 6, R = 60, T = 12, B = 10;
+    var x = function (idx) { return L + (W - L - R) * (idx / (series.length - 1)); };
+    var y = function (v) { return T + (H - T - B) * (1 - (v - lo) / span); };
+    var s = svg("svg", { viewBox: "0 0 " + W + " " + H, "class": "tape", role: "img" });
+    s.setAttribute("aria-label", (NAME[pair] || pair) + " 的 " + series.length + " 次定盘与 5 运行日区间");
     if (band) {
-      svg.appendChild(el("rect", {
-        x: PAD_L, y: y(band.high), width: W - PAD_L - PAD_R,
-        height: Math.max(1.5, y(band.low) - y(band.high)), fill: "var(--band)"
-      }));
-      [["high", band.high], ["low", band.low]].forEach(function (b) {
-        svg.appendChild(el("line", {
-          x1: PAD_L, x2: W - PAD_R + 4, y1: y(b[1]), y2: y(b[1]),
-          stroke: "var(--accent)", "stroke-width": 1, "stroke-dasharray": "2 3", opacity: .65
-        }));
-        var t = el("text", {
-          x: W - PAD_R + 8, y: y(b[1]) + 3.5, fill: "var(--muted)",
-          "font-size": 9.5, "font-family": '"IBM Plex Mono",monospace'
-        });
-        t.textContent = b[1];
-        svg.appendChild(t);
+      s.appendChild(svg("rect", { x: L, y: y(band.high), width: W - L - R,
+        height: Math.max(1.5, y(band.low) - y(band.high)), fill: "var(--band)" }));
+      [band.high, band.low].forEach(function (v) {
+        s.appendChild(svg("line", { x1: L, x2: W - R + 4, y1: y(v), y2: y(v),
+          stroke: "var(--accent)", "stroke-width": 1, "stroke-dasharray": "2 3", opacity: .6 }));
+        var t = svg("text", { x: W - R + 8, y: y(v) + 3.4, fill: "var(--muted)",
+          "font-size": 9.5, "font-family": '"IBM Plex Mono",monospace' });
+        t.textContent = v;
+        s.appendChild(t);
       });
     }
-
     series.forEach(function (f, idx) {
       var prev = idx > 0 ? series[idx - 1].primary : null;
       var col = prev === null || f.primary === prev ? "var(--tick)"
         : (f.primary > prev ? "var(--weak)" : "var(--strong)");
       var last = idx === series.length - 1;
-      svg.appendChild(el("line", {
-        x1: x(idx), x2: x(idx), y1: y(f.primary) - (last ? 9 : 6), y2: y(f.primary) + (last ? 9 : 6),
-        stroke: col, "stroke-width": last ? 2.6 : 1.8, "stroke-linecap": "butt"
-      }));
-      if (last) svg.appendChild(el("circle", { cx: x(idx), cy: y(f.primary), r: 3, fill: col }));
+      s.appendChild(svg("line", { x1: x(idx), x2: x(idx), y1: y(f.primary) - (last ? 8 : 5),
+        y2: y(f.primary) + (last ? 8 : 5), stroke: col, "stroke-width": last ? 2.6 : 1.7 }));
+      if (last) s.appendChild(svg("circle", { cx: x(idx), cy: y(f.primary), r: 2.8, fill: col }));
     });
+    return s.outerHTML;
+  }
 
-    var latest = series[series.length - 1];
-    var run = D.runs[p];
-    var dirWord = run.direction === "weak" ? "走弱" : run.direction === "strong" ? "走强" : "持平";
-    var card = document.createElement("div");
-    card.className = "tape";
-    card.innerHTML =
-      '<div class="tape-top"><span class="pair">' + p + " <span style=\"font-weight:400;font-size:12px;color:var(--muted)\">" + NAME[p] +
-      '</span></span><span class="last">' + latest.primary + "</span></div>" +
-      '<p class="tape-sub">最近连续 <span class="run ' + (run.direction === "weak" ? "weak" : run.direction === "strong" ? "strong" : "") +
-      '">' + run.n + " 次" + dirWord + "</span>" + (band ? " · 区间 " + band.low + "–" + band.high : "") + "</p>";
-    card.appendChild(svg);
-    var foot = document.createElement("div");
-    foot.className = "tape-foot";
-    foot.innerHTML = "<span>" + esc(series[0].ref_date) + "</span><span>" + esc(latest.ref_date) + "</span>";
-    card.appendChild(foot);
-    tapes.appendChild(card);
+  /* ---------- 复盘 ---------- */
+  document.getElementById("decl").textContent = F.review.declaration || "";
+  var kindOf = function (line) {
+    if (line.indexOf("命中") >= 0 && line.indexOf("未命中") < 0) return "hit";
+    if (line.indexOf("未命中") >= 0) return "miss";
+    if (line.indexOf("无法判定") >= 0) return "undec";
+    return "";
+  };
+  set("resolved", F.review.lines.map(function (l) {
+    return '<li class="' + kindOf(l) + '">' + md(l) + "</li>";
+  }).join(""));
+
+  var vorder = D.verdict_order;
+  var colorOf = { "命中": "var(--hit)", "未命中": "var(--miss)", "无法判定": "var(--undec)",
+                  "未到期": "var(--pending)", "未复盘": "var(--unrev)" };
+  var dates = Object.keys(D.verdicts_by_date);
+  var sc = document.getElementById("calls");
+  var CW = 960, CH = 200, cL = 6, cR = 6, cT = 10, cB = 32;
+  var colW = (CW - cL - cR) / dates.length;
+  var maxN = Math.max.apply(null, dates.map(function (dt) {
+    return vorder.reduce(function (s2, k) { return s2 + (D.verdicts_by_date[dt][k] || 0); }, 0);
+  })) || 1;
+  dates.forEach(function (dt, i) {
+    var acc = 0, bx = cL + colW * i + colW * 0.16, bw = colW * 0.68;
+    vorder.forEach(function (k) {
+      var n = D.verdicts_by_date[dt][k] || 0;
+      if (!n) return;
+      var h = (CH - cT - cB) * (n / maxN);
+      acc += h;
+      sc.appendChild(svg("rect", { x: bx, y: CH - cB - acc, width: bw, height: h,
+        fill: colorOf[k] }));
+    });
+    var t = svg("text", { x: bx + bw / 2, y: CH - cB + 15, fill: "var(--muted)",
+      "text-anchor": "middle", "font-size": 9.5,
+      "font-family": '"IBM Plex Mono",monospace' });
+    t.textContent = dt.slice(5);
+    sc.appendChild(t);
   });
+  sc.appendChild(svg("line", { x1: cL, x2: CW - cR, y1: CH - cB, y2: CH - cB,
+    stroke: "var(--rule)", "stroke-width": 1 }));
+  set("calls-legend", vorder.map(function (k) {
+    return '<span><i style="background:' + colorOf[k] + '"></i>' + esc(k) + "</span>";
+  }).join(""));
+  set("totals", vorder.map(function (k) {
+    return '<div><span class="lab">' + esc(k) + '</span><span class="n">' +
+      (D.verdict_totals[k] || 0) + "</span></div>";
+  }).join(""));
 
-  /* ---------- real-rate ladder ---------- */
+  /* ---------- 周主线 ---------- */
+  if (F.week && F.week.themes.length) {
+    document.getElementById("week-note").textContent =
+      F.week.week + " 的 " + F.week.themes.length +
+      " 条主线，及各自的翻转指标——什么一旦出现，这条线就作废。";
+    set("themes", F.week.themes.map(function (t) {
+      return '<div class="theme"><span class="tid">' + esc(t.id) + "</span><div>" +
+        "<h3>" + esc(t.title) + "</h3>" +
+        (t.scope.length ? '<div class="scope">' + t.scope.map(function (c) {
+          return "<span>" + esc(c) + "</span>"; }).join("") + "</div>" : "") +
+        (t.flip ? '<p class="flip"><b>翻转指标' +
+          (t.horizon ? "（" + esc(t.horizon) + "）" : "") + "：</b>" + esc(t.flip) + "</p>"
+          : '<p class="flip">该主线未写翻转指标。</p>') +
+        "</div></div>";
+    }).join(""));
+  } else {
+    document.getElementById("week-section").hidden = true;
+  }
+
+  /* ---------- 实际利率 ---------- */
   var rows = Object.keys(D.economy_name).map(function (e) {
     var s = D.real_rate[e];
     if (!s || !s.length) return null;
     var last = s[s.length - 1].value, held = 1;
     for (var i = s.length - 2; i >= 0; i--) { if (s[i].value !== last) break; held++; }
-    return { econ: e, name: D.economy_name[e], value: last, held: held, since: s[s.length - held].date };
+    return { name: D.economy_name[e], value: last, held: held,
+             since: s[s.length - held].date };
   }).filter(Boolean).sort(function (a, b) { return b.value - a.value; });
   var maxAbs = Math.max.apply(null, rows.map(function (r) { return Math.abs(r.value); })) || 1;
-  document.getElementById("ladder").innerHTML = rows.map(function (r) {
-    var half = 50, w = Math.abs(r.value) / maxAbs * half;
-    var pos = r.value >= 0;
-    return '<div class="rung">' +
-      '<span class="econ">' + esc(r.name) + "</span>" +
+  set("ladder", rows.map(function (r) {
+    var half = 50, w = Math.abs(r.value) / maxAbs * half, pos = r.value >= 0;
+    return '<div class="rung"><span class="econ">' + esc(r.name) + "</span>" +
       '<span class="bar"><span class="zero" style="left:' + half + '%"></span>' +
-      '<span class="fill" style="left:' + (pos ? half : half - w) + "%;width:" + w + "%;background:" +
-      (pos ? "var(--strong)" : "var(--weak)") + '"></span></span>' +
+      '<span class="fill" style="left:' + (pos ? half : half - w) + "%;width:" + w +
+      "%;background:" + (pos ? "var(--strong)" : "var(--weak)") + '"></span></span>' +
       '<span class="num">' + r.value + "</span>" +
-      '<span class="held">' + (r.held >= 2 ? "连续 " + r.held + " 份未变（自 " + r.since + "）" : "本份为新值") + "</span>" +
-      "</div>";
-  }).join("");
+      '<span class="held">' + (r.held >= 2 ? "连续 " + r.held + " 份未变（自 " + r.since + "）"
+        : "本份为新值") + "</span></div>";
+  }).join(""));
 
-  /* ---------- weekly matrix ---------- */
+  /* ---------- 逐周变动 ---------- */
   var weeks = D.weekly;
-  document.getElementById("weekly-head").innerHTML =
-    "<th>币种</th>" + weeks.map(function (w) { return "<th>" + esc(w.week) + " 周变动</th>"; }).join("") +
-    "<th>" + esc(weeks[weeks.length - 1].week) + " 区间</th>";
-  document.getElementById("weekly-body").innerHTML = PAIRS.map(function (p) {
-    var vs = weeks.map(function (w) { return w.rates && w.rates[p] ? w.rates[p].chg_pct_week : null; });
-    var m = Math.max.apply(null, vs.map(function (v) { return v === null ? 0 : Math.abs(v); })) || 1;
+  set("weekly-head", "<th>币种</th>" + weeks.map(function (w) {
+    return "<th>" + esc(w.week) + " 周变动</th>"; }).join("") +
+    "<th>" + esc(weeks[weeks.length - 1].week) + " 区间</th>");
+  set("weekly-body", PAIRS.map(function (p) {
+    var vs = weeks.map(function (w) {
+      return w.rates && w.rates[p] ? w.rates[p].chg_pct_week : null; });
+    var m = Math.max.apply(null, vs.map(function (v) {
+      return v === null ? 0 : Math.abs(v); })) || 1;
     var lastW = weeks[weeks.length - 1].rates[p];
     return '<tr><td class="pair-cell">' + p + "</td>" + vs.map(function (v) {
       if (v === null) return '<td><span class="cell"><span class="v">—</span></span></td>';
@@ -376,49 +580,8 @@ a{color:var(--accent)}
         (pos ? "var(--weak)" : "var(--strong)") + '"></i></span>' +
         '<span class="v" style="color:' + (pos ? "var(--weak)" : "var(--strong)") + '">' +
         (pos ? "+" : "") + v + "%</span></span></td>";
-    }).join("") +
-      '<td><span class="v mono">' + (lastW ? lastW.range_low + "–" + lastW.range_high : "—") + "</span></td></tr>";
-  }).join("");
-
-  /* ---------- calls ---------- */
-  var order = D.verdict_order;
-  var colorOf = { "命中": "var(--hit)", "未命中": "var(--miss)", "无法判定": "var(--undec)",
-                  "未到期": "var(--pending)", "未复盘": "var(--unrev)" };
-  var dates = Object.keys(D.verdicts_by_date);
-  var svgC = document.getElementById("calls");
-  var CW = 960, CH = 210, cL = 6, cR = 6, cT = 10, cB = 34;
-  var colW = (CW - cL - cR) / dates.length;
-  var maxN = Math.max.apply(null, dates.map(function (d) {
-    return order.reduce(function (s, k) { return s + (D.verdicts_by_date[d][k] || 0); }, 0);
-  })) || 1;
-  dates.forEach(function (d, i) {
-    var acc = 0;
-    var bx = cL + colW * i + colW * 0.16;
-    var bw = colW * 0.68;
-    order.forEach(function (k) {
-      var n = D.verdicts_by_date[d][k] || 0;
-      if (!n) return;
-      var h = (CH - cT - cB) * (n / maxN);
-      acc += h;
-      svgC.appendChild(el("rect", {
-        x: bx, y: CH - cB - acc, width: bw, height: h, fill: colorOf[k]
-      }));
-    });
-    var t = el("text", {
-      x: bx + bw / 2, y: CH - cB + 15, fill: "var(--muted)", "text-anchor": "middle",
-      "font-size": 9.5, "font-family": '"IBM Plex Mono",monospace'
-    });
-    t.textContent = d.slice(5);
-    svgC.appendChild(t);
-  });
-  svgC.appendChild(el("line", {
-    x1: cL, x2: CW - cR, y1: CH - cB, y2: CH - cB, stroke: "var(--rule)", "stroke-width": 1
-  }));
-  document.getElementById("calls-legend").innerHTML = order.map(function (k) {
-    return '<span><i style="background:' + colorOf[k] + '"></i>' + esc(k) + "</span>";
-  }).join("");
-  document.getElementById("totals").innerHTML = order.map(function (k) {
-    return '<div><span class="lab">' + esc(k) + '</span><span class="n">' + (totals[k] || 0) + "</span></div>";
-  }).join("");
+    }).join("") + '<td><span class="v mono">' +
+      (lastW ? lastW.range_low + "–" + lastW.range_high : "—") + "</span></td></tr>";
+  }).join(""));
 })();
 </script>

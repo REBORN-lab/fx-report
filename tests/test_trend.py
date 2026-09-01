@@ -210,13 +210,16 @@ class TrendPageTest(unittest.TestCase):
         with open(self.PAGE, encoding="utf-8") as f:
             return f.read()
 
-    def _embedded(self, html):
-        head = '<script id="series" type="application/json">'
+    def _embedded(self, html, block_id="series"):
+        head = '<script id="%s" type="application/json">' % block_id
         i = html.index(head) + len(head)
         return json.loads(html[i:html.index("</script>", i)])
 
-    def test_embedded_series_parses(self):
-        self._embedded(self._page())
+    def test_both_embedded_blocks_parse(self):
+        from scripts import trend_page
+        html = self._page()
+        for block in trend_page.BLOCKS:
+            self._embedded(html, block)
 
     def test_embedded_keys_match_the_payload(self):
         page_keys = sorted(self._embedded(self._page()))
@@ -225,18 +228,33 @@ class TrendPageTest(unittest.TestCase):
                          "页面内联的序列键集与 series_payload 不一致;"
                          "页面读一个不存在的键只会在浏览器控制台报错")
 
+    def test_facts_block_carries_what_the_page_reads(self):
+        """页面读 facts 的哪些键,这里就钉哪些 —— 抽取器改了字段名而页面
+        没跟着改时,浏览器控制台里报错,而没有任何测试会红。"""
+        facts = self._embedded(self._page(), "facts")
+        for key in ("date", "prior_date", "currencies", "change_kinds",
+                    "summary", "overview", "rings", "changes", "review",
+                    "deltas", "week"):
+            self.assertIn(key, facts, key)
+
     def test_rebuild_is_byte_stable(self):
         """同一份数据重嵌一次必须逐字节不变 —— 否则每次刷新都在 git 上
         制造噪声,"页面真的变了吗"就再也看不出来。"""
         from scripts import trend_page
         html = self._page()
-        payload = self._embedded(html)
-        self.assertEqual(trend_page.rebuild(html, payload), html)
+        for block in trend_page.BLOCKS:
+            html2 = trend_page.rebuild(html, block, self._embedded(html, block))
+            self.assertEqual(html2, html, block)
 
     def test_rebuild_refuses_to_inline_a_closing_script_tag(self):
         from scripts import trend_page
         with self.assertRaises(ValueError):
-            trend_page.rebuild(self._page(), {"x": "</script>"})
+            trend_page.rebuild(self._page(), "series", {"x": "</script>"})
+
+    def test_rebuild_rejects_an_unknown_block(self):
+        from scripts import trend_page
+        with self.assertRaises(ValueError):
+            trend_page.rebuild(self._page(), "nope", {})
 
     def test_the_page_is_self_contained_except_the_font_link(self):
         """外部引用只许有 Google Fonts 那一条。多一条外链,搬到别处就会
