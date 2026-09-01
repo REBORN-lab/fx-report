@@ -27,12 +27,14 @@ try:
     from scripts.review import DECLARATION_FMT, FIRST_RUN_LINE, MATERIAL_FMT
     from scripts.review import PENDING_FMT
     from scripts.review import REVIEW_BLOCK_HEADING
+    from scripts.trend import TREND_ANCHOR, TREND_ANCHOR_EN
 except ImportError:                                  # pragma: no cover - 直跑分支
     import claims
     from claims import unchanged_ref_note
     from review import DECLARATION_FMT, FIRST_RUN_LINE, MATERIAL_FMT
     from review import PENDING_FMT
     from review import REVIEW_BLOCK_HEADING
+    from trend import TREND_ANCHOR, TREND_ANCHOR_EN
 
 CURRENCIES = ["USD", "EUR", "PHP", "THB", "BRL"]
 MAX_SUMMARY_ITEMS = 6
@@ -270,6 +272,19 @@ DISPOSITION_ROW_ABSENT = (
 DISPOSITION_ANCHOR = ("处置:在关键假设句里引一个来自快照或要点表的**当前值**;"
                       "不要写阈值 —— 阈值是尚未发生的前瞻价位、不在快照里,"
                       "写进去会被 NUMBER_UNTRACEABLE 当场拦下")
+# 趋势闸门三态,**三条处置各不相同**:要改的东西不是同一样。
+DISPOSITION_TREND_EMPTY = (
+    "处置:`--trend` 指的那份文件是空的 —— 重跑 "
+    "`python3 scripts/trend.py --mode <daily|weekly> …` 把 stdout 落盘再传进来。"
+    "空文件会让「报告逐字包含它」恒真,不修这一条,趋势那一层等于没查")
+DISPOSITION_TREND_ANCHOR = (
+    "处置:`--trend` 指的那份文件不是 scripts/trend.py 的产物(首行不是它的"
+    "锚点行)—— 这一块**不许手写**,重跑脚本把 stdout 整块落盘。"
+    "锚点行由产出方拥有,校验端只认它")
+DISPOSITION_TREND_QUOTE = (
+    "处置:把 `--trend` 那一块**整块**贴进报告的「## 趋势」节,一个字符都不改;"
+    "块与报告对不上时改报告、不要改块 —— 块里的数是跨日的,"
+    "报告自己重写一遍就是无源心算")
 DISPOSITION_VINTAGE = ("处置:在同一句里写出该读数的期号(形如「期 2026-06 的 X」);"
                        "本码判的是**披露**不是新鲜度 —— 快照回答不了"
                        "「发布方有没有出新的一期」,读者至少要知道手上这个数是哪一期的")
@@ -2135,8 +2150,72 @@ def check_weekly_judgement_ring(secs, report, allowed, notes=None):
     return v
 
 
+# ==================== 趋势块:整块逐字,LLM 不经手 ====================
+#
+# 与结论句同一条不变量的第二次应用:**判定不经 LLM 的手**。趋势是跨日的,
+# 而日报的数字白名单按定义只有当日快照与要点表 —— 让 LLM 回看旧报告做跨日
+# 比较,等于给报告开一条无源的心算通道。所以整块由 `scripts/trend.py` 生成,
+# 校验端只判"报告里有没有一字不差的这一块"。
+TREND_ANCHORS = (TREND_ANCHOR, TREND_ANCHOR_EN)
+
+
+def strip_trend_block(text):
+    """从 `text` 里删掉趋势块(锚点行起,到下一个 `## ` 标题前为止)。
+
+    用在**别人的**报告上(周报把当周日报并进数字白名单时)。判据宽于
+    `check_trend` 是刻意的:那一侧要判"这一份报告有没有逐字引用它自己的
+    块",这一侧只需要"别把别人块里的跨日数字并进白名单"。两件事混成一个
+    判据,就会出现"因为并不进来所以也不判"的连锁豁免。
+    """
+    lines, out, dropping = text.split("\n"), [], False
+    for line in lines:
+        if line.strip() in TREND_ANCHORS:
+            dropping = True
+            continue
+        if dropping and line.startswith("## "):
+            dropping = False
+        if not dropping:
+            out.append(line)
+    return "\n".join(out)
+
+
+def check_trend(report, trend_text, notes=None):
+    """趋势块闸门。返回 `(违规列表, 扣掉趋势块之后的报告文本)`。
+
+    **扣块只在整块逐字命中时发生**,匹配不上就原样返回并出红 —— 反过来
+    (匹配不上也扣)会让"块被改过"与"块本来就对"在数字校验那一层不可分辨,
+    正是本仓库反复栽的那种形态:打印通过,但守的不是它声称的东西。
+
+    扣块本身是必需的:块里印的是跨日序列(前几次定盘、连续同向次数、
+    实际利率未变的读数份数),这些数按定义不在当日快照与要点表里。不扣就
+    会被 `NUMBER_UNTRACEABLE` 逐条打红,而"为了让它别红去放宽白名单"等于
+    给正文开第二条数字来源 —— 那比不查更坏。
+    """
+    if trend_text is None:
+        if notes is not None:
+            notes.append("TREND_SKIPPED_NO_INPUT: 未提供 --trend,"
+                         "本次未校验趋势块;报告里的趋势数字一个都没有对过账")
+        return [], report
+    block = trend_text.strip("\n")
+    if not block.strip():
+        return ["TREND_BLOCK_EMPTY: --trend 给的是空文件;"
+                "空块会让「报告逐字包含它」恒真;" + DISPOSITION_TREND_EMPTY], report
+    head = block.split("\n", 1)[0].strip()
+    if head not in TREND_ANCHORS:
+        return ["TREND_ANCHOR_MISMATCH: --trend 首行是 %r,"
+                "不是 scripts/trend.py 的锚点行;"
+                "手写的块不算数(整块必须来自脚本 stdout);%s"
+                % (head, DISPOSITION_TREND_ANCHOR)], report
+    if block not in report:
+        return ["TREND_NOT_QUOTED: 报告没有逐字包含 --trend 给的趋势块"
+                "(改一个字符、少一行、换一处标点都算);"
+                "整块只能来自 `python3 scripts/trend.py` 的 stdout;"
+                + DISPOSITION_TREND_QUOTE], report
+    return [], report.replace(block, "", 1)
+
+
 def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None,
-                prior_text=None, decision_entries=None):
+                prior_text=None, decision_entries=None, trend_text=None):
     """日报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
 
     strict_brief : 「要点表数字 ⊆ 快照」这一层。**默认 True** —— 强判定是
@@ -2292,8 +2371,12 @@ def check_daily(report, snapshot_text, brief_text, strict_brief=True, notes=None
                      "(derived.schema_version=%r)未校验结论句"
                      % (len(covered), len(covered), ver))
 
+    trend_v, report_off_trend = check_trend(report, trend_text, notes=notes)
+    v.extend(trend_v)
     allowed = numbers_in(snapshot_text) | numbers_in(brief_text) | ALLOWED_SMALL
-    for n in sorted(numbers_in(report) - allowed):
+    # 数字存在性只扫**扣掉趋势块之后**的正文:块里的跨日数由 `check_trend`
+    # 按整块逐字负责,不走白名单;白名单本身一个数都没有放宽。
+    for n in sorted(numbers_in(report_off_trend) - allowed):
         v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于快照或要点表" % n)
     # 判断环三码必须在 `allowed` 算完之后:③ 的锚点判据逐字复用同一个白名单,
     # 它自己不另建一份 —— 另建就等于给报告开了第二条数字来源。
@@ -2435,6 +2518,9 @@ def _read_file(path, label):
 # 而散文对返回码没有任何作用:忘带参数 = 闸门消失 = rc=0。
 # 现在与 weekly 拒收位置参数那一轮同规格:**缺一个即 rc=2**。
 DAILY_DECISION_LOG_DEFAULT = "state/decision-log.jsonl"
+# 趋势块的落盘位置。**格式串只有这一份**:补全命令行、SKILL 与测试都读它。
+DAILY_TREND_FMT = "state/trend-%s.md"
+WEEKLY_TREND_FMT = "state/trend-%s.md"
 # (选项, 它守的那道闸门)。**这份清单只有一份**:main() 判缺、消息列项、
 # 补全命令行三处都读它,不许在别处再抄一遍(第二份拷贝必然漂移,本仓已栽过)。
 DAILY_REQUIRED_OPTIONS = (
@@ -2446,6 +2532,9 @@ DAILY_REQUIRED_OPTIONS = (
     ("--decision-log",
      "守速览「条件方向」格逐字包含决策日志同日同币种的 trigger"
      "(DECISION_TRIGGER_NOT_SOURCED)"),
+    ("--trend",
+     "守「## 趋势」整块逐字来自 scripts/trend.py 的 stdout"
+     "(TREND_NOT_QUOTED / TREND_ANCHOR_MISMATCH)"),
 )
 # 只用来从路径里认出日期,**与 DATE_RE 无关**(那一条服务正文里的日期措辞,
 # 本轮一个字符都不动)。
@@ -2470,7 +2559,8 @@ def daily_default_paths(report, snapshot):
     if not date:
         return {"--brief": "briefs/<YYYY-MM-DD>-brief.md",
                 "--prior": "reports/daily/<前一日>.md",
-                "--decision-log": DAILY_DECISION_LOG_DEFAULT}
+                "--decision-log": DAILY_DECISION_LOG_DEFAULT,
+                "--trend": DAILY_TREND_FMT % "<YYYY-MM-DD>"}
     try:
         prev = (datetime.date.fromisoformat(date)
                 - datetime.timedelta(days=1)).isoformat()
@@ -2479,11 +2569,12 @@ def daily_default_paths(report, snapshot):
     head = report.rsplit("/", 1)[0] + "/" if "/" in (report or "") else ""
     return {"--brief": "briefs/%s-brief.md" % date,
             "--prior": "%s%s.md" % (head, prev),
-            "--decision-log": DAILY_DECISION_LOG_DEFAULT}
+            "--decision-log": DAILY_DECISION_LOG_DEFAULT,
+            "--trend": DAILY_TREND_FMT % date}
 
 
 def daily_required_options_error(report, snapshot, brief, prior, decision_log,
-                                 missing):
+                                 trend, missing):
     """rc=2 的消息:**必须可执行**,不是「缺少参数」四个字。
 
     「缺少参数」不可执行 —— 运维得回去翻 SKILL 才知道该写什么、以及少掉的
@@ -2493,13 +2584,14 @@ def daily_required_options_error(report, snapshot, brief, prior, decision_log,
     原样跑一遍必须 rc=0 —— 只断言"提到了"时,印一条跑不通的命令行照样全绿。
     """
     given = {"--brief": brief, "--prior": prior,
-             "--decision-log": decision_log}
+             "--decision-log": decision_log, "--trend": trend}
     default = daily_default_paths(report, snapshot)
     argv = [report, snapshot]
-    lines = ["DAILY_REQUIRED_OPTION_MISSING: 日报模式的三个溯源入参必须显式给,"
+    lines = ["DAILY_REQUIRED_OPTION_MISSING: 日报模式的 %d 个溯源入参必须显式给,"
              "本次缺少 %s。缺席不再等于「自动弱化」,而是用法错误 rc=2 —— "
              "此前它们缺席时最多打一条降级声明、退出码仍是 0,"
-             "于是忘带参数与闸门整层不跑在输出上不可分辨。" % "、".join(missing)]
+             "于是忘带参数与闸门整层不跑在输出上不可分辨。"
+             % (len(DAILY_REQUIRED_OPTIONS), "、".join(missing))]
     for opt, guard in DAILY_REQUIRED_OPTIONS:
         value = given[opt] or default[opt]
         lines.append("  [%s] %s %s —— %s"
@@ -2582,6 +2674,10 @@ def build_parser():
                     help="daily:决策日志 jsonl 路径(默认布局 %s),**必给**,"
                          "缺席即 rc=2;启用速览「条件方向」与日志 trigger 的"
                          "同源同字检查" % DAILY_DECISION_LOG_DEFAULT)
+    ap.add_argument("--trend", default=None,
+                    help="趋势块文件(`scripts/trend.py` 的 stdout),"
+                         "两个 mode 都**必给**,缺席即 rc=2;"
+                         "启用「报告逐字包含整块」检查")
     return ap
 
 
@@ -2603,12 +2699,12 @@ def main(argv=None):
         # "两个 mode 都读"的,weekly 侧的「不读选项」表随之塌掉一半,
         # 第六族变异整类失去输入(见 tests 的 unread_option_specs)。
         given = {"--brief": args.brief, "--prior": args.prior,
-                 "--decision-log": args.decision_log}
+                 "--decision-log": args.decision_log, "--trend": args.trend}
         missing = [opt for opt, _ in DAILY_REQUIRED_OPTIONS if not given[opt]]
         if missing:
             print(daily_required_options_error(
                 args.report, args.snapshot, args.brief, args.prior,
-                args.decision_log, missing), file=sys.stderr)
+                args.decision_log, args.trend, missing), file=sys.stderr)
             return 2
         snapshot_text, err = _read_file(args.snapshot, "快照文件")
         if err:
@@ -2638,10 +2734,15 @@ def main(argv=None):
             for p in problems:
                 print("决策日志损坏: " + p, file=sys.stderr)
             return 2
+        trend_text, err = _read_file(args.trend, "趋势块文件")
+        if err:
+            print(err, file=sys.stderr)
+            return 2
         violations = check_daily(report, snapshot_text, brief_text,
                                  strict_brief=args.strict_brief, notes=notes,
                                  prior_text=prior_text,
-                                 decision_entries=decision_entries)
+                                 decision_entries=decision_entries,
+                                 trend_text=trend_text)
     else:
         # ---- weekly **不接受位置参数**:那是本文件最后一条静默放行路径 ----
         # `snapshot` 是 `nargs="?"` 的位置参数,而这一支从来不读它 —— 修前
@@ -2664,6 +2765,14 @@ def main(argv=None):
         if args.daily and not args.digest:
             print("--daily 需与 --digest 同用(单独给日报不会启用数字溯源)",
                   file=sys.stderr)
+            return 2
+        # 趋势块两个 mode 同规格必给。周报这一侧没有"三个溯源入参"那张表,
+        # 但**弱一档就等于没有**:忘带 = 闸门消失 = rc=0,正是日报侧
+        # 2026-08-14 那一轮修掉的形态,不在这里重造一遍。
+        if not args.trend:
+            print("weekly 模式同样必须给 --trend"
+                  "(`python3 scripts/trend.py --mode weekly --week <周号>` "
+                  "的 stdout 落盘后传入);缺席即 rc=2", file=sys.stderr)
             return 2
         if args.digest is None:
             # 「未提供聚合文件」是 delta spec 里的**合法**形态(退回结构检查),
@@ -2698,9 +2807,13 @@ def main(argv=None):
                 print(err, file=sys.stderr)
                 return 2
             daily_texts.append(text)
+        trend_text, err = _read_file(args.trend, "趋势块文件")
+        if err:
+            print(err, file=sys.stderr)
+            return 2
         violations = check_weekly(report, digest_text, daily_texts,
                                   digest if args.digest is not None else None,
-                                  notes=notes)
+                                  notes=notes, trend_text=trend_text)
     # 降级声明先于结论打印:退出码 0 却跳过了几条,读者必须看得见
     for note in notes:
         print(note)
@@ -2714,7 +2827,7 @@ def main(argv=None):
 
 
 def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
-                 notes=None):
+                 notes=None, trend_text=None):
     """周报结构 + 数字溯源 + 结论句逐字引用检查,返回违规列表。
 
     notes : **出参**,同 check_daily。此前这一侧**没有**这个参数,理由写的是
@@ -2728,6 +2841,8 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
     """
     v = []
     secs = sections(report)
+    trend_v, report_off_trend = check_trend(report, trend_text, notes=notes)
+    v.extend(trend_v)
     if notes is not None:
         # ---- 数字归属两码:**结构性不适用**,而"为什么"必须带计数出声 ----
         # 两码的判据是"这个数出自**哪个币种的快照切片**"(见
@@ -2739,7 +2854,7 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
         # 没有切片就判不出归属 —— 硬搬过来只会造出一层判不准的红。
         # 「不适用」与「忘了跑」在 stdout 上必须可区分,所以这里不是沉默,
         # 是一条带计数的声明。
-        nums = len(numbers_in(report))
+        nums = len(numbers_in(report_off_trend))
         notes.append("WEEKLY_NUMBER_ATTRIBUTION_NOT_APPLICABLE: 数字归属两码"
                      "(%s)在周报模式结构性不适用 —— 周报输入没有按币种分键的"
                      "快照切片、也没有按币种分节的要点表,归属判不出;本份周报"
@@ -2788,8 +2903,12 @@ def check_weekly(report, digest_text=None, daily_texts=(), digest=None,
         # 白名单 = 聚合文件 ∪ 当周日报 ∪ 小整数:日报本身已过溯源,链条完整。
         allowed = numbers_in(digest_text) | ALLOWED_SMALL
         for text in daily_texts:
-            allowed |= numbers_in(text)
-        for n in sorted(numbers_in(report) - allowed):
+            # 日报的趋势块先扣掉再并入白名单:那一块里印的是**跨日**序列,
+            # 它由日报自己那一侧的 `check_trend` 逐字负责。并进来的话,
+            # 周报正文就能随手引一个"某天某次定盘"的数而不必出自本周聚合 ——
+            # 那是把白名单放宽,不是把链条接长。
+            allowed |= numbers_in(strip_trend_block(text))
+        for n in sorted(numbers_in(report_off_trend) - allowed):
             v.append("NUMBER_UNTRACEABLE: 数字 %s 不见于周度聚合文件或当周日报" % n)
     # 判断环三码必须排在 `allowed` 之后:③ 的锚点判据逐字复用同一个白名单,
     # 它自己不另建一份 —— 与日报侧同规矩。`allowed` 为 None(未给 --digest)

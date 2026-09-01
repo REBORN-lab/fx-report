@@ -28,6 +28,17 @@ SNAP = {"date": "2026-08-10",
 SNAP_TEXT = json.dumps(SNAP, ensure_ascii=False)
 BRIEF = "# 要点表 2026-08-10\n- 汇率变动:primary 60.843,prev 60.9\n- CPI 3.1 前值 3.4\n"
 
+# ---- 趋势块:2026-09-01 起它是**每份合规报告的必备块**,`--trend` 缺席 rc=2 ----
+# 夹具用的这一块**刻意不含任何数字**:真实的块里印的是跨日序列(前几次定盘、
+# 连续同向次数),那些数按定义不在当日快照与要点表里,靠 `check_trend` 扣块
+# 之后才不撞 NUMBER_UNTRACEABLE。而库里大量断言是"除某码外零违规",夹具里
+# 放真数字会让**没给 --trend 的那些函数级用例**全部引来一串 NUMBER_UNTRACEABLE,
+# 把失败原因搅浑。扣块与数字那一层由 TrendBlockGateTest 单独用真块测。
+TREND_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "fixtures", "trend-block.md")
+with open(TREND_FILE, encoding="utf-8") as _f:
+    TREND_BLOCK = _f.read().strip("\n")
+
 
 # ---- 「本期相对上期的变化」节:2026-08-14 起它是**每份合规日报的必备节** ----
 # `--prior` 从这一天起是必给参数(缺席 rc=2),而 `check_prior_period` 的第二态
@@ -88,6 +99,7 @@ def make_report(summary_items=3, missing=None, php_body=None, gap_body="无",
                                           "雷亚尔这一档在要价风险补偿",
                                           "雷亚尔回落至 5.43 一侧"),
     }
+    lines += [""] + TREND_BLOCK.split("\n")
     for name, body in sections.items():
         if missing and missing in name:
             continue
@@ -131,7 +143,8 @@ def daily_files(tmp, report_text=None, snapshot_text=SNAP_TEXT,
             f.write(text)
     argv = [paths["r.md"], paths["s.json"], "--brief", paths["b.md"],
             "--prior", paths["prior.md"],
-            "--decision-log", paths["log.jsonl"]] + list(extra)
+            "--decision-log", paths["log.jsonl"],
+            "--trend", TREND_FILE] + list(extra)
     return argv, paths
 
 
@@ -352,6 +365,7 @@ def make_weekly(coverage="覆盖日报:5 份(2026-08-04 至 2026-08-08);缺失�
     for name, b in body.items():
         if name != drop:
             lines += ["", "## " + name, b]
+    lines += [""] + TREND_BLOCK.split("\n")
     return "\n".join(lines)
 
 
@@ -446,7 +460,7 @@ USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%
 
 ## 缺漏汇总
 - 无
-""" % (FIX_PHP, ART_PHP, OFF_PHP)
+""" % (FIX_PHP, ART_PHP, OFF_PHP) + "\n" + TREND_BLOCK + "\n"
 
 
 class WeeklyDigestTraceabilityTest(unittest.TestCase):
@@ -666,7 +680,7 @@ class DigestFailClosedTest(unittest.TestCase):
         report = os.path.join(tmp, "w.md")
         with open(report, "w", encoding="utf-8") as f:
             f.write(WEEKLY_OK)
-        argv = [report, "--mode", "weekly"]
+        argv = [report, "--mode", "weekly", "--trend", TREND_FILE]
         if digest_body is not None:
             dpath = os.path.join(tmp, "d.json")
             with open(dpath, "w", encoding="utf-8") as f:
@@ -747,7 +761,7 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
         """修前实测:这一条正是 `CHECK PASSED` rc=0。"""
         with tempfile.TemporaryDirectory() as tmp:
             rp, dp = self._inputs(tmp)
-            rc, _, err = self._run([rp, dp, "--mode", "weekly"])
+            rc, _, err = self._run([rp, dp, "--mode", "weekly", "--trend", TREND_FILE])
         self.assertEqual(rc, 2)
         self.assertTrue(err.strip(), "rc=2 却没有 stderr 说明")
 
@@ -756,7 +770,7 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
         于是从"静默不查"变成"静默不查且没人知道该传什么"。两个开关都要点名。"""
         with tempfile.TemporaryDirectory() as tmp:
             rp, dp = self._inputs(tmp)
-            _, _, err = self._run([rp, dp, "--mode", "weekly"])
+            _, _, err = self._run([rp, dp, "--mode", "weekly", "--trend", TREND_FILE])
         self.assertIn("--digest", err)
         self.assertIn("--daily", err)
 
@@ -766,7 +780,7 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
         照跑照打 `CHECK PASSED` 的写法只要再把 rc 改回 0 就活了。"""
         with tempfile.TemporaryDirectory() as tmp:
             rp, dp = self._inputs(tmp)
-            rc, out, _ = self._run([rp, dp, "--mode", "weekly"])
+            rc, out, _ = self._run([rp, dp, "--mode", "weekly", "--trend", TREND_FILE])
         self.assertEqual(rc, 2)
         self.assertNotIn("CHECK PASSED", out)
         self.assertNotIn("CHECK FAILED", out)
@@ -776,7 +790,7 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
         还有语义,下一个人照样会只传位置参数。"""
         with tempfile.TemporaryDirectory() as tmp:
             rp, dp = self._inputs(tmp)
-            rc, out, _ = self._run([rp, dp, "--mode", "weekly", "--digest", dp])
+            rc, out, _ = self._run([rp, dp, "--mode", "weekly", "--trend", TREND_FILE, "--digest", dp])
         self.assertEqual(rc, 2)
         self.assertNotIn("CHECK PASSED", out)
 
@@ -789,7 +803,7 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
             bad = os.path.join(tmp, "bad.json")
             with open(bad, "w", encoding="utf-8") as f:
                 f.write(json.dumps({"foo": 1}))
-            rc, _, err = self._run([rp, bad, "--mode", "weekly"])
+            rc, _, err = self._run([rp, bad, "--mode", "weekly", "--trend", TREND_FILE])
         self.assertEqual(rc, 2)
         self.assertIn("--digest", err)
         self.assertNotIn("结构不符", err)
@@ -810,8 +824,8 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rp, dp = self._inputs(tmp)
             for tok in NoLegacyExemptionSwitchTest.EXEMPTION_TOKENS:
-                for argv in ([rp, tok, "--mode", "weekly"],
-                             [rp, tok, "--mode", "weekly", "--digest", dp]):
+                for argv in ([rp, tok, "--mode", "weekly", "--trend", TREND_FILE],
+                             [rp, tok, "--mode", "weekly", "--trend", TREND_FILE, "--digest", dp]):
                     with self.subTest(token=tok, argv=len(argv)):
                         rc, out, _ = self._run(argv)
                         self.assertEqual(rc, 2, out)
@@ -831,7 +845,7 @@ class WeeklyRejectsPositionalSnapshotTest(unittest.TestCase):
         """拒收的是"给了位置参数",不是 weekly 本身。"""
         with tempfile.TemporaryDirectory() as tmp:
             rp, dp = self._inputs(tmp)
-            rc, out, _ = self._run([rp, "--mode", "weekly", "--digest", dp])
+            rc, out, _ = self._run([rp, "--mode", "weekly", "--trend", TREND_FILE, "--digest", dp])
         self.assertEqual(rc, 0)
         self.assertIn("CHECK PASSED", out)
 
@@ -867,7 +881,7 @@ class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
     def test_declaration_is_printed_when_digest_is_absent(self):
         """**变异靶心**:删掉声明行 → 退回裸 CHECK PASSED,本条必须红。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rc, out = self._run([self._report(tmp), "--mode", "weekly"])
+            rc, out = self._run([self._report(tmp), "--mode", "weekly", "--trend", TREND_FILE])
         self.assertIn(self.LINE, out)
         self.assertEqual(rc, 0)
 
@@ -875,7 +889,7 @@ class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
         """**变异靶心**:把它做成违规(进 violations / 改 rc)→ 本条必须红。
         「未提供聚合文件」是 spec 里的合法形态,不是错误。"""
         with tempfile.TemporaryDirectory() as tmp:
-            rc, out = self._run([self._report(tmp), "--mode", "weekly"])
+            rc, out = self._run([self._report(tmp), "--mode", "weekly", "--trend", TREND_FILE])
         self.assertEqual(rc, 0)
         self.assertIn("CHECK PASSED", out)
         self.assertNotIn("CHECK FAILED", out)
@@ -885,7 +899,7 @@ class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
         """降级声明必须先于结论行 —— 读者在看到 PASSED 之前就得知道少查了什么。
         与既有 notes 的打印顺序同一条规矩。"""
         with tempfile.TemporaryDirectory() as tmp:
-            _, out = self._run([self._report(tmp), "--mode", "weekly"])
+            _, out = self._run([self._report(tmp), "--mode", "weekly", "--trend", TREND_FILE])
         self.assertLess(out.index(self.LINE), out.index("CHECK PASSED"))
 
     def test_declaration_is_absent_when_digest_is_given(self):
@@ -894,7 +908,7 @@ class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
             dp = os.path.join(tmp, "d.json")
             with open(dp, "w", encoding="utf-8") as f:
                 f.write(DIGEST)
-            rc, out = self._run([self._report(tmp), "--mode", "weekly",
+            rc, out = self._run([self._report(tmp), "--mode", "weekly", "--trend", TREND_FILE,
                                  "--digest", dp])
         self.assertEqual(rc, 0)
         self.assertNotIn("WEEKLY_DIGEST_ABSENT_SKIPPED", out)
@@ -903,7 +917,7 @@ class WeeklyDigestAbsentDeclarationTest(unittest.TestCase):
         """rc=1 那条路径上同样要出声:少查了什么与查出了什么互不替代。"""
         with tempfile.TemporaryDirectory() as tmp:
             rp = self._report(tmp, WEEKLY_OK.replace("## 本周关注", "## 删掉了"))
-            rc, out = self._run([rp, "--mode", "weekly"])
+            rc, out = self._run([rp, "--mode", "weekly", "--trend", TREND_FILE])
         self.assertEqual(rc, 1)
         self.assertIn(self.LINE, out)
 
@@ -1462,9 +1476,13 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         # 没人读"的选项,它会同时进两个 mode 的不读选项表(第六族的幂集翻倍),
         # 而陈旧调用点会**静默地什么都不做**。删掉之后,陈旧调用点在 argparse
         # 层就 rc=2 响亮死掉,这一条断言正是它进 diff 的地方。
+        # `--trend`(趋势块,TREND_NOT_QUOTED 那条不变量的入参)是 2026-09-01
+        # **新注册**的选项 —— 与 `--prior`/`--decision-log` 同规矩,这里是
+        # **加一项**,不是放宽判据。它与那两个不同的地方是**两个 mode 都读**,
+        # 因此它不进任何一侧的"不读选项"表。
         self.assertEqual(opts, {"-h", "--help", "--brief", "--mode",
                                 "--no-strict-brief", "--digest", "--daily",
-                                "--prior", "--decision-log"})
+                                "--prior", "--decision-log", "--trend"})
 
     # 「当前 mode 不读的既有选项」的**期望字面量**。它**不驱动任何变体** ——
     # 驱动第六族的是 `unread_option_specs()` 的推导结果(见该函数)。
@@ -1805,12 +1823,13 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         """
         p = self.paths
         return [p["d_report"], p["d_multi"], "--brief", p["brief"],
-                "--prior", p["d_prior"], "--decision-log", p["d_log"]]
+                "--prior", p["d_prior"], "--decision-log", p["d_log"],
+                "--trend", TREND_FILE]
 
     def _production_weekly(self):
         """skills/fx-weekly-report/SKILL.md 第 3 步那一行的完整形状。"""
         p = self.paths
-        return [p["w_report"], "--mode", "weekly", "--digest", p["w_multi"],
+        return [p["w_report"], "--mode", "weekly", "--trend", TREND_FILE, "--digest", p["w_multi"],
                 "--daily", p["d_report"], "--daily", p["d_report"]]
 
     # ---- 每条 base 的**期望码集合字面量**(T8d)----
@@ -1889,7 +1908,7 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         # **每一个 EXEMPTION_TOKEN** 逐个塞进位置参数,要求全部 rc=2 且
         # stdout 不出现任何结论行 —— 魔法值连被读到的机会都没有。
         for n_daily in (2, 1, 0):
-            argv = [p["w_report"], "--mode", "weekly", "--digest", p["w_multi"]]
+            argv = [p["w_report"], "--mode", "weekly", "--trend", TREND_FILE, "--digest", p["w_multi"]]
             argv += ["--daily", p["d_report"]] * n_daily
             out.append(("weekly daily=%d" % n_daily, argv, None,
                         self.WEEKLY_BASE_CODES, w_unread))
@@ -1902,7 +1921,7 @@ class NoLegacyExemptionSwitchTest(unittest.TestCase):
         out.append(("daily 容器坏", daily_with(p["d_container"]), None,
                     frozenset({"VERDICT_CONTAINER_MALFORMED"}), d_unread))
         out.append(("weekly 容器坏",
-                    [p["w_report"], "--mode", "weekly", "--digest",
+                    [p["w_report"], "--mode", "weekly", "--trend", TREND_FILE, "--digest",
                      p["w_container"], "--daily", p["d_report"]], None,
                     frozenset({"VERDICT_CONTAINER_MALFORMED"}), w_unread))
         out.append(("daily 无 derived(只出降级声明)",
@@ -2516,7 +2535,7 @@ class CheckerPrintsItsOwnDispositionTest(unittest.TestCase):
                     f.write(text)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, "--mode", "weekly", "--digest", dp])
+                rc = check_report.main([rp, "--mode", "weekly", "--trend", TREND_FILE, "--digest", dp])
             return rc, buf.getvalue()
 
     def test_disposition_constants_are_frozen_verbatim(self):
@@ -2726,10 +2745,11 @@ class VerdictGateIsOrthogonalToTheCheckedObjectTest(unittest.TestCase):
              ".json", lambda rp, ap, bp: [rp, ap, "--brief", bp,
                                           "--prior", cls.prior,
                                           "--decision-log", cls.log,
+                                          "--trend", TREND_FILE,
                                           "--mode", "daily"],
              NoLegacyExemptionSwitchTest.DAILY_BASE_CODES),
             ("weekly", WEEKLY_OK, json.dumps(wobj, ensure_ascii=False),
-             ".json", lambda rp, ap, bp: [rp, "--mode", "weekly",
+             ".json", lambda rp, ap, bp: [rp, "--mode", "weekly", "--trend", TREND_FILE,
                                           "--digest", ap],
              NoLegacyExemptionSwitchTest.WEEKLY_BASE_CODES),
         )
@@ -4524,7 +4544,7 @@ class WeeklyJudgementLayerIsDeclaredTest(unittest.TestCase):
                            "events": {}, "rates": {}}, f)
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                rc = check_report.main([rp, "--mode", "weekly", "--digest", dp])
+                rc = check_report.main([rp, "--mode", "weekly", "--trend", TREND_FILE, "--digest", dp])
             out = buf.getvalue()
         self.assertEqual(rc, 0, out)
         self.assertIn("WEEKLY_JUDGEMENT_LAYER_SKIPPED:", out)
@@ -4710,6 +4730,14 @@ NEW_LAYER_VIOLATION_DISPOSITION = {
     # 「主线归属」格由报告自己写,修前全仓没有任何检查要求它命名一条真实
     # 存在的主线 —— 被查方自选宿主,归属写歪时比对当场落空而只少一分。
     "WEEKLY_THEME_ATTRIBUTION_UNKNOWN": "DISPOSITION_THEME_ATTRIBUTION",
+    # ---- 2026-09-01 新增:趋势块整块逐字来自 scripts/trend.py ----
+    # 与结论句同一条不变量的第二次应用。趋势是跨日的,而日报的数字白名单
+    # 按定义只有当日快照与要点表 —— 让 LLM 回看旧报告做跨日比较,等于给
+    # 报告开一条无源的心算通道。三条码是同一道闸门的三态:块空 / 块头不是
+    # 产出方的锚点 / 报告没有逐字引用。
+    "TREND_BLOCK_EMPTY": "DISPOSITION_TREND_EMPTY",
+    "TREND_ANCHOR_MISMATCH": "DISPOSITION_TREND_ANCHOR",
+    "TREND_NOT_QUOTED": "DISPOSITION_TREND_QUOTE",
 }
 # 同一层的**声明码**(走 notes,不改退出码,因此不带处置)。
 NEW_LAYER_NOTE_CODES = frozenset({
@@ -4767,6 +4795,10 @@ NEW_LAYER_NOTE_CODES = frozenset({
     # 2026-08-14:「要点表 ⊆ 快照」被显式关掉时的带计数声明。它是
     # `--no-strict-brief` 存在的全部理由 —— 弱化可以,静默不行。
     "STRICT_BRIEF_DISABLED",
+    # 2026-09-01:库调用方没传趋势块时的跳过声明。CLI 两个 mode 都已收成
+    # rc=2,但"库调用方传 None"仍是可达的合法形态 —— 与
+    # DECISION_LOG_ABSENT_SKIPPED 同规格,谁跳过谁出声。
+    "TREND_SKIPPED_NO_INPUT",
 })
 # ---- CLI 用法错误码(rc=2,走 stderr,不带处置)----
 # 与违规码/声明码都不同:它在**跑校验之前**就把命令拦下来了,没有"被查对象"
@@ -4786,6 +4818,93 @@ LEGACY_CODES = frozenset({
     "COVERAGE_GAP_DATES", "CURRENCY_MISSING", "REVIEW_TOKEN_MISSING",
     "WEEKLY_DIGEST_ABSENT_SKIPPED",
 })
+
+
+class TrendBlockGateTest(unittest.TestCase):
+    """趋势块闸门:**扣块只在整块逐字命中时发生**。
+
+    这一条是本闸门唯一值钱的性质。块里印的是跨日序列(前几次定盘、连续
+    同向次数),这些数按定义不在当日快照与要点表里 —— 于是有两种写法会
+    出现同一批数字:
+
+    - 整块逐字来自 `scripts/trend.py` 的 stdout → 扣块,数字不进白名单判定;
+    - 同一批数字写进正文散文 → 照旧 NUMBER_UNTRACEABLE。
+
+    两者必须可分辨。若扣块改成"只要报告里有锚点行就扣到下一个标题",
+    正文里那批数就能靠"把散文塞进趋势节"整段免检 —— 那正是本仓反复栽的
+    形态:打印通过,但守的不是它声称的东西。
+    """
+
+    CROSS_DAY = "0.85749"          # 不在 SNAP / BRIEF 里的一个"往日定盘"
+
+    def _block(self):
+        return "\n".join([check_report.TREND_ANCHOR, "",
+                           "- EUR:上一次定盘 %s" % self.CROSS_DAY])
+
+    def test_verbatim_block_is_deducted_from_the_number_scan(self):
+        block = self._block()
+        report = make_report().replace(TREND_BLOCK, block)
+        v = check_report.check_daily(report, SNAP_TEXT, BRIEF,
+                                     trend_text=block)
+        self.assertEqual([x for x in v if "TREND" in x or self.CROSS_DAY in x],
+                         [], v)
+
+    def test_the_same_number_in_prose_is_still_untraceable(self):
+        """同一个数搬出块外就必须照旧被拦 —— 扣的是那一块,不是那个数。"""
+        block = self._block()
+        report = (make_report().replace(TREND_BLOCK, block)
+                  + "\n\n正文另外写了 %s 这个数。" % self.CROSS_DAY)
+        v = check_report.check_daily(report, SNAP_TEXT, BRIEF,
+                                     trend_text=block)
+        self.assertTrue(any("NUMBER_UNTRACEABLE" in x and self.CROSS_DAY in x
+                            for x in v), v)
+
+    def test_one_changed_character_fails_and_nothing_is_deducted(self):
+        """块被改过时**不扣**:失败关闭。扣了的话,"块被改过"与"块本来就对"
+        在数字那一层不可分辨。"""
+        block = self._block()
+        report = make_report().replace(TREND_BLOCK,
+                                       block.replace("0.85749", "0.85750"))
+        v = check_report.check_daily(report, SNAP_TEXT, BRIEF,
+                                     trend_text=block)
+        self.assertTrue(any("TREND_NOT_QUOTED" in x for x in v), v)
+        self.assertTrue(any("NUMBER_UNTRACEABLE" in x and "0.8575" in x
+                            for x in v), v)
+
+    def test_empty_input_is_a_violation_not_a_free_pass(self):
+        v = check_report.check_daily(make_report(), SNAP_TEXT, BRIEF,
+                                     trend_text="   \n")
+        self.assertTrue(any("TREND_BLOCK_EMPTY" in x for x in v), v)
+
+    def test_hand_written_block_is_rejected_by_its_first_line(self):
+        hand = "## 我自己写的趋势\n\n- 一行"
+        v = check_report.check_daily(make_report() + "\n" + hand,
+                                     SNAP_TEXT, BRIEF, trend_text=hand)
+        self.assertTrue(any("TREND_ANCHOR_MISMATCH" in x for x in v), v)
+
+    def test_absent_input_declares_the_skip(self):
+        """库调用方不传时**必须出声** —— 跳过与通过在输出上不可同形。"""
+        notes = []
+        check_report.check_daily(make_report(), SNAP_TEXT, BRIEF, notes=notes)
+        self.assertTrue(any("TREND_SKIPPED_NO_INPUT" in n for n in notes),
+                        notes)
+
+    def test_weekly_side_deducts_the_daily_blocks_from_the_whitelist(self):
+        """周报把当周日报并进白名单时,日报的趋势块先扣掉 —— 否则周报正文
+        就能随手引一个"某天某次定盘"的数而不必出自本周聚合。"""
+        daily = make_report().replace(
+            TREND_BLOCK, TREND_BLOCK + "\n- EUR:上一次定盘 %s" % self.CROSS_DAY)
+        bad = WEEKLY_OK.replace("区间 60.75–60.867",
+                                "区间 60.75–60.867,另见 %s" % self.CROSS_DAY)
+        v = check_report.check_weekly(bad, DIGEST, [daily])
+        self.assertTrue(any("NUMBER_UNTRACEABLE" in x and self.CROSS_DAY in x
+                            for x in v), v)
+
+    def test_strip_trend_block_stops_at_the_next_heading(self):
+        text = "\n".join(["## 前", "a", check_report.TREND_ANCHOR,
+                          "- 1.234", "## 后", "b"])
+        self.assertEqual(check_report.strip_trend_block(text),
+                         "\n".join(["## 前", "a", "## 后", "b"]))
 
 
 class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
@@ -4842,7 +4961,12 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
         # 判,本轮改的是它的**比对池**,不是新增一类违规。
         # 76 → 77(2026-08-21):BIS_ATTRIBUTION_MISSING。只加违规不加声明 ——
         # 前件(快照里有 BIS 序列)不成立时本码整条不适用,没有"跳过"这一态。
-        self.assertEqual(len(want), 77, len(want))
+        # 77 → 81(2026-09-01,趋势块整块逐字):加 3 条违规
+        # (TREND_BLOCK_EMPTY / TREND_ANCHOR_MISMATCH / TREND_NOT_QUOTED)
+        # 与 1 条声明(TREND_SKIPPED_NO_INPUT)。三条违规是同一道闸门的三态:
+        # 给的块是空的 / 给的块不是脚本产物 / 报告没有逐字引用它。声明那条
+        # 只服务库调用方 —— CLI 两个 mode 都已把"没给"收成 rc=2。
+        self.assertEqual(len(want), 81, len(want))
 
     def test_every_new_layer_disposition_constant_exists_and_is_distinct(self):
         """七条处置**互不相同**:两条码共用一条处置时,"带的是它自己那一条"
@@ -5041,8 +5165,23 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
                     belong="主线九"))
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                check_report.main([wp, "--mode", "weekly"])
+                check_report.main([wp, "--mode", "weekly", "--trend", TREND_FILE])
             out.append(("weekly-theme-attribution", buf.getvalue()))
+        # 第十一/十二次:趋势闸门的另外两态。`--trend` 后给的那份文件本身
+        # 不合格(空 / 首行不是产出方的锚点),与"报告没引用"是三件不同的事,
+        # 处置也各不相同 —— 不各喂一份的话,那两条码只有映射、没有用例触发。
+        for label, text in (("trend-empty", "\n   \n"),
+                            ("trend-anchor", "## 我自己写的趋势\n\n- 一行")):
+            with tempfile.TemporaryDirectory() as tmp:
+                bad = os.path.join(tmp, "trend-bad.md")
+                with open(bad, "w", encoding="utf-8") as f:
+                    f.write(text)
+                argv, _ = daily_files(tmp, extra=("--mode", "daily",
+                                                  "--trend", bad))
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    check_report.main(argv)
+                out.append((label, buf.getvalue()))
         return out
 
     def test_every_cli_usage_code_is_reachable_and_carries_no_disposition(self):
@@ -5061,7 +5200,8 @@ class NewLayerCodeInventoryFrozenTest(unittest.TestCase):
                           % code)
         msg = check_report.daily_required_options_error(
             "reports/daily/2026-08-14.md", "data/2026-08-14.json",
-            None, None, None, ["--brief", "--prior", "--decision-log"])
+            None, None, None, None,
+            [opt for opt, _ in check_report.DAILY_REQUIRED_OPTIONS])
         self.assertNotIn("处置:", msg)
         # 消息里必须**恰好一行**是可复制的命令行(多一行读者就得猜跑哪条)
         runnable = [x for x in msg.splitlines()
@@ -5464,7 +5604,7 @@ USD / EUR / PHP 周涨跌 -0.192%%,区间 60.75–60.867;%s。事件:%s;公告:%
 
 ## 缺漏汇总
 - 无
-""" % (FIX_PHP, ART_PHP, OFF_PHP)
+""" % (FIX_PHP, ART_PHP, OFF_PHP) + "\n" + TREND_BLOCK + "\n"
 
 # 周报数字白名单 = 聚合文件 ∪ 当周日报 ∪ 小整数。fixture 的主线段引了三个
 # 参考价,它们来自日报那一侧,所以测试必须把日报正文一并传入 —— 否则红的是
@@ -5962,6 +6102,10 @@ class DailyModeRequiresTheStrongFormTest(unittest.TestCase):
             "brief": "briefs/%s-brief.md" % cls.DATE,
             "prior": "reports/daily/%s.md" % cls.PRIOR_DATE,
             "log": WANT_DECISION_LOG_DEFAULT,
+            # 趋势块按仓库标准布局落在 state/ 下 —— 补全命令行印出来的
+            # 默认值就是它,这一份必须真存在,否则"把印出来那行原样跑一遍"
+            # 只会撞文件不存在
+            "trend": check_report.DAILY_TREND_FMT % cls.DATE,
             # 手写部分写了一个**不在快照里**的数:strict 是不是默认,靠它分辨
             "loose_brief": "briefs/loose-brief.md",
         }
@@ -5970,6 +6114,7 @@ class DailyModeRequiresTheStrongFormTest(unittest.TestCase):
                 ("prior", make_report(prior_line=PRIOR_LINE_PREV)),
                 ("snapshot", SNAP_TEXT), ("brief", BRIEF),
                 ("loose_brief", BRIEF + "- 自己编的 99.123\n"),
+                ("trend", TREND_BLOCK + "\n"),
                 ("log", DECISION_LOG)):
             with open(os.path.join(t, cls.rel[key]), "w",
                       encoding="utf-8") as f:
@@ -5994,7 +6139,8 @@ class DailyModeRequiresTheStrongFormTest(unittest.TestCase):
         """完整的生产形状;`drop` 里的选项(连同它的值)整对去掉。"""
         r = self.rel
         argv = [r["report"], r["snapshot"], "--brief", r["brief"],
-                "--prior", r["prior"], "--decision-log", r["log"]]
+                "--prior", r["prior"], "--decision-log", r["log"],
+                "--trend", r["trend"]]
         for opt in drop:
             i = argv.index(opt)
             del argv[i:i + 2]
@@ -6160,7 +6306,7 @@ class DailyModeRequiresTheStrongFormTest(unittest.TestCase):
         with open(wp, "w", encoding="utf-8") as f:
             f.write(WEEKLY_OK)
         rc, out, err = self._run(["reports/weekly/2026-W33.md",
-                                  "--mode", "weekly"])
+                                  "--mode", "weekly", "--trend", TREND_FILE])
         self.assertEqual(rc, 0, out + err)
         self.assertIn("CHECK PASSED", out)
 

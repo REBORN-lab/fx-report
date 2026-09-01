@@ -57,6 +57,15 @@ WEEK 一经确定,**窗口就是 WEEK 那七天(周一至周日)**,由 `weekly_d
    它把附录 A 整块打到 stdout,**第一行就是该块自己的标题行**。第 2 步把这一块
    **原样贴进周报**:一个字符都不改、不补、不删行、不改行序。三类结论句
    (事件 / 公告 / 定盘与区间)与口径差异说明全部由这一块承担,你不转抄。
+8. 跑趋势块生成器:
+   `python3 scripts/trend.py --mode weekly --week WEEK > state/trend-WEEK.md`
+   它把「## 趋势」整块打到 stdout,**第一行就是该块自己的标题行**。第 2 步把
+   这一块**原样贴进周报**:一个字符都不改、不补、不删行、不改行序。
+   这一块跨的是**周**(逐周的周变动、逐周区间、逐周复盘分布),而周报的数字
+   白名单只有本周聚合文件与当周日报 —— 让你回看旧周报再总结,等于给周报开
+   一条无源心算的通道。块里那些数一律由脚本从 `state/weekly-digest-*.json`
+   直接取,**你既不算也不抄**。校验端做**整块逐字包含**检查:命中才把这一块
+   从数字溯源里扣掉,不命中就既出红又让块里的跨周数字撞 `NUMBER_UNTRACEABLE`。
 
 **N 为 0 时终止并报错(无素材不生成周报)** —— 这一条已经是脚本行为:
 窗口内零快照时聚合器直接 rc=2。**N < 3 时照常生成,但覆盖声明必须写明缺失日期**
@@ -166,6 +175,12 @@ WEEK 一经确定,**窗口就是 WEEK 那七天(周一至周日)**,由 `weekly_d
     ## 本周关注
     -(≤5 条,每条 = 日期 + 事件 + 挂靠哪条主线 + 检验该主线的哪一段;
       只准摘年历文件里实际存在的条目,凭记忆补条目即违规)
+
+    ## 趋势
+    (第 1 步第 8 项 `trend.py --mode weekly` 的 stdout **整块原样贴**,
+     含它自己的标题行;这一块你一个字符都不写。**块里的数只属于这一块** ——
+     正文引用的数仍然只能来自本周聚合文件与当周日报。
+     位置在「各币种一周落点」之后、「上周相对上上周的变化」之前)
 
     ## 附录 A:……
     (第 1 步 `appendix.py --mode weekly` 的 stdout **整块原样贴**,
@@ -324,8 +339,11 @@ WEEK 一经确定,**窗口就是 WEEK 那七天(周一至周日)**,由 `weekly_d
 运行(**必须带 --digest 与全部当周日报**,否则数字溯源不生效):
 
     python3 scripts/check_report.py reports/weekly/WEEK.md --mode weekly \
-      --digest state/weekly-digest-WEEK.json \
+      --digest state/weekly-digest-WEEK.json --trend state/trend-WEEK.md \
       --daily reports/daily/<日期1>.md --daily reports/daily/<日期2>.md ...
+
+`--trend` 与日报侧同规格:**周报模式同样必给**,缺席即 rc=2。它守
+`TREND_NOT_QUOTED` / `TREND_ANCHOR_MISMATCH` / `TREND_BLOCK_EMPTY`。
 
 - 退出码 0:完成。
 - 非 0:按违规项修改一次,重跑。

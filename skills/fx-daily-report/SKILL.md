@@ -184,6 +184,22 @@ rates 中 suspect 为 true 的币种,汇率行须注明"(双源偏差超阈,数�
 (当日有几条、顶没顶到上限、走的哪条通道、双源差多少、采见日属哪天、公告是不是
 存量)全部由这一块承担 —— 你不转抄、不改写,也不把其中任何一句搬进正文。
 
+最后运行:
+`python3 scripts/trend.py --mode daily --date DATE > state/trend-DATE.md`
+
+它把「## 趋势」整块打到 stdout(**第一行就是该块自己的标题行**),第 4 步同样
+**原样贴进报告**:一个字符都不改、不补、不删行、不改行序。
+
+这一块与附录 A 同规格,理由却不同:趋势是**跨日**的,而日报的数字白名单按
+定义只有当日快照与要点表。让你回看几份旧报告再总结,等于给报告开一条**无源
+心算**的通道 —— 那正是数字纪律第一条禁止的事。所以块里那些数(前几次定盘、
+连续同向多少次、实际利率连续多少份读数未变、观点分布)一律由脚本从
+`data/*.json` 与 `state/decision-log.jsonl` 直接取,**你既不算也不抄**。
+
+校验端对它做**整块逐字包含**检查:命中才把这一块从数字溯源里扣掉,不命中
+就既出红(`TREND_NOT_QUOTED`)、又让块里的跨日数字照旧撞 `NUMBER_UNTRACEABLE`。
+所以这一块**只能来自脚本 stdout**,不能手打。
+
 ## 第 4 步:生成日报(LLM)
 
 **只依据 `briefs/DATE-brief.md`(含复盘材料)与第 3 步的附录 A 整块**,
@@ -243,6 +259,11 @@ rates 中 suspect 为 true 的币种,汇率行须注明"(双源偏差超阈,数�
      `INVALIDATION_COLUMN_MIRRORS_TRIGGER`;
      它与该币种节的**翻转指标是两个相反的判据**,定义见「判断环」小节,
      **两处不得写成同一句**)
+
+    ## 趋势
+    (第 3 步 `trend.py --mode daily` 的 stdout **整块原样贴**,含它自己的
+     标题行;这一块你一个字符都不写。**块里的数只属于这一块** —— 正文、
+     摘要、速览表引用的数仍然只能来自当日要点表)
 
     ## 美元(USD)
     **驱动**:……
@@ -566,13 +587,17 @@ watch_direction 语义:USD/该币汇率方向,"up"=该币对美元走弱;USD 自
 ## 第 5 步:校验(脚本,不可跳过)
 
 运行:
-`python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json --brief briefs/DATE-brief.md --prior reports/daily/前一日.md --decision-log state/decision-log.jsonl`
+`python3 scripts/check_report.py reports/daily/DATE.md data/DATE.json --brief briefs/DATE-brief.md --prior reports/daily/前一日.md --decision-log state/decision-log.jsonl --trend state/trend-DATE.md`
 
-三个溯源入参是**必给项**,不是叮嘱:日报模式下缺任何一个,校验器**返回 2**
+四个溯源入参是**必给项**,不是叮嘱:日报模式下缺任何一个,校验器**返回 2**
 并打印 `DAILY_REQUIRED_OPTION_MISSING`,连同一整行可直接复制粘贴的正确命令行。
 这一段因此只陈述各自守什么,不再写"请记得带上"——那句话在 2026-08-14 之前
 就写在这里,而实测忘带 `--decision-log` 时 10 条违约全部静默通过、退出码 0。
 
+- `--trend`:校验报告**逐字整块包含**第 3 步生成的趋势块
+  (`TREND_NOT_QUOTED` / `TREND_ANCHOR_MISMATCH` / `TREND_BLOCK_EMPTY`)。
+  命中才把这一块从数字溯源里扣掉 —— 所以块被改过时,你会同时看到这条码和
+  一串 `NUMBER_UNTRACEABLE`,那是失败关闭,不是两个独立的问题。
 - `--brief`:校验"要点表 ⊆ 快照",并把要点表并入报告的数字白名单。
 - `--prior`:校验「本期相对上期的变化」节不得逐字重复上一份日报。
 - `--decision-log`:本文件第 185/375 行那条规则的**机器判定** —— 速览表

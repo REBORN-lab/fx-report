@@ -57,14 +57,20 @@ def _verbatim(value, fallback):
     return value if isinstance(value, str) and value else fallback
 
 
-def _num_text(value):
-    """数值的唯一格式化口。bool 是 int 的子类,不挡住会印出「True」;
+def num_text(value):
+    """数值的唯一格式化口 —— `scripts/trend.py` 的趋势块也走它。
+
+    两个模块的产物印在同一份报告里,格式化各写一份的话,同一个 0.85697
+    会在两节里印成两种样子,而"同一个数印成两样"正是读者最先怀疑数据
+    出错的地方。所以这个名字**没有下划线前缀**:它是跨模块的公开口。
+bool 是 int 的子类,不挡住会印出「True」;
     NaN/Inf 印出来会被读成数字 —— 两者都写 null(信息缺失,不是 0)。"""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return NULL
     if isinstance(value, float) and not math.isfinite(value):
         return NULL
     return repr(value) if isinstance(value, float) else str(value)
+
 
 
 def _str_text(value):
@@ -196,8 +202,8 @@ def _daily_deviation_line(snap):
             parts.append("%s 快照 rates 容器无该币种条目" % c)
             continue
         parts.append("%s %s(前值 %s)" % (
-            c, _num_text(entry.get("deviation_pct")),
-            _num_text(_dict(derived_rates.get(c)).get("deviation_pct_prev"))))
+            c, num_text(entry.get("deviation_pct")),
+            num_text(_dict(derived_rates.get(c)).get("deviation_pct_prev"))))
         if entry.get("suspect") is True:
             suspects.append(c)
     parts.append("可疑标记:" + ("、".join(suspects) if suspects else "无"))
@@ -251,7 +257,7 @@ def weekly_appendix(digest):
     lines.append("- 口径差异:事件与公告结论句按区间累计条数计,定盘结论句按不同价位计,"
                  "三档口径不可比,不得相加;覆盖区间 %s 至 %s,跳过 %s 份。"
                  % (_str_text(dg.get("window_from")), _str_text(dg.get("window_to")),
-                    _num_text(dg.get("skipped"))))
+                    num_text(dg.get("skipped"))))
     return "\n".join(lines)
 
 

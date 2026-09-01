@@ -68,3 +68,18 @@ TBD - created by archiving change fx-daily-report-skill. Update Purpose after ar
 - **WHEN** 校验周报时未提供聚合文件
 - **THEN** 校验退回既有的结构检查,行为不变
 
+
+### Requirement: 趋势分析整块由脚本生成
+周报 MUST 含「## 趋势」节,位置在「各币种一周落点」之后、「上周相对上上周的变化」之前;该节整块 MUST 由 `scripts/trend.py --mode weekly` 生成并被周报**逐字包含**,LLM MUST NOT 手写或改写其中任何字符。块内的跨周数值(逐周周变动、逐周区间、逐周复盘分布)SHALL 由脚本直接取自 `state/weekly-digest-*.json`。校验器 SHALL 在整块逐字命中时才把该块从数字溯源中扣除。周报把当周日报并入数字白名单时,MUST 先扣掉各日报自己的趋势块——那些跨日数字由日报侧的同一道闸门负责,并入会放宽周报的白名单。
+
+#### Scenario: 周报趋势块逐字引用
+- **WHEN** 周报逐字包含 `scripts/trend.py --mode weekly` 生成的整块
+- **THEN** 校验通过,且该块内数字不参与周报的数字溯源判定
+
+#### Scenario: 周报趋势块入参缺席
+- **WHEN** 校验周报时未提供 `--trend`
+- **THEN** 校验返回 2
+
+#### Scenario: 日报趋势块不进周报白名单
+- **WHEN** 周报正文引用了某份当周日报趋势块里的跨日数字
+- **THEN** 该数字被判为不可溯源

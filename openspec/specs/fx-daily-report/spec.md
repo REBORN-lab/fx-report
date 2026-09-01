@@ -74,3 +74,22 @@ TBD - created by archiving change fx-daily-report-skill. Update Purpose after ar
 - **WHEN** 日报生成完成
 - **THEN** 执行摘要 ≤ 6 条且各币种节不超过约 300 中文字
 
+
+### Requirement: 趋势分析整块由脚本生成
+日报 MUST 含「## 趋势」节,该节整块 MUST 由 `scripts/trend.py --mode daily` 生成并被报告**逐字包含**;LLM MUST NOT 手写、改写或补写该块中的任何字符。趋势跨日,而日报的数字白名单按定义只有当日快照与要点表,因此块内的跨日数值(近若干次定盘、连续同向次数、实际利率连续未变的读数份数、观点分布)SHALL 由脚本直接取自 `data/*.json` 与 `state/decision-log.jsonl`,MUST NOT 经 LLM 计算或回忆。校验器 SHALL 在整块逐字命中时才把该块从数字溯源中扣除;未命中时 MUST 同时报违规并让块内数字照常接受不可溯源判定(失败关闭)。趋势块中的实际利率 MUST NOT 做跨口径比较(只报连续未变的读数份数,不报窗口两端相减得到的变化方向)。
+
+#### Scenario: 趋势块逐字引用
+- **WHEN** 报告逐字包含 `scripts/trend.py` 生成的整块
+- **THEN** 校验通过,且该块内数字不参与「报告 ⊆ 快照 ∪ 要点表」的存在性判定
+
+#### Scenario: 趋势块被改动
+- **WHEN** 报告中的趋势块与脚本产物相差任意一个字符
+- **THEN** 校验判 `TREND_NOT_QUOTED`,且块内跨日数字同时被判不可溯源
+
+#### Scenario: 趋势块入参缺席
+- **WHEN** 校验日报时未提供 `--trend`
+- **THEN** 校验返回 2 并打印 `DAILY_REQUIRED_OPTION_MISSING`
+
+#### Scenario: 块外复用块内数字
+- **WHEN** 趋势块中的跨日数字被写进正文散文
+- **THEN** 该数字仍被判为不可溯源(扣的是那一块,不是那个数)

@@ -994,6 +994,64 @@ def check_report_src():
         return f.read()
 
 
+class TrendBlockIsDocumentedTest(SkillDocTestCase):
+    """趋势块:**产出方拥有的字面量只有一份,SKILL 不许再抄一份**。
+
+    这一条的靶子是 2026-08-31 那次实测(记在 fx-vacuous-guard-pattern 第九种
+    形态):把校验器里的一个列名常量改掉,闸门当场静默跳过,而 stdout 仍是
+    `CHECK PASSED`、rc 仍是 0。趋势块有两个同形的把手 —— 锚点行与 `--trend`
+    这个必给入参 —— 所以这里把它们都钉死在**源码常量**上,而不是钉在
+    SKILL 里手抄的那个串上。
+    """
+
+    def test_daily_check_command_carries_every_required_option(self):
+        """第 5 步那一行必须带齐 `DAILY_REQUIRED_OPTIONS` 里的每一个选项。
+
+        缺一个的后果不是"少查一层"那么轻:CLI 直接 rc=2,照着 SKILL 抄命令
+        的人会当场卡住。而 SKILL 与源码各写一份必然漂移 —— 这条断言就是
+        让漂移在 diff 里现形。
+        """
+        text = raw(DAILY)
+        line = [x for x in text.splitlines()
+                if x.startswith("`python3 scripts/check_report.py")]
+        self.assertEqual(len(line), 1, "第 5 步的校验命令行不唯一:%s" % line)
+        for opt, _guard in check_report.DAILY_REQUIRED_OPTIONS:
+            self.assertIn(opt + " ", line[0],
+                          "SKILL 第 5 步的命令行少了必给入参「%s」;"
+                          "照它抄的人会撞 rc=2" % opt)
+
+    def test_weekly_check_command_carries_the_trend_option(self):
+        self.assertIn("--trend", raw(WEEKLY),
+                      "周报 SKILL 没提 --trend,而周报模式缺它即 rc=2")
+
+    def test_both_skills_tell_the_generator_to_own_the_block(self):
+        """两份 SKILL 都必须写明这一块**由脚本生成、原样贴**。
+
+        锚点取长串:短串(如「trend.py」)会被同段别处喂饱,于是"这一块你
+        一个字符都不写"这句被整句删掉时照样全绿 —— 本文件开头那条教训。
+        """
+        for path, name in ((DAILY, "日报"), (WEEKLY, "周报")):
+            f = flat(path)
+            self.assertIn("scripts/trend.py", f, name)
+            self.assertIn("整块原样贴", f,
+                          "%s SKILL 没写「整块原样贴」,趋势块就退回成"
+                          "可转抄的散文" % name)
+            self.assertIn("你一个字符都不写", f, name)
+
+    def test_the_anchor_line_is_not_transcribed_into_the_skill(self):
+        """SKILL **不得**抄一份锚点行。抄了就有两份字面量,产出方改了标题
+        而 SKILL 没跟着改时,读者按 SKILL 找不到这一块,却没有任何东西会红。
+        """
+        for path, name in ((DAILY, "日报"), (WEEKLY, "周报")):
+            self.assertNotIn(flat_text(check_report.TREND_ANCHOR), flat(path),
+                             "%s SKILL 抄了一份锚点行;锚点只许由 "
+                             "scripts/trend.py 拥有" % name)
+
+
+def flat_text(text):
+    return "".join(text.split())
+
+
 class VerdictCodesAreDocumentedTest(unittest.TestCase):
     """新增一个 VERDICT_* 码而忘了写处置,运维就会读到一个查不到的码。
     这是码与文档同步的唯一自动防线 —— 与 EMPTY_EVENTS_DERIVED 的键集哨兵
