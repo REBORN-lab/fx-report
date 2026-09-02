@@ -232,8 +232,10 @@ class TrendPageTest(unittest.TestCase):
         """页面读 page 块的哪些键,这里就钉哪些 —— 蒸馏产物改了字段名而页面
         没跟着改时,浏览器控制台里报错,而没有任何测试会红。"""
         page = self._embedded(self._page(), "page")
+        # 2026-09-02:观点复盘节按用户要求下线,review_findings 随之出块 ——
+        # 这张清单钉的是「页面读什么」,页面不读的键留在块里只会腐烂。
         for key in ("based_on", "prior", "week", "headline", "dek",
-                    "points", "calls", "review_findings"):
+                    "points", "calls", "ahead", "caveat"):
             self.assertIn(key, page, key)
         for row in page["calls"]:
             for key in ("ccy", "watch", "trigger_level", "flip_level",

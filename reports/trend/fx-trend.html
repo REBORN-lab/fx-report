@@ -107,25 +107,6 @@ td .hz{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--mute
 .kchip.k-evi{border-style:dashed; border-color:var(--muted); color:var(--ink)}
 td .gist{display:block; font-size:12.5px; color:var(--muted); margin-top:4px}
 
-/* ================= 复盘 ================= */
-.review{display:grid; grid-template-columns:minmax(0,3fr) minmax(240px,2fr); gap:26px; align-items:start}
-@media (max-width:760px){ .review{grid-template-columns:1fr} }
-.rv-chart{border:1px solid var(--rule-soft); background:var(--card); border-radius:3px;
-  padding:14px 14px 8px; overflow-x:auto}
-.rv-chart svg{display:block; width:100%; min-width:430px; height:auto}
-.legend{display:flex; flex-wrap:wrap; gap:5px 18px; margin-top:12px;
-  font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted)}
-.legend span{display:inline-flex; align-items:center; gap:6px}
-.legend i{width:9px; height:9px; border-radius:1px; flex:none}
-.tape100{margin-top:2px}
-.tape100 .bar{display:flex; gap:1px; height:14px; border-radius:2px; overflow:hidden; background:var(--sunk)}
-.tape100 .bar i{height:100%; min-width:2px}
-.tape100 .keys{display:flex; flex-wrap:wrap; gap:4px 16px; margin-top:9px;
-  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted)}
-.tape100 b{color:var(--ink); font-weight:600}
-.findings{margin:18px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:12px}
-.findings li{font-size:14.5px; line-height:1.7; padding-left:12px; border-left:2px solid var(--accent)}
-
 /* ================= 背景两栏 ================= */
 .duo{display:grid; grid-template-columns:1fr 1fr; gap:26px; align-items:start}
 @media (max-width:820px){ .duo{grid-template-columns:1fr} }
@@ -184,10 +165,10 @@ a{color:var(--accent)}
 
 <section>
   <div class="shead"><h2>定盘走势</h2>
-    <span class="lab">阴影 = 5 运行日区间 · 刻度上行 = 本币走弱</span></div>
+    <span class="lab">阴影 = 5 运行日区间 · 线段上行 = 本币走弱</span></div>
   <div class="wall">
     <svg id="wall" role="img" aria-label="四对货币的每日定盘与 5 运行日区间"></svg>
-    <p class="wall-note" id="wall-note">参考价是每日一次的定盘,画成离散刻度;连成曲线会让人以为有日内数据。</p>
+    <p class="wall-note" id="wall-note">参考价是每日一次的定盘;点与点之间的连线只示意先后,两点之间没有日内读数。</p>
   </div>
 </section>
 
@@ -204,24 +185,6 @@ a{color:var(--accent)}
       <thead><tr><th>币种</th><th>关注</th><th>触发位</th><th>翻转位</th><th>时限</th><th>相对上期</th></tr></thead>
       <tbody id="calls"></tbody>
     </table>
-  </div>
-</section>
-
-<section>
-  <div class="shead"><h2>观点复盘</h2>
-    <span class="lab" id="rv-lab"></span></div>
-  <div class="review">
-    <div>
-      <div class="rv-chart">
-        <svg id="rv-svg" viewBox="0 0 560 190" role="img" aria-label="按登记日分组的观点复盘结果"></svg>
-        <div class="legend" id="rv-legend"></div>
-      </div>
-      <div class="tape100" style="margin-top:16px">
-        <div class="bar" id="rv-bar"></div>
-        <div class="keys" id="rv-keys"></div>
-      </div>
-    </div>
-    <ul class="findings" id="findings"></ul>
   </div>
 </section>
 
@@ -253,7 +216,7 @@ a{color:var(--accent)}
 </div>
 
 <script id="series" type="application/json">{"bands":{"BRL":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":5.0998,"low":5.0856},{"chg_pct_1d":0.38,"date":"2026-08-11","high":5.1049,"low":5.0856},{"chg_pct_1d":null,"date":"2026-08-12","high":5.1049,"low":5.0856},{"chg_pct_1d":1.493,"date":"2026-08-13","high":5.1811,"low":5.0856},{"chg_pct_1d":null,"date":"2026-08-14","high":5.1811,"low":5.0856},{"chg_pct_1d":null,"date":"2026-08-18","high":5.2102,"low":5.0856},{"chg_pct_1d":-0.054,"date":"2026-08-19","high":5.2102,"low":5.0856},{"chg_pct_1d":-0.063,"date":"2026-08-20","high":5.2102,"low":5.1049},{"chg_pct_1d":-0.202,"date":"2026-08-21","high":5.2102,"low":5.1811},{"chg_pct_1d":-0.399,"date":"2026-08-22","high":5.2102,"low":5.1729},{"chg_pct_1d":-0.445,"date":"2026-08-25","high":5.2074,"low":5.1499},{"chg_pct_1d":0.157,"date":"2026-08-26","high":5.2041,"low":5.1499},{"chg_pct_1d":-0.223,"date":"2026-08-27","high":5.1936,"low":5.1465},{"chg_pct_1d":-0.087,"date":"2026-08-28","high":5.1729,"low":5.142},{"chg_pct_1d":0.43,"date":"2026-08-29","high":5.1641,"low":5.142},{"chg_pct_1d":0.149,"date":"2026-09-01","high":5.1718,"low":5.142}],"EUR":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":0.86693,"low":0.86543},{"chg_pct_1d":0.129,"date":"2026-08-11","high":0.86693,"low":0.86543},{"chg_pct_1d":null,"date":"2026-08-12","high":0.86693,"low":0.86543},{"chg_pct_1d":0.052,"date":"2026-08-13","high":0.867,"low":0.86543},{"chg_pct_1d":null,"date":"2026-08-14","high":0.867,"low":0.86543},{"chg_pct_1d":null,"date":"2026-08-18","high":0.867,"low":0.86259},{"chg_pct_1d":0.147,"date":"2026-08-19","high":0.867,"low":0.86259},{"chg_pct_1d":-0.25,"date":"2026-08-20","high":0.867,"low":0.8617},{"chg_pct_1d":-0.651,"date":"2026-08-21","high":0.867,"low":0.85609},{"chg_pct_1d":-0.154,"date":"2026-08-22","high":0.86386,"low":0.85477},{"chg_pct_1d":0.301,"date":"2026-08-25","high":0.86386,"low":0.85477},{"chg_pct_1d":0.017,"date":"2026-08-26","high":0.8617,"low":0.85477},{"chg_pct_1d":-0.061,"date":"2026-08-27","high":0.85749,"low":0.85477},{"chg_pct_1d":0.207,"date":"2026-08-28","high":0.85874,"low":0.85477},{"chg_pct_1d":0.017,"date":"2026-08-29","high":0.85889,"low":0.85697},{"chg_pct_1d":0.405,"date":"2026-09-01","high":0.86237,"low":0.85697}],"PHP":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":60.867,"low":60.75},{"chg_pct_1d":0.705,"date":"2026-08-11","high":61.178,"low":60.75},{"chg_pct_1d":null,"date":"2026-08-12","high":61.178,"low":60.75},{"chg_pct_1d":0.24,"date":"2026-08-13","high":61.325,"low":60.75},{"chg_pct_1d":null,"date":"2026-08-14","high":61.325,"low":60.75},{"chg_pct_1d":null,"date":"2026-08-18","high":61.509,"low":60.75},{"chg_pct_1d":0.441,"date":"2026-08-19","high":61.78,"low":60.75},{"chg_pct_1d":0.066,"date":"2026-08-20","high":61.821,"low":61.178},{"chg_pct_1d":-0.15,"date":"2026-08-21","high":61.821,"low":61.325},{"chg_pct_1d":-0.11,"date":"2026-08-22","high":61.821,"low":61.509},{"chg_pct_1d":0.096,"date":"2026-08-25","high":61.821,"low":61.66},{"chg_pct_1d":-0.003,"date":"2026-08-26","high":61.821,"low":61.66},{"chg_pct_1d":-0.091,"date":"2026-08-27","high":61.728,"low":61.66},{"chg_pct_1d":0.391,"date":"2026-08-28","high":61.902,"low":61.66},{"chg_pct_1d":0.569,"date":"2026-08-29","high":62.254,"low":61.661},{"chg_pct_1d":0.23,"date":"2026-09-01","high":62.397,"low":61.661}],"THB":[{"chg_pct_1d":null,"date":"2026-08-07","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-08","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-09","high":null,"low":null},{"chg_pct_1d":null,"date":"2026-08-10","high":33.055,"low":33.013},{"chg_pct_1d":0.279,"date":"2026-08-11","high":33.105,"low":33.013},{"chg_pct_1d":null,"date":"2026-08-12","high":33.105,"low":33.013},{"chg_pct_1d":0.076,"date":"2026-08-13","high":33.13,"low":33.013},{"chg_pct_1d":null,"date":"2026-08-14","high":33.13,"low":33.013},{"chg_pct_1d":null,"date":"2026-08-18","high":33.13,"low":33.013},{"chg_pct_1d":0.106,"date":"2026-08-19","high":33.13,"low":33.013},{"chg_pct_1d":0.015,"date":"2026-08-20","high":33.13,"low":33.025},{"chg_pct_1d":-0.454,"date":"2026-08-21","high":33.13,"low":32.915},{"chg_pct_1d":-0.729,"date":"2026-08-22","high":33.065,"low":32.675},{"chg_pct_1d":0.031,"date":"2026-08-25","high":33.065,"low":32.675},{"chg_pct_1d":0.153,"date":"2026-08-26","high":33.065,"low":32.675},{"chg_pct_1d":0.031,"date":"2026-08-27","high":32.915,"low":32.675},{"chg_pct_1d":0.336,"date":"2026-08-28","high":32.855,"low":32.675},{"chg_pct_1d":0.304,"date":"2026-08-29","high":32.955,"low":32.685},{"chg_pct_1d":0.637,"date":"2026-09-01","high":33.165,"low":32.735}]},"currency_economy":{"BRL":"BR","EUR":"EA","PHP":"PH","THB":"TH","USD":"US"},"economy_name":{"BR":"巴西","EA":"欧元区","PH":"菲律宾","TH":"泰国","US":"美国"},"fixings":{"BRL":[{"primary":5.1049,"ref_date":"2026-08-11"},{"primary":5.1811,"ref_date":"2026-08-13"},{"primary":5.2102,"ref_date":"2026-08-17"},{"primary":5.2074,"ref_date":"2026-08-18"},{"primary":5.2041,"ref_date":"2026-08-19"},{"primary":5.1936,"ref_date":"2026-08-20"},{"primary":5.1729,"ref_date":"2026-08-21"},{"primary":5.1499,"ref_date":"2026-08-24"},{"primary":5.158,"ref_date":"2026-08-25"},{"primary":5.1465,"ref_date":"2026-08-26"},{"primary":5.142,"ref_date":"2026-08-27"},{"primary":5.1641,"ref_date":"2026-08-28"},{"primary":5.1718,"ref_date":"2026-08-31"}],"EUR":[{"primary":0.86655,"ref_date":"2026-08-11"},{"primary":0.867,"ref_date":"2026-08-13"},{"primary":0.86259,"ref_date":"2026-08-17"},{"primary":0.86386,"ref_date":"2026-08-18"},{"primary":0.8617,"ref_date":"2026-08-19"},{"primary":0.85609,"ref_date":"2026-08-20"},{"primary":0.85477,"ref_date":"2026-08-21"},{"primary":0.85734,"ref_date":"2026-08-24"},{"primary":0.85749,"ref_date":"2026-08-25"},{"primary":0.85697,"ref_date":"2026-08-26"},{"primary":0.85874,"ref_date":"2026-08-27"},{"primary":0.85889,"ref_date":"2026-08-28"},{"primary":0.86237,"ref_date":"2026-08-31"}],"PHP":[{"primary":61.178,"ref_date":"2026-08-11"},{"primary":61.325,"ref_date":"2026-08-13"},{"primary":61.509,"ref_date":"2026-08-17"},{"primary":61.78,"ref_date":"2026-08-18"},{"primary":61.821,"ref_date":"2026-08-19"},{"primary":61.728,"ref_date":"2026-08-20"},{"primary":61.66,"ref_date":"2026-08-21"},{"primary":61.719,"ref_date":"2026-08-24"},{"primary":61.717,"ref_date":"2026-08-25"},{"primary":61.661,"ref_date":"2026-08-26"},{"primary":61.902,"ref_date":"2026-08-27"},{"primary":62.254,"ref_date":"2026-08-28"},{"primary":62.397,"ref_date":"2026-08-31"}],"THB":[{"primary":33.105,"ref_date":"2026-08-11"},{"primary":33.13,"ref_date":"2026-08-13"},{"primary":33.025,"ref_date":"2026-08-17"},{"primary":33.06,"ref_date":"2026-08-18"},{"primary":33.065,"ref_date":"2026-08-19"},{"primary":32.915,"ref_date":"2026-08-20"},{"primary":32.675,"ref_date":"2026-08-21"},{"primary":32.685,"ref_date":"2026-08-24"},{"primary":32.735,"ref_date":"2026-08-25"},{"primary":32.745,"ref_date":"2026-08-26"},{"primary":32.855,"ref_date":"2026-08-27"},{"primary":32.955,"ref_date":"2026-08-28"},{"primary":33.165,"ref_date":"2026-08-31"}]},"generated_from":["2026-08-07","2026-08-08","2026-08-09","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-18","2026-08-19","2026-08-20","2026-08-21","2026-08-22","2026-08-25","2026-08-26","2026-08-27","2026-08-28","2026-08-29","2026-09-01"],"real_rate":{"BR":[{"date":"2026-08-10","value":9.775},{"date":"2026-08-11","value":9.609},{"date":"2026-08-12","value":9.609},{"date":"2026-08-13","value":9.359},{"date":"2026-08-14","value":9.359},{"date":"2026-08-18","value":9.359},{"date":"2026-08-19","value":9.359},{"date":"2026-08-20","value":9.359},{"date":"2026-08-21","value":9.359},{"date":"2026-08-22","value":9.359},{"date":"2026-08-25","value":9.359},{"date":"2026-08-26","value":9.359},{"date":"2026-08-27","value":9.359},{"date":"2026-08-28","value":9.557},{"date":"2026-08-29","value":9.557},{"date":"2026-09-01","value":9.557}],"EA":[{"date":"2026-08-10","value":0.1},{"date":"2026-08-11","value":-0.499},{"date":"2026-08-12","value":-0.499},{"date":"2026-08-13","value":-0.499},{"date":"2026-08-14","value":-0.499},{"date":"2026-08-18","value":-0.499},{"date":"2026-08-19","value":-0.499},{"date":"2026-08-20","value":-0.499},{"date":"2026-08-21","value":-0.499},{"date":"2026-08-22","value":-0.499},{"date":"2026-08-25","value":-0.499},{"date":"2026-08-26","value":-0.499},{"date":"2026-08-27","value":-0.499},{"date":"2026-08-28","value":-0.693},{"date":"2026-08-29","value":-0.693},{"date":"2026-09-01","value":-0.693}],"PH":[{"date":"2026-08-10","value":3.976},{"date":"2026-08-11","value":-1.613},{"date":"2026-08-12","value":-1.613},{"date":"2026-08-13","value":-1.613},{"date":"2026-08-14","value":-1.613},{"date":"2026-08-18","value":-1.613},{"date":"2026-08-19","value":-1.45},{"date":"2026-08-20","value":-1.45},{"date":"2026-08-21","value":-1.45},{"date":"2026-08-22","value":-1.45},{"date":"2026-08-25","value":-1.45},{"date":"2026-08-26","value":-1.45},{"date":"2026-08-27","value":-1.45},{"date":"2026-08-28","value":-1.45},{"date":"2026-08-29","value":-1.45},{"date":"2026-09-01","value":-1.45}],"TH":[{"date":"2026-08-11","value":-1.42},{"date":"2026-08-12","value":-1.42},{"date":"2026-08-13","value":-1.42},{"date":"2026-08-14","value":-1.42},{"date":"2026-08-18","value":-1.42},{"date":"2026-08-19","value":-1.42},{"date":"2026-08-20","value":-1.42},{"date":"2026-08-21","value":-1.42},{"date":"2026-08-22","value":-1.42},{"date":"2026-08-25","value":-1.42},{"date":"2026-08-26","value":-1.42},{"date":"2026-08-27","value":-1.42},{"date":"2026-08-28","value":-0.947},{"date":"2026-08-29","value":-0.947},{"date":"2026-09-01","value":-0.947}],"US":[{"date":"2026-08-10","value":1.67},{"date":"2026-08-11","value":0.094},{"date":"2026-08-12","value":0.094},{"date":"2026-08-13","value":0.26},{"date":"2026-08-14","value":0.26},{"date":"2026-08-18","value":0.26},{"date":"2026-08-19","value":0.26},{"date":"2026-08-20","value":0.26},{"date":"2026-08-21","value":0.26},{"date":"2026-08-22","value":0.26},{"date":"2026-08-25","value":0.26},{"date":"2026-08-26","value":0.26},{"date":"2026-08-27","value":0.26},{"date":"2026-08-28","value":0.26},{"date":"2026-08-29","value":0.26},{"date":"2026-09-01","value":0.26}]},"real_rate_latest":{"BR":{"date":"2026-09-01","held":3,"value":9.557},"EA":{"date":"2026-09-01","held":3,"value":-0.693},"PH":{"date":"2026-09-01","held":10,"value":-1.45},"TH":{"date":"2026-09-01","held":3,"value":-0.947},"US":{"date":"2026-09-01","held":13,"value":0.26}},"runs":{"BRL":{"at_edge":"high","direction":"weak","latest":{"ref_date":"2026-08-31","value":5.1718},"n":2},"EUR":{"at_edge":"high","direction":"weak","latest":{"ref_date":"2026-08-31","value":0.86237},"n":3},"PHP":{"at_edge":"high","direction":"weak","latest":{"ref_date":"2026-08-31","value":62.397},"n":3},"THB":{"at_edge":"high","direction":"weak","latest":{"ref_date":"2026-08-31","value":33.165},"n":6}},"skipped":[],"verdict_order":["命中","未命中","无法判定","未到期","未复盘"],"verdict_total":95,"verdict_totals":{"命中":29,"无法判定":12,"未到期":7,"未命中":27,"未复盘":20},"verdicts_by_date":{"2026-08-07":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5},"2026-08-08":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5},"2026-08-09":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5},"2026-08-10":{"命中":1,"无法判定":4,"未到期":0,"未命中":0,"未复盘":0},"2026-08-11":{"命中":2,"无法判定":3,"未到期":0,"未命中":0,"未复盘":0},"2026-08-12":{"命中":3,"无法判定":2,"未到期":0,"未命中":0,"未复盘":0},"2026-08-13":{"命中":2,"无法判定":2,"未到期":1,"未命中":0,"未复盘":0},"2026-08-14":{"命中":2,"无法判定":0,"未到期":1,"未命中":2,"未复盘":0},"2026-08-18":{"命中":2,"无法判定":1,"未到期":0,"未命中":2,"未复盘":0},"2026-08-19":{"命中":1,"无法判定":0,"未到期":0,"未命中":4,"未复盘":0},"2026-08-20":{"命中":2,"无法判定":0,"未到期":0,"未命中":3,"未复盘":0},"2026-08-21":{"命中":4,"无法判定":0,"未到期":0,"未命中":1,"未复盘":0},"2026-08-22":{"命中":0,"无法判定":0,"未到期":0,"未命中":5,"未复盘":0},"2026-08-25":{"命中":0,"无法判定":0,"未到期":0,"未命中":5,"未复盘":0},"2026-08-26":{"命中":1,"无法判定":0,"未到期":1,"未命中":3,"未复盘":0},"2026-08-27":{"命中":2,"无法判定":0,"未到期":1,"未命中":2,"未复盘":0},"2026-08-28":{"命中":3,"无法判定":0,"未到期":2,"未命中":0,"未复盘":0},"2026-08-29":{"命中":4,"无法判定":0,"未到期":1,"未命中":0,"未复盘":0},"2026-09-01":{"命中":0,"无法判定":0,"未到期":0,"未命中":0,"未复盘":5}},"weekly":[{"rates":{"BRL":{"chg_pct_week":1.878,"days_observed":5,"fixings":3,"range_high":5.1811,"range_low":5.0856},"EUR":{"chg_pct_week":0.181,"days_observed":5,"fixings":3,"range_high":0.867,"range_low":0.86543},"PHP":{"chg_pct_week":0.947,"days_observed":5,"fixings":3,"range_high":61.325,"range_low":60.75},"THB":{"chg_pct_week":0.354,"days_observed":5,"fixings":3,"range_high":33.13,"range_low":33.013}},"verdicts":{"命中":10,"无法判定":11,"未到期":2,"未命中":2,"未复盘":0},"week":"2026-W33"},{"rates":{"BRL":{"chg_pct_week":-0.716,"days_observed":5,"fixings":5,"range_high":5.2102,"range_low":5.1729},"EUR":{"chg_pct_week":-0.907,"days_observed":5,"fixings":5,"range_high":0.86386,"range_low":0.85477},"PHP":{"chg_pct_week":0.245,"days_observed":5,"fixings":5,"range_high":61.821,"range_low":61.509},"THB":{"chg_pct_week":-1.06,"days_observed":5,"fixings":5,"range_high":33.065,"range_low":32.675}},"verdicts":{"命中":9,"无法判定":0,"未到期":8,"未命中":3,"未复盘":5},"week":"2026-W34"},{"rates":{"BRL":{"chg_pct_week":0.276,"days_observed":5,"fixings":5,"range_high":5.1641,"range_low":5.142},"EUR":{"chg_pct_week":0.181,"days_observed":5,"fixings":5,"range_high":0.85889,"range_low":0.85697},"PHP":{"chg_pct_week":0.867,"days_observed":5,"fixings":5,"range_high":62.254,"range_low":61.661},"THB":{"chg_pct_week":0.826,"days_observed":5,"fixings":5,"range_high":32.955,"range_low":32.685}},"verdicts":{"命中":5,"无法判定":0,"未到期":9,"未命中":6,"未复盘":5},"week":"2026-W35"}]}</script>
-<script id="page" type="application/json">{"ahead":[{"date":"2026-09-04","text":"美国就业读数落地——USD 判断的失效时限;替代解释的翻转指标:当日四条不再同号即改判"},{"date":"2026-09-04","text":"菲律宾下一期 CPI 发布——PHP 判断的失效时限;据报道 8 月通胀料已放缓到 6.0%"},{"date":"2026-09-10","text":"ECB 货币政策会议——EUR 判断的失效时限(此前政策利率 2.25 与 CPI 同比 2.942874 这一对不换)"},{"date":"2026-09-11","text":"美国 CPI(参考月 2026-08)发布——USD 关键假设(3.365 与政策利率 3.625 这一对不变)的到期日,换期即「预期先行」这一层作废"},{"date":"2026-09-16","text":"FOMC 与 COPOM 同日——利率先动则由已兑现的利差接管(周报主线一);BRL 判断亦以 COPOM 为限"}],"based_on":"2026-09-01","calls":[{"ccy":"USD","change_gist":"触发位 0.85889→0.86237","change_kind":"触发位变了","flip_level":"0.85697","horizon":"T+5","trigger_level":"0.86237","watch":"欧元升破上沿→加息押注延续"},{"ccy":"EUR","change_gist":"触发位仍 0.85697,驱动换德国通胀","change_kind":"依据变了","flip_level":"0.85697","horizon":"T+3","trigger_level":"0.85697","watch":"跌破下沿→加息理由开始进价"},{"ccy":"PHP","change_gist":"触发位 62.254→62.397","change_kind":"触发位变了","flip_level":"61.661","horizon":"T+3","trigger_level":"62.397","watch":"继续升破上沿→流量缺口延续"},{"ccy":"THB","change_gist":"上沿 32.955→33.165,下沿同抬","change_kind":"触发位变了","flip_level":"32.735","horizon":"T+3","trigger_level":"33.165","watch":"升破上沿→全球债券利率落汇率"},{"ccy":"BRL","change_gist":"触发位 5.1641→5.1718","change_kind":"触发位变了","flip_level":"5.142","horizon":"T+5","trigger_level":"5.1718","watch":"继续升破上沿→套息垫失守"}],"caveat":"本期四条的涨跌是 2026-08-28 与 2026-08-31 两次定盘之间的变化(中间两日没有读数),不能读成单日移动","dek":"欧元 0.86237、比索 62.397、泰铢 33.165、雷亚尔 5.1718 均是各自区间上沿;美国实际利率 0.26 未动","headline":"加息押注下四条本币再同号走弱、齐刷上沿","points":["泰铢连续 6 次、欧元与比索各连续 3 次、雷亚尔连续 2 次朝美元走弱,当次全贴区间上沿","泰铢 0.637% 是四条最大一档,欧元 0.405%、比索 0.23%、雷亚尔 0.149% 最小","据报道 Warsh 推高加息押注,美元逼近两周高位、被读作 9 月加息背书(并非所有人被说服);实际利率 0.26 未动","据报道比索被称亚洲\"最弱的一环\",7 月热钱净流入骤降 91%;62.397 刷出区间上沿","实际利率:巴西 9.557 五条最高,菲律宾 -1.45 最深;美国 0.26 连续 13 份读数未变","USD、PHP、THB、BRL 四条判断的触发位随上沿上移,EUR 触发位仍 0.85697;泰铢上沿 33.165、下沿 32.735 一起被抬走"],"prior":"2026-08-29","review_findings":["2026-08-22 与 2026-08-25 两日观点成批未命中:各 5 条、命中 0","押本币走强的观点 2026-08-22 起已判 8 条全未命中,此前命中 7 条","2026-08-29 已判的 4 条全部在第 1 个运行日 2026-09-01 命中"],"week":"2026-W35"}</script>
+<script id="page" type="application/json">{"ahead":[{"date":"2026-09-04","text":"美国就业读数落地——USD 判断的失效时限;替代解释的翻转指标:当日四条不再同号即改判"},{"date":"2026-09-04","text":"菲律宾下一期 CPI 发布——PHP 判断的失效时限;据报道 8 月通胀料已放缓到 6.0%"},{"date":"2026-09-10","text":"ECB 货币政策会议——EUR 判断的失效时限(此前政策利率 2.25 与 CPI 同比 2.942874 这一对不换)"},{"date":"2026-09-11","text":"美国 CPI(参考月 2026-08)发布——USD 关键假设(3.365 与政策利率 3.625 这一对不变)的到期日,换期即「预期先行」这一层作废"},{"date":"2026-09-16","text":"FOMC 与 COPOM 同日——利率先动则由已兑现的利差接管(周报主线一);BRL 判断亦以 COPOM 为限"}],"based_on":"2026-09-01","calls":[{"ccy":"USD","change_gist":"触发位 0.85889→0.86237","change_kind":"触发位变了","flip_level":"0.85697","horizon":"T+5","trigger_level":"0.86237","watch":"欧元升破上沿→加息押注延续"},{"ccy":"EUR","change_gist":"触发位仍 0.85697,驱动换德国通胀","change_kind":"依据变了","flip_level":"0.85697","horizon":"T+3","trigger_level":"0.85697","watch":"跌破下沿→加息理由开始进价"},{"ccy":"PHP","change_gist":"触发位 62.254→62.397","change_kind":"触发位变了","flip_level":"61.661","horizon":"T+3","trigger_level":"62.397","watch":"继续升破上沿→流量缺口延续"},{"ccy":"THB","change_gist":"上沿 32.955→33.165,下沿同抬","change_kind":"触发位变了","flip_level":"32.735","horizon":"T+3","trigger_level":"33.165","watch":"升破上沿→全球债券利率落汇率"},{"ccy":"BRL","change_gist":"触发位 5.1641→5.1718","change_kind":"触发位变了","flip_level":"5.142","horizon":"T+5","trigger_level":"5.1718","watch":"继续升破上沿→套息垫失守"}],"caveat":"本期四条的涨跌是 2026-08-28 与 2026-08-31 两次定盘之间的变化(中间两日没有读数),不能读成单日移动","dek":"欧元 0.86237、比索 62.397、泰铢 33.165、雷亚尔 5.1718 均是各自区间上沿;美国实际利率 0.26 未动","headline":"加息押注下四条本币再同号走弱、齐刷上沿","points":["泰铢连续 6 次、欧元与比索各连续 3 次、雷亚尔连续 2 次朝美元走弱,当次全贴区间上沿","泰铢 0.637% 是四条最大一档,欧元 0.405%、比索 0.23%、雷亚尔 0.149% 最小","据报道 Warsh 推高加息押注,美元逼近两周高位、被读作 9 月加息背书(并非所有人被说服);实际利率 0.26 未动","据报道比索被称亚洲\"最弱的一环\",7 月热钱净流入骤降 91%;62.397 刷出区间上沿","实际利率:巴西 9.557 五条最高,菲律宾 -1.45 最深;美国 0.26 连续 13 份读数未变","USD、PHP、THB、BRL 四条判断的触发位随上沿上移,EUR 触发位仍 0.85697;泰铢上沿 33.165、下沿 32.735 一起被抬走"],"prior":"2026-08-29","week":"2026-W35"}</script>
 <script>
 (function () {
   "use strict";
@@ -362,23 +325,31 @@ a{color:var(--accent)}
           // 承载的是同一个或更新的数,信息不丢。
           if (lastVal !== null && Math.abs(y(v) - y(lastVal)) < 12) return;
           var t = svg("text", { x: W - R + 7, y: y(v) + (vi ? 9 : -3), "font-size": 9.5,
-            fill: "var(--faint)", "font-family": '"IBM Plex Mono",monospace' });
+            fill: "var(--muted)", "font-family": '"IBM Plex Mono",monospace' });
           t.textContent = v;
           wall.appendChild(t);
         });
       }
+      // 定盘连成折线:逐段按走向着色(上行段 = 本币走弱),顶点留小圆点。
+      // 线只示意先后 —— 两点之间没有日内读数,这句话固定写在图注里。
+      for (var si = 1; si < s.length; si++) {
+        var a = s[si - 1], c = s[si];
+        var segCol = c.primary > a.primary ? "var(--weak)"
+          : c.primary < a.primary ? "var(--strong)" : "var(--tick)";
+        wall.appendChild(svg("line", { x1: x(a.ref_date), y1: y(a.primary),
+          x2: x(c.ref_date), y2: y(c.primary), stroke: segCol,
+          "stroke-width": 1.7, "stroke-linecap": "round" }));
+      }
+      var runDir = (D.runs[p] || {}).direction;
+      var lastCol = runDir === "weak" ? "var(--weak)"
+        : runDir === "strong" ? "var(--strong)" : "var(--tick)";
       s.forEach(function (f, i) {
-        var prev = i > 0 ? s[i - 1].primary : null;
-        var col = prev === null || f.primary === prev ? "var(--tick)"
-          : (f.primary > prev ? "var(--weak)" : "var(--strong)");
         var last = i === s.length - 1;
-        wall.appendChild(svg("line", { x1: x(f.ref_date), x2: x(f.ref_date),
-          y1: y(f.primary) - (last ? 8 : 5), y2: y(f.primary) + (last ? 8 : 5),
-          stroke: col, "stroke-width": last ? 2.6 : 1.7 }));
+        wall.appendChild(svg("circle", { cx: x(f.ref_date), cy: y(f.primary),
+          r: last ? 3.2 : 1.8, fill: last ? lastCol : "var(--tick)" }));
         if (last) {
-          wall.appendChild(svg("circle", { cx: x(f.ref_date), cy: y(f.primary), r: 2.8, fill: col }));
           var vt = svg("text", { x: W - R + 7, y: y(f.primary) + 3.5, "font-size": 12,
-            "font-weight": 600, fill: col, "font-family": '"IBM Plex Mono",monospace' });
+            "font-weight": 600, fill: lastCol, "font-family": '"IBM Plex Mono",monospace' });
           vt.textContent = f.primary;
           wall.appendChild(vt);
         }
@@ -388,7 +359,7 @@ a{color:var(--accent)}
       if (i % 2 && i !== axis.length - 1) return;
       if (i === axis.length - 2 && axis.length % 2 === 0) return;
       var t = svg("text", { x: x(d), y: H - 8, "text-anchor": "middle", "font-size": 9.5,
-        fill: "var(--faint)", "font-family": '"IBM Plex Mono",monospace' });
+        fill: "var(--muted)", "font-family": '"IBM Plex Mono",monospace' });
       t.textContent = d.slice(5);
       wall.appendChild(t);
     });
@@ -408,54 +379,6 @@ a{color:var(--accent)}
       '<td><span class="hz">' + esc(r.horizon) + "</span></td>" +
       '<td><span class="kchip ' + (KIND_CLASS[r.change_kind] || "") + '">' +
       esc(r.change_kind) + '</span><span class="gist">' + numify(r.change_gist) + "</span></td></tr>";
-  }).join(""));
-
-  /* ---------- 复盘 ---------- */
-  var order = D.verdict_order;
-  var COLOR = { "命中": "var(--hit)", "未命中": "var(--miss)", "无法判定": "var(--undec)",
-                "未到期": "var(--pending)", "未复盘": "var(--unrev)" };
-  var colorOf = function (k) { return COLOR[k] || "var(--tick)"; };
-  var totals = D.verdict_totals;
-  var total = D.verdict_total;   // 总数由脚本给出,页面不求和
-  document.getElementById("rv-lab").textContent = "已登记 " + total + " 条 · 按登记日分组";
-  var sc = document.getElementById("rv-svg");
-  var dates = Object.keys(D.verdicts_by_date);
-  var CW = 560, CH = 190, cL = 4, cR = 4, cT = 8, cB = 30;
-  var colW = (CW - cL - cR) / dates.length;
-  var maxN = Math.max.apply(null, dates.map(function (dt) {
-    return order.reduce(function (a, k) { return a + (D.verdicts_by_date[dt][k] || 0); }, 0);
-  })) || 1;
-  dates.forEach(function (dt, i) {
-    var acc = 0, bx = cL + colW * i + colW * 0.18, bw = colW * 0.64;
-    order.forEach(function (k) {
-      var n = D.verdicts_by_date[dt][k] || 0;
-      if (!n) return;
-      var h = (CH - cT - cB) * (n / maxN);
-      acc += h;
-      sc.appendChild(svg("rect", { x: bx, y: CH - cB - acc, width: bw, height: h, fill: colorOf(k) }));
-    });
-    if ((i % 2 === 0 && !(i === dates.length - 2 && dates.length % 2 === 0))
-        || i === dates.length - 1) {
-      var t = svg("text", { x: bx + bw / 2, y: CH - cB + 14, "text-anchor": "middle",
-        "font-size": 8.5, fill: "var(--faint)", "font-family": '"IBM Plex Mono",monospace' });
-      t.textContent = dt.slice(5);
-      sc.appendChild(t);
-    }
-  });
-  sc.appendChild(svg("line", { x1: cL, x2: CW - cR, y1: CH - cB, y2: CH - cB,
-    stroke: "var(--rule)", "stroke-width": 1 }));
-  set("rv-legend", order.map(function (k) {
-    return '<span><i style="background:' + colorOf(k) + '"></i>' + esc(k) + "</span>";
-  }).join(""));
-  set("rv-bar", order.map(function (k) {
-    var n = totals[k] || 0;
-    return n ? '<i style="width:' + (100 * n / total) + "%;background:" + colorOf(k) + '"></i>' : "";
-  }).join(""));
-  set("rv-keys", order.map(function (k) {
-    return "<span>" + esc(k) + " <b>" + esc(totals[k] || 0) + "</b></span>";
-  }).join(""));
-  set("findings", (P.review_findings || []).map(function (t) {
-    return "<li>" + numify(t) + "</li>";
   }).join(""));
 
   /* ---------- 往前看 ---------- */
