@@ -1,0 +1,762 @@
+{
+  "date": "2026-09-08",
+  "run_at": "2026-09-08T02:11:17+00:00",
+  "schema_version": 1,
+  "rates": {
+    "PHP": {
+      "primary": 62.641,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 62.65,
+      "ref_date": "2026-09-07",
+      "prev_ref_date": "2026-09-04"
+    },
+    "THB": {
+      "primary": 32.895,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 32.92,
+      "ref_date": "2026-09-07",
+      "prev_ref_date": "2026-09-04"
+    },
+    "BRL": {
+      "primary": 5.1261,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 5.1114,
+      "ref_date": "2026-09-07",
+      "prev_ref_date": "2026-09-04"
+    },
+    "EUR": {
+      "primary": 0.86044,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 0.86044,
+      "ref_date": "2026-09-07",
+      "prev_ref_date": "2026-09-04"
+    }
+  },
+  "macro": [
+    {
+      "value": 3.365,
+      "prev": 3.531,
+      "period": "2026-07",
+      "source": "bls",
+      "series_id": "BLS/CUUR0000SA0",
+      "economy": "US",
+      "indicator": "CPI 同比",
+      "is_new_release": false,
+      "lag_months": 2
+    },
+    {
+      "value": 2.942874,
+      "prev": 2.748918,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_LONG_CPI/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "CPI 同比",
+      "lag_months": 2
+    },
+    {
+      "value": 6.1,
+      "prev": 6.2,
+      "period": "2026-08",
+      "prev_period": "2026-07",
+      "source": "psa",
+      "series_id": "PSA/2M4ACP23/PH",
+      "released": "2026-09-04",
+      "next_release": "2026-10-07",
+      "economy": "PH",
+      "indicator": "CPI 同比",
+      "is_new_release": false,
+      "lag_months": 1
+    },
+    {
+      "value": 1.947079,
+      "prev": 2.419837,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_LONG_CPI/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "CPI 同比",
+      "lag_months": 2
+    },
+    {
+      "value": 4.4430246091,
+      "prev": 4.6413275481,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_LONG_CPI/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "CPI 同比",
+      "lag_months": 2
+    },
+    {
+      "value": 3.625,
+      "prev": 3.875,
+      "period": "2026-09-01",
+      "prev_period": "2025-12-10",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/US",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": 2.25,
+      "prev": 2.0,
+      "period": "2026-09-01",
+      "prev_period": "2026-06-16",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": 5.0,
+      "prev": 4.75,
+      "period": "2026-08-28",
+      "prev_period": "2026-08-27",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/PH",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "政策利率",
+      "lag_months": 1
+    },
+    {
+      "value": 1.0,
+      "prev": 1.25,
+      "period": "2026-08-27",
+      "prev_period": "2026-02-24",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "政策利率",
+      "lag_months": 1
+    },
+    {
+      "value": 14.0,
+      "prev": 14.25,
+      "period": "2026-09-01",
+      "prev_period": "2026-08-05",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": -195171000000.0,
+      "prev": -214611000000.0,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/USA",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": 66702717946.69043,
+      "prev": 106565543901.5297,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/G163",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": -5663843363.94035,
+      "prev": -2470744910.51831,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/PHL",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": 1416919127.11114,
+      "prev": 423222852.001783,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/THA",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": -7811949096.10998,
+      "prev": -20051640375.66,
+      "period": "2026-Q2",
+      "prev_period": "2026-Q1",
+      "source": "imf",
+      "series_id": "IMF/BOP/BRA",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": 103.2,
+      "prev": 102.62,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/US",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 108.66,
+      "prev": 108.77,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 88.47,
+      "prev": 88.71,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/PH",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 103.33,
+      "prev": 104.81,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 114.73,
+      "prev": 113.97,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 108.25,
+      "prev": 107.84,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/US",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 102.55,
+      "prev": 102.71,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 97.85,
+      "prev": 98.07,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/PH",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 97.72,
+      "prev": 99.97,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 118.89,
+      "prev": 118.28,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    }
+  ],
+  "events": {
+    "USD": {
+      "articles": [
+        {
+          "title": "Yen extends rally to new seven-month high; dollar subdued ahead of CPI - reuters.com",
+          "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNTzJTNlNmRkk4ZlAxN0diYXoyblUyaE41UTRRRFpZbURGSk9pZGlTVDc5QkpJSHpqWlRWY0ZjR1M1ZW1sdU5KNmJqUGZ6eTRleGRfektFaDFlMmprZW14T2RodGJMcVlfNG5fMmZTbFhqNERNeGZvVW1CcHQ5MUZ4R0pGbTF3WllEN2hqQkpTVUZrUmVlUnh2UWIwOTJSQU5IZ2pxRGJNelRPdU8wd0dYS0Q4QXB0bWNRSnc?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260908T005600Z"
+        },
+        {
+          "title": "UBS forecasts two US Fed rate hikes in 2026 after strong jobs report - reuters.com",
+          "url": "https://news.google.com/rss/articles/CBMirwFBVV95cUxPNXNXbFhiR0xaOTliU21YN051SmZxSndRR1d0WkFHUEFBbHRsSS1EdE1zMUJ6ZlQ2NFRwNFZFWVlSMGx5WUc5RFVhYmE0WnNpTWJfbXRraUVTemlyU0U3ZFMzSGxwZDdMWVloTERkSkdfa2NiX3N2cThqbkRIUzhSVGNaRl9wak9YZVV2YXg0UVVZRWtXaG9PYUllRnl6dnNoY0NIQlZwNkRwVEpDOHIw?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260907T090743Z"
+        },
+        {
+          "title": "Japan's August foreign reserves post largest-ever drop after record intervention - reuters.com",
+          "url": "https://news.google.com/rss/articles/CBMizwFBVV95cUxNanBTRWJCMTNGZkYzeS01WDVnOUlYSTdIWU1zdm82WjE3TGxBdlI0ZTlpc1BQTXExdE5ESmExaXFrN2JpOEhJYU0zUGVGdnUyalhqeU5wX0VobHU0bExWLUJLZW5Yc1RjMTdSY1lqaWplSFZOc0JHQ05Rek04RXVSdmc0NG1jZGNQeF9oQnpoTkJOQV9IejkyeUxYdlFtTUM4MnFfQXBoOE1haVNjUFFWdFVOcjhrRTU1c3lqSlB2SzVwdjlPb0RWOEkyZHpYTWM?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260907T002800Z"
+        }
+      ],
+      "articles_raw_count": 100,
+      "source_cap": 99,
+      "source_capped": true,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 100,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 97,
+        "kept": 3,
+        "capped": true
+      },
+      "attributable_source_absent": false,
+      "official": [
+        {
+          "title": "Minutes of the Board's discount rate meetings on July 20 and July 29, 2026",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260825a.htm",
+          "published": "Tue, 25 Aug 2026 18:00:00 GMT",
+          "issuer": "Fed"
+        },
+        {
+          "title": "Minutes of the Federal Open Market Committee, July 28–29, 2026",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260819a.htm",
+          "published": "Wed, 19 Aug 2026 18:00:00 GMT",
+          "issuer": "Fed"
+        },
+        {
+          "title": "Federal Reserve issues FOMC statement",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+          "published": "Wed, 29 Jul 2026 18:00:00 GMT",
+          "issuer": "Fed"
+        }
+      ]
+    },
+    "EUR": {
+      "articles": [
+        {
+          "title": "Euro zone investor morale hits four-year-plus high in September, Sentix survey shows - reuters.com",
+          "url": "https://news.google.com/rss/articles/CBMiyAFBVV95cUxQUVBLRnBSSzNMdDY2eGY1a040aFBQQ1hqSFVjNTNkTDUwOURNMk0wWDI4eDExOU9oc0d3LXR3LURta3FXRU9HX3pPeElOTUxjRWdDdFg5SkJydzhIN3B2d0F0YTJtSk5waWloVzlILXQ5T1Q5MXVmVlFBUDdYd3lnNElwd2VOSG5CYTBYYzMzTV9SY2ZfWEx1RXQ0RkdOT3NyUFZWOXVpMHJkemw1RGNpWHZmeHZjekRTZFFfZU8yc3l4dVNSRm8yXw?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260907T083409Z"
+        },
+        {
+          "title": "Euro-Zone Growth Upgraded After Bumper Second Quarter in Ireland - Bloomberg.com",
+          "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxQbXBYeFVMQ25FTGd5akhUbko5T1k0LW9iOS04SGlPQzVvc3V2UjJybXA4QVhhUXo0UTMwcXlLTGxkekFhTDZNd3dpTFNIaGYxY0V5eUR4NEhxdFNIaHREWl9MSC1hclpUYkR2OTdGdnM3RUVEUEVCTGEzR2xxcDRwckpGb2JwUkZXRTVKeTBaU3dTMENwNHhTSU1rOGQ3dC1iLXR6RzZ3cW82Y2Q4VDEyeXdVazZvUQ?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260907T094734Z"
+        },
+        {
+          "title": "Can China bring in more bullion as central banks shift gold reserves from US? - South China Morning Post",
+          "url": "https://news.google.com/rss/articles/CBMizAFBVV95cUxPa0ttdWgtLVIyMndrTFJJbEMyYmMwaUthUkYxZ1Y2VmZvc3RpeGhHS2Rydm5waGM5QjNjLVI2VFMwbXhPNWxudVVlUVhsODRXQ0Z3ZkVIWUk4Z2hFekdwa3RzMmc2RlRQTDBSMXdmNWhrb3A4Q3djbkRJdHVFV3llSVJFZDRwVVVSelo0d3p5X1VUM2lCTmE4UHE0dWJGOVF5bjlaV0FrcjB6OGdiVUFNT0lJam5mV2c0VVhqU0pYMmJyMFBNMzB1aW5DRUbSAcwBQVVfeXFMTzNPbl92OHV0c1JndkNGaW84YlBCVkhtdmtLS1BhWFNoc2RhTHhOV05wcWdjNUl4MDJTNlJFX3AybUF6Rm44Z1JzMG9wRG1odk01ZlpHZW1EcjFLU1Y3VFJLbXJqcXYzMHFTOF9HTmtIM3lvWkFYekhXVTVBb0NUWHZyRld1U29CNXNxb0d3OVE3SDBVN0RWbVN2U0RlVnFTcE42a1U2LTZOenBET1pvX2NWbHNReEwzMWdMNTl4eTRwaFVVTlZMX2d4V1Nl?oc=5",
+          "domain": "scmp.com",
+          "seendate": "20260907T110010Z"
+        },
+        {
+          "title": "Another rate hike, just for insurance: Five questions for the ECB - reuters.com",
+          "url": "https://news.google.com/rss/articles/CBMipwFBVV95cUxPUUFuUFh6VTdaUzh1amJOYk43S256U1ZCVzJ1aXhBTE9UdkN4TTJLTG1LcUZKYURQd0RLRThKNzBzQkFaOE5pdmRZbUpLRWEwa09lX2xDLTlGNlJvVk1PSDA3dG15SUg1Qk5aejlNSGp2dmxYemRzeFZFdXQ0WjIyakFRYkUzT2kwcHR2a3BBZXNCRzFKUFRVN2FybzVmSFB4bEI5VWJLcw?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260907T040300Z"
+        }
+      ],
+      "articles_raw_count": 28,
+      "source_cap": 99,
+      "source_capped": false,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 28,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 24,
+        "kept": 4,
+        "capped": false
+      },
+      "attributable_source_absent": false,
+      "official": [
+        {
+          "title": "Philip R. Lane: Diversity at the European Central Bank",
+          "link": "https://www.ecb.europa.eu//press/key/date/2026/html/ecb.sp260904~7b9257099b.en.pdf",
+          "published": "Fri, 04 Sep 2026 11:10:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "Boris Vujčić: Listening to households: expectations, behaviour and monetary policy",
+          "link": "https://www.ecb.europa.eu//press/key/date/2026/html/ecb.sp260901~bb28f33f54.en.html",
+          "published": "Tue, 01 Sep 2026 18:00:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "Isabel Schnabel: Central banks on-chain",
+          "link": "https://www.ecb.europa.eu//press/key/date/2026/html/ecb.sp260828~fe9afc86e8.en.html",
+          "published": "Fri, 28 Aug 2026 18:00:00 +0200",
+          "issuer": "ECB"
+        }
+      ]
+    },
+    "PHP": {
+      "articles": [
+        {
+          "title": "Philippine peso hits record low among subdued Asian currencies - Interaksyon",
+          "url": "https://news.google.com/rss/articles/CBMiwAFBVV95cUxNOHVPWHBWcGdqZi05UEg2TXNsY2JMT3JpTVFxRTl5cl9KLXpWckNIeXFDMUZlaU51SGpIRmxEc0FRYUF1dk9CclNEeEdpVHBjNTFHekx5OXFXell3TV93NWU0Z1liZzU4NUxiMzNyN3REZjJZdmhTNFJ5R1FVa0V4OW1LX3JDWGJiamZ3RUJ2STVYX0twVnVoQU5aMTJrMy1sRDJOUUZabmFMTmhrSVFVbFp2MU1aeHo4cF9Wa0pSc0s?oc=5",
+          "domain": "interaksyon.philstar.com",
+          "seendate": "20260907T030927Z"
+        },
+        {
+          "title": "Peso breaches 62.7 per dollar as Fed hike bets lift greenback - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMinwFBVV95cUxQMWJMdGpuVExielJWZ29RUUVyMGxtWEhvT1VYU0ZyTVY1ejlvUS1DN0RJU29yN3lmWDVaaFVPUUhPSS12RWZ6WmNvRml1SUV6aU9CaldicllabmpLblJEWkZHZ1A0VkdiV29VTWl6cHRHNVVxUGJxR3o3U05fYVYzUTBDMU5RQ2FIVGFZWWs2WkxPVXBRdXdHTXZsaG1rYWPSAaQBQVVfeXFMUFdYTlNDeTgxQlBSOHdjYkNodzNlZXoxWkNwOXB5eGtIdlRsdTVJSENpMWdHNFdHUDVmV0hWODdFYkstb09kRE11QVRZVU40UUJZMERabkl1Z1JVclNneVN5YzlpZkVuMFd0VENQUFdnN2tzQUctUnU3RmVWcjJCazdnRkV2WEJfUUYwUkU0MlA3ZUdaZ1dJZ25VWVdCc0cwcHJpLUY?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260907T024600Z"
+        },
+        {
+          "title": "BSP proposes tighter payment rules - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMie0FVX3lxTE9yNWw4dG5OM044WEZacHRoQ044TnltdDBWQVFybnlNanNjNGR0YWJBeHJZUnJLSGlaQ3M3Nk80YTN5QVZweDkta1R4Yk4xc3AyclBYcmZZbDBlamNHZVpQbFdydFFOQWlZUVUtNmFxTVlKRTZsbDRwRGRzb9IBgAFBVV95cUxORXRNT29tSTM1bjhmS3VXd0RYS2JSTEhIeE9NaXFpRFg4TWJyYWlxRTNiQzhkMFJyNDJjTnF0TzNzNzlqdUx4bm9XSGFIWDR3ZTQtUnZpWEJfNWNmNTFsS3lFRXBYdHdoanY1eUZUZ1dyckptUlVab0VueWpFTXVLLQ?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260906T181100Z"
+        },
+        {
+          "title": "Diesel, gasoline prices in NCR hit P100 mark - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMihwFBVV95cUxNR3doU1lfWTc1WmNSOGNnQTVQcV82TlZGd3dWNl9vaUo0cFMwcDVhVW9zZl8zeDRpMklwbWhyRThHM1B3SmVSRXUzdU9wbnR1SDROazJmMFZlS1B6My15X0NFNWlTTHBKNG1qUktiNG1oWmYxUFcyZUM5WXJueHNWSGpmcFBSYTTSAYwBQVVfeXFMTS1ZQjgwbXY2WXk2Wk5pdUxZdzdzd0hFTmplSGFBcEpRTzhnYkxrQW5sZ2k5ZU1fWlVLTm1hX2lqQVpjcjZwQUF1dzlTUDhqeXdnbFEyWTdQTW5XanFnMGV6MWlWSFlzV09JZ0t1Ukh5bnQ0Sm9FNVhIWFBaUTlrQmJoTHdTVGJHUXBrenY?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260907T212000Z"
+        }
+      ],
+      "articles_raw_count": 38,
+      "source_cap": 99,
+      "source_capped": false,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 38,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 34,
+        "kept": 4,
+        "capped": false
+      },
+      "attributable_source_absent": false
+    },
+    "THB": {
+      "articles": [
+        {
+          "title": "Thai August headline CPI up 2.53% y/y, above forecast - Bangkok Post",
+          "url": "https://news.google.com/rss/articles/CBMipAFBVV95cUxPNEpDT090dW1MYWdzSTFvcC0zTGJwNEo0aTh4REN1bVRXOExheE5xQ3pfdGNkQU9tUXIwSDBRU3ZuXzJ3c0JfakRKTzBEUEZYRGRvVXpfcmtyM1RyVng3S3ZDV0hnLXU4bHhiUmo2OEJlM05kb2NTdHZoWGUwWGZkX2dCYVhDekdlZHhfbDZic2xPSElRbHFZa3VkU0FSdDFiVjh0dQ?oc=5",
+          "domain": "bangkokpost.com",
+          "seendate": "20260907T044200Z"
+        }
+      ],
+      "articles_raw_count": 14,
+      "source_cap": 99,
+      "source_capped": false,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 14,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 13,
+        "kept": 1,
+        "capped": false
+      },
+      "attributable_source_absent": false
+    },
+    "BRL": {
+      "articles": [
+        {
+          "title": "Pix Record : 318 Million Payments in a Single Day",
+          "url": "https://www.riotimesonline.com/brazil-pix-record-318-million-payments-one-day-2026/",
+          "domain": "riotimesonline.com",
+          "seendate": "20260907T094500Z"
+        },
+        {
+          "title": "Homem é acusado de incendiar casa da ex - companheira em Jardim Alegre",
+          "url": "https://tnonline.uol.com.br/noticias/vale-do-ivai/homem-e-acusado-de-incendiar-casa-da-ex-companheira-em-jardim-alegre-1143819",
+          "domain": "tnonline.uol.com.br",
+          "seendate": "20260906T124500Z"
+        },
+        {
+          "title": "LatAm Expat & Nomad Daily Guide for Monday , September 7 , 2026",
+          "url": "https://www.riotimesonline.com/latam-expat-nomad-daily-guide-for-monday-september-7-2026/",
+          "domain": "riotimesonline.com",
+          "seendate": "20260907T053000Z"
+        },
+        {
+          "title": "Mulher corre ao ver PM após denúncia de agressão em Ivaiporã",
+          "url": "https://tnonline.uol.com.br/noticias/vale-do-ivai/mulher-corre-ao-ver-pm-apos-denuncia-de-agressao-em-ivaipora-1143913",
+          "domain": "tnonline.uol.com.br",
+          "seendate": "20260907T111500Z"
+        },
+        {
+          "title": "Mulher é espancada em Marechal Deodoro ; homem é preso",
+          "url": "https://www.alagoas24horas.com.br/1760343/mulher-e-espancada-e-tem-roupas-rasgadas-em-marechal-deodoro-agressor-e-preso-em-flagrante/",
+          "domain": "alagoas24horas.com.br",
+          "seendate": "20260906T170000Z"
+        },
+        {
+          "title": "A promessa de Caiado difícil de acreditar",
+          "url": "https://veja.abril.com.br/economia/a-promessa-de-caiado-dificil-de-acreditar/",
+          "domain": "veja.abril.com.br",
+          "seendate": "20260907T200000Z"
+        },
+        {
+          "title": "LatAm Expat & Nomad Daily Guide for Sunday , September 6 , 2026",
+          "url": "https://www.riotimesonline.com/latam-expat-nomad-daily-guide-for-sunday-september-6-2026/",
+          "domain": "riotimesonline.com",
+          "seendate": "20260906T141500Z"
+        },
+        {
+          "title": "Populares rendem dupla após roubo de moto em Craíbas",
+          "url": "https://www.alagoas24horas.com.br/1760335/dupla-rendida-por-populares-em-craibas-e-presa-apos-roubo-de-motocicleta/",
+          "domain": "alagoas24horas.com.br",
+          "seendate": "20260906T170000Z"
+        }
+      ],
+      "articles_raw_count": 8,
+      "source_cap": 8,
+      "source_capped": true,
+      "count_at_cap": true,
+      "articles_dropped_malformed": 0,
+      "channel": "gdelt",
+      "gnews_filter": {
+        "raw": 6,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 6,
+        "kept": 0,
+        "capped": false
+      },
+      "attributable_source_absent": false
+    }
+  },
+  "calendar_hits": [],
+  "gaps": [
+    {
+      "source": "snapshot",
+      "scope": "prev",
+      "reason": "前一份快照为 2026-09-05、非 2026-09-07:比对基准与本日不相邻,prev_primary / prev_ref_date / source_changed_from 均以 2026-09-05 为准",
+      "at": "2026-09-08T02:10:35+00:00"
+    },
+    {
+      "source": "exchange-api",
+      "scope": "all",
+      "reason": "HTTPError: HTTP Error 404: Not Found; HTTPError: HTTP Error 404: Not Found",
+      "at": "2026-09-08T02:10:36+00:00"
+    }
+  ],
+  "meta": {
+    "collector_version": "0.1.0",
+    "caps": {
+      "official_daily": 3,
+      "gdelt_records": 8,
+      "gnews_records": 99
+    }
+  },
+  "derived": {
+    "schema_version": 4,
+    "rates": {
+      "PHP": {
+        "chg_pct_1d": -0.014,
+        "range_5d_low": 62.397,
+        "range_5d_high": 62.65,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.109
+      },
+      "THB": {
+        "chg_pct_1d": -0.076,
+        "range_5d_low": 32.895,
+        "range_5d_high": 33.265,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.002
+      },
+      "BRL": {
+        "chg_pct_1d": 0.288,
+        "range_5d_low": 5.1114,
+        "range_5d_high": 5.1989,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.307
+      },
+      "EUR": {
+        "chg_pct_1d": 0.0,
+        "range_5d_low": 0.86044,
+        "range_5d_high": 0.86371,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.07
+      }
+    },
+    "events": {
+      "PHP": {
+        "count": 4,
+        "count_prev": 0,
+        "count_delta": 4,
+        "channel_changed_from": null,
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": false,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 4 条"
+      },
+      "THB": {
+        "count": 1,
+        "count_prev": 0,
+        "count_delta": 1,
+        "channel_changed_from": null,
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": false,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 1 条"
+      },
+      "BRL": {
+        "count": 8,
+        "count_prev": 8,
+        "count_delta": 0,
+        "channel_changed_from": null,
+        "count_capped": true,
+        "count_prev_capped": true,
+        "sample_capped": true,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 8 条(已顶到当日采集上限(8 条),实际篇数只多不少、源返回的原始样本顶到其上限,滤后条数是下界)"
+      },
+      "EUR": {
+        "count": 4,
+        "count_prev": 7,
+        "count_delta": null,
+        "channel_changed_from": "gdelt",
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": false,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 4 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
+      },
+      "USD": {
+        "count": 3,
+        "count_prev": 0,
+        "count_delta": 3,
+        "channel_changed_from": null,
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": true,
+        "dropped_malformed": 0,
+        "main_sample_capped": true,
+        "events_verdict": "当日采到 3 条(源返回的原始样本顶到其上限,滤后条数是下界)"
+      }
+    },
+    "real_rate": {
+      "US": {
+        "value": 0.26,
+        "policy_rate": 3.625,
+        "policy_period": "2026-09-01",
+        "cpi": 3.365,
+        "cpi_period": "2026-07"
+      },
+      "EA": {
+        "value": -0.693,
+        "policy_rate": 2.25,
+        "policy_period": "2026-09-01",
+        "cpi": 2.942874,
+        "cpi_period": "2026-07"
+      },
+      "PH": {
+        "value": -1.1,
+        "policy_rate": 5.0,
+        "policy_period": "2026-08-28",
+        "cpi": 6.1,
+        "cpi_period": "2026-08"
+      },
+      "TH": {
+        "value": -0.947,
+        "policy_rate": 1.0,
+        "policy_period": "2026-08-27",
+        "cpi": 1.947079,
+        "cpi_period": "2026-07"
+      },
+      "BR": {
+        "value": 9.557,
+        "policy_rate": 14.0,
+        "policy_period": "2026-09-01",
+        "cpi": 4.4430246091,
+        "cpi_period": "2026-07"
+      }
+    }
+  }
+}
