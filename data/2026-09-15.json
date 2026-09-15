@@ -1,0 +1,804 @@
+{
+  "date": "2026-09-15",
+  "run_at": "2026-09-15T01:22:53+00:00",
+  "schema_version": 1,
+  "rates": {
+    "PHP": {
+      "primary": 62.868,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 62.629,
+      "ref_date": "2026-09-14",
+      "prev_ref_date": "2026-09-11"
+    },
+    "THB": {
+      "primary": 33.25,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 33.065,
+      "ref_date": "2026-09-14",
+      "prev_ref_date": "2026-09-11"
+    },
+    "BRL": {
+      "primary": 5.1566,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 5.1108,
+      "ref_date": "2026-09-14",
+      "prev_ref_date": "2026-09-11"
+    },
+    "EUR": {
+      "primary": 0.86573,
+      "secondary": null,
+      "primary_source": "frankfurter",
+      "deviation_pct": null,
+      "suspect": false,
+      "prev_primary": 0.86266,
+      "ref_date": "2026-09-14",
+      "prev_ref_date": "2026-09-11"
+    }
+  },
+  "macro": [
+    {
+      "value": 3.397,
+      "prev": 3.365,
+      "period": "2026-08",
+      "source": "bls",
+      "series_id": "BLS/CUUR0000SA0",
+      "economy": "US",
+      "indicator": "CPI 同比",
+      "is_new_release": false,
+      "lag_months": 1
+    },
+    {
+      "value": 2.942874,
+      "prev": 2.748918,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_LONG_CPI/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "CPI 同比",
+      "lag_months": 2
+    },
+    {
+      "value": 6.1,
+      "prev": 6.2,
+      "period": "2026-08",
+      "prev_period": "2026-07",
+      "source": "psa",
+      "series_id": "PSA/2M4ACP23/PH",
+      "released": "2026-09-04",
+      "next_release": "2026-10-07",
+      "economy": "PH",
+      "indicator": "CPI 同比",
+      "is_new_release": false,
+      "lag_months": 1
+    },
+    {
+      "value": 1.947079,
+      "prev": 2.419837,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_LONG_CPI/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "CPI 同比",
+      "lag_months": 2
+    },
+    {
+      "value": 4.4430246091,
+      "prev": 4.6413275481,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_LONG_CPI/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "CPI 同比",
+      "lag_months": 2
+    },
+    {
+      "value": 3.625,
+      "prev": 3.875,
+      "period": "2026-09-08",
+      "prev_period": "2025-12-10",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/US",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": 2.25,
+      "prev": 2.0,
+      "period": "2026-09-08",
+      "prev_period": "2026-06-16",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": 5.0,
+      "prev": 4.75,
+      "period": "2026-09-04",
+      "prev_period": "2026-08-27",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/PH",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": 1.0,
+      "prev": 1.25,
+      "period": "2026-09-03",
+      "prev_period": "2026-02-24",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": 14.0,
+      "prev": 14.25,
+      "period": "2026-09-08",
+      "prev_period": "2026-08-05",
+      "source": "bis",
+      "series_id": "BIS/WS_CBPOL/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "政策利率",
+      "lag_months": 0
+    },
+    {
+      "value": -195171000000.0,
+      "prev": -214611000000.0,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/USA",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": 66702717946.69043,
+      "prev": 106565543901.5297,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/G163",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": -5663843363.94035,
+      "prev": -2470744910.51831,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/PHL",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": 1416919127.11114,
+      "prev": 423222852.001783,
+      "period": "2026-Q1",
+      "prev_period": "2025-Q4",
+      "source": "imf",
+      "series_id": "IMF/BOP/THA",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": -7811949096.10998,
+      "prev": -20051640375.66,
+      "period": "2026-Q2",
+      "prev_period": "2026-Q1",
+      "source": "imf",
+      "series_id": "IMF/BOP/BRA",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "经常账户",
+      "lag_months": null
+    },
+    {
+      "value": 103.2,
+      "prev": 102.62,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/US",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 108.66,
+      "prev": 108.77,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 88.47,
+      "prev": 88.71,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/PH",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 103.33,
+      "prev": 104.81,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 114.73,
+      "prev": 113.97,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/N/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "名义有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 108.25,
+      "prev": 107.84,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/US",
+      "is_new_release": false,
+      "economy": "US",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 102.55,
+      "prev": 102.71,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/XM",
+      "is_new_release": false,
+      "economy": "EA",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 97.85,
+      "prev": 98.07,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/PH",
+      "is_new_release": false,
+      "economy": "PH",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 97.72,
+      "prev": 99.97,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/TH",
+      "is_new_release": false,
+      "economy": "TH",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    },
+    {
+      "value": 118.89,
+      "prev": 118.28,
+      "period": "2026-07",
+      "prev_period": "2026-06",
+      "source": "bis",
+      "series_id": "BIS/WS_EER/R/BR",
+      "is_new_release": false,
+      "economy": "BR",
+      "indicator": "实际有效汇率",
+      "lag_months": 2
+    }
+  ],
+  "events": {
+    "USD": {
+      "articles": [
+        {
+          "title": "Week Ahead for FX, Bonds: All Eyes on Fed Rate Decision - WSJ",
+          "url": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxOT2FWUnZ2OXJzNkR6VEpTYXhoMDZ2Mm1VYkZ3N1NCT051SHk2S1FxbnNIcGtBam1pNGN5M2lCazQwMFV5UHBNQUVERTVyTHd5VmFHaXBmRWdRVG9IY0gzWWNkT1Q5cXl3VUw2eVFkeVc2ZVA2R1JTcnA0NE5BU1BjUWI2dTVTMXQ0cURjTGw0N0t3cERhdnNfMHlvbW80MGZ5aVhRRWFZX3Fadw?oc=5",
+          "domain": "wsj.com",
+          "seendate": "20260915T001108Z"
+        },
+        {
+          "title": "Fed's table is set for a rate hike, a first under Warsh - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMilAFBVV95cUxOTmR4eUlzVVZXLUFSSEpiLUs3UkxJMDYwVVpsU2o1REJIOUFSTlN3U2VBV2NRZ3hUTUNzSy1KRTNlODFaTmh6bGgtTFpCM3BCWE13c250dlBDTW5XaS1rWHpUMjV0cFJiSkxqN3g4OTVVZmJKN1dKSXZhRHZ2bW1Lbndrc3UxRGhjNG9LY01lZklaajE4?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260914T182551Z"
+        },
+        {
+          "title": "Fed Extends Pause on Reserve Management Purchases to Mid-October - Bloomberg.com",
+          "url": "https://news.google.com/rss/articles/CBMisgFBVV95cUxPOVRCM3FHR3JWMlY1cmFUYlVWeFM1VDJtNG4tbXFpNllCMzlyU09TOV9LZnk2UUdRZWp1Z0F6ZlJsVVFCREx6b1NvVWpVNk5kenQ4UzVsZWZlUDFpZVVVOWlIbDlLOW1TNzM5MGI3T2Z1WG5VRmVmN0JSNHliS0IyYU9ISmFhekVJdmdiaVVTUkZzX2M0b1ltaFRBNU55OHpVOUNBQWdVZldOWHNQR20yXzVR?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260914T191645Z"
+        },
+        {
+          "title": "Brics leaders act to hedge – not revolt – against US dollar dominance - South China Morning Post",
+          "url": "https://news.google.com/rss/articles/CBMivAFBVV95cUxOem5wblZkR21pRnBfOU02V1kzWDdvUG16UHpxMi0tb2oyQm1UX0pzc09zTmg2V1lzZHREZElTLU1GT0RxQjR6elVYRjhmZkgwLXZVaFU0aDN1NFEyWTA5cmpkRm9acGx1RU1hcmtHbXNMTzFDRkt0dUlEWXBHY3VWN1FQbjV5STA3a1pzbmdIODQ5cHF4aFhCa1dYTUpLYXFtd3MwRHQ0ci1vckZTVmVHV2RWdEVsZXZJTzdJRNIBvAFBVV95cUxOMkcyRXlIWjF6TDRJV1hkUHdpNC0tYURLb0p4emNyY0IyT0h5ZDZWRExMbElGMDl2TlMyWVVsWkduc0F2R05aeFNiMnh6RkdOWnp1Zzl2MkF1djZRZWJIeWszRWVmU2xDTkVVelM3Nzg0YmxfcHNLdklQVk5jMkdHWGtNb0swRWRSNEdiU2tKYTZMUk41dXh0cW1BVHNOWmF4N3ozaktqZnJVa3V0aVQxLXBwM2NHc1JHSmNWMA?oc=5",
+          "domain": "scmp.com",
+          "seendate": "20260914T150008Z"
+        },
+        {
+          "title": "Would Adopting the US Dollar Stabilize Venezuela’s Economy? - Bloomberg.com",
+          "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxPYm5iRHpIU2hBWTdabHg5MG16M1MybUxWUjlWUmpBTVRNLXhQYmFhMHBSTEpsVVJUcXptY0RTYVFnZ0I5eWpJV1k5VDRJSTJ4WTZIdDhodm55ZkRYNW5jWWtkblZwam1vRnloTkJ1czFDQXVDMnZLTVJya01DaHF6RFliRHVMbTJxaUl1TFU4QUd3UC00SC1PVU1ZNHRuaWp2T3RZTDdxejJ5U1JZUS1VRkhfWE42Wi00?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260914T093000Z"
+        },
+        {
+          "title": "Warsh's credibility is on the line this week as Trump policies put pressure on Fed to hike - CNBC",
+          "url": "https://news.google.com/rss/articles/CBMiygFBVV95cUxNeTZ6djlENTNzUnRwVmtrUXFDRS1JeVQ1b3ZPX2NFZlAxT2FEMFM1aUt4Tk9ueE1yQWg4TnJxdXhBQjIyTldXTkxSZUp3N192b3QwMzA2ekNubUxod2RCRHU4SGVZdURrODgwdjkwUHJmdWdkTW9OUjhXR1QtOEJmRFV5YkJ1WGlQTTFXdENuZXU1MHJFVjI5RlplWDZ2TUVPbXNpMHRIZU5QSWRHdFU2SVZyekRXSUVOT2VHZXVCYmdsVS1WT3BlREFB0gHKAUFVX3lxTE15Nnp2OUQ1M3NSdHBWa2tRcUNFLUl5VDVvdk9fY0VmUDFPYUQwUzVpS3hOT254TXJBaDhOcnF1eEFCMjJOV1dOTFJlSnc3X3ZvdDAzMDZ6Q25tTGh3ZEJEdThIZVl1RGs4ODB2OTBQcmZ1Z2RNb05SOFdHVC04QmZEVXliQnVYaVBNMVd0Q25ldTUwckVWMjlGWmVYNnZNRU9tc2kwdEhlTlBJZEd0VTZJVnJ6RFdJRU5PZUdldUJiZ2xVLVZPcGVEQUE?oc=5",
+          "domain": "cnbc.com",
+          "seendate": "20260914T172621Z"
+        },
+        {
+          "title": "Biggest risk for sinking bond market is Fed standing pat - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMiqAFBVV95cUxQQ2ZhcnB0a2xLd1ZoRXVlOGYtZ2prLUR4OWZLVXZfSkZKNFdhUGZ2d1ZXd2pGeUNSZE9sNkx1RTN3SlpzejVKVkhIVnFzbUNHSUd0T2NNY29nMENnRWxCUjBOUjJydXFXcWx4ZW10TkZzMFpScVhZbHdkUnU1bUM3bGFfZ3RfZ1FpcGpHZF9pczdNYUZ1QjZoa3dRR0Z2M3hKQlZhSnU0LU0?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260914T105416Z"
+        },
+        {
+          "title": "Scholar Rock says its first muscle-targeted SMA therapy will cost about $310,000 annually - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMivgFBVV95cUxPeXBrYTJnbjNILTRaWk5QNHBEeEpSWUtRZFZ3VC1qOEI2cVlwU1pkX1FKcDh0XzZOZjlEekh6dzdHMDJXWnpJa2k0dVIwYjNXbXA1Y2lhakM0SXluVFowNDVoektLUEJBRUNyZ2JRZjBUOGg5RmtOaDh4cFh4OHBPaHB2TUFneFNReDNMeHpFQkg3V19aSVM0Nm83UmJxRzlTajVXSTRQZVR5YjlrRzMtLXpZSGk5Rm1yY3NVTzln?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260914T185607Z"
+        },
+        {
+          "title": "China urges more FX hedging as strong yuan hits exporters, sources say - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMiuwFBVV95cUxNTDE4VV9zWTdrT2lBdjFqY2NHeXhZd2pHUlpMRDd0ZXBRcGFFOWVzUmtVOU9JckVjVHBJaEt5cDI2bHFBUjlHbHJHdlllazQ3aWJFWC1JcFVKRWRCVXM4MjNPVG5HaTB5czBtX3ppdTdDRDNYZG9nX2JsbmFhQktnUUZEbmFQR2RYbE5vNENVTk1TQ05jNVZOb3V0cC0tYXdZbmotUlUxd0lwdTdaN0s2a2FCeWhFUWZwRlp3?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260914T114545Z"
+        },
+        {
+          "title": "Dollar rises as Middle East conflict lifts oil, Fed hike looms - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMiswFBVV95cUxPQzNkV09NNEdQWTNoSFp6dGI0bWxzUU82ZWQ4TjZfWVI4bWZibFBJNVVBRmZpMC00WWVKdExyZUhKTEttU3pRTWczSEhMbVR4RzdSeHhBd0tnQy04aGVzMTcwZEJjenRKNGRhcDZQeWx3YTVhTkUxZC1tbnNud3ZyS1JYTmpFTDU4OXRjcWdaeTd0ZXRzaUxMM2VQUy11YXZidmRHVDU4VkJQbHExRHVXUUh5dw?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260914T002900Z"
+        },
+        {
+          "title": "Battered peso extends losing streak, nears 63 vs US dollar - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMimgFBVV95cUxQbHBBN2pYYkNrQWQzWjBmOF9GWldOMmEwX2ZYNWY0TDNMRW5nQzdja2V3N203dXl2ZUNidHlTSHhpV3JjVnZWTGJiY29na1BmSGxPU0tjS3k1THBZOWdCdzhYcHVJRFVOdTZ3cktCV3RLbF96Tk9TSklqUS14YUVsS09xcGF6ci1aT21URW1FT3Y0UXlPVnhjQVF30gGfAUFVX3lxTE52R19SdFdEeUJBUXVOa1N1TjBwVVM4WFZOYV9lUENVSGxVck5YczJMLXhYREVJc3BoSTdyR0N0Ukg3d3lNVTkwbHRJckwyZTVfRllDTDFRWWdHbUtsM2JPLWVBQ01RRm9kSnJmSV96OV9scW5nbmVsdFdaYmIxczZoaWUtdktHNi1MSHZOXy0yNVR0QnpkMGo2dk0zeVI0VQ?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260914T181200Z"
+        },
+        {
+          "title": "Gold Edges Lower as Hot US Inflation Bolsters Fed Rate-Hike Bets - Bloomberg.com",
+          "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxPU1UwdktIS01fNkIyUThhdTRMc0M3bW01SWVlQ3cxVnZZMldOMjJwYXFudHFIWVdZTFJDQUxzaEFjNkVOMW9qX2FVT20tc1dLNk1naS05UDE1X2JIM0V6X0V0MUs0b3lHeFBvXzl0b3YyNEE5YVJGdFZIZ1RMMGtUcmdHbXV4eGNLNzRaaXo0ajRBbFo0NTBqcmt1SW1HTVJpZ2F2WXJWV3lxREFSSFVlSjBXcHZYZw?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260914T090347Z"
+        },
+        {
+          "title": "Global banks coalesce around Fed hike call after inflation surprises - Reuters",
+          "url": "https://news.google.com/rss/articles/CBMimwFBVV95cUxNTnlqS1c0ZUI3VGExTWl4c3VCbXVLUi1NMFZZNUNaMmdLYzR2RnRDZjFPbGhPVG83M2ZBSms4YTc0b04wMUtNTG9GWmJnM29BU1ZzOWpHTjVxWXhjNHd6TmhndFV0VWJEc2ZkVm45OWtTMEktQ2NBMEdsd3J0XzNTWE1SNXVUQ3hKWFQ1WUJKLVc1bjRVWlg5NnFyaw?oc=5",
+          "domain": "reuters.com",
+          "seendate": "20260914T024900Z"
+        }
+      ],
+      "articles_raw_count": 100,
+      "source_cap": 99,
+      "source_capped": true,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 100,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 87,
+        "kept": 13,
+        "capped": true
+      },
+      "attributable_source_absent": false,
+      "official": [
+        {
+          "title": "Minutes of the Board's discount rate meetings on July 20 and July 29, 2026",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260825a.htm",
+          "published": "Tue, 25 Aug 2026 18:00:00 GMT",
+          "issuer": "Fed"
+        },
+        {
+          "title": "Minutes of the Federal Open Market Committee, July 28–29, 2026",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260819a.htm",
+          "published": "Wed, 19 Aug 2026 18:00:00 GMT",
+          "issuer": "Fed"
+        },
+        {
+          "title": "Federal Reserve issues FOMC statement",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+          "published": "Wed, 29 Jul 2026 18:00:00 GMT",
+          "issuer": "Fed"
+        }
+      ]
+    },
+    "EUR": {
+      "articles": [
+        {
+          "title": "ECB’s Schnabel Says Energy-Price Trends ‘Quite Concerning’ - Bloomberg.com",
+          "url": "https://news.google.com/rss/articles/CBMiqwFBVV95cUxQUU04S09lNVdKNFpkV2pKQW9OaFpPWFdwZ25qNTVpbkZJcE5TVlFTUXZNOVV0THhTbGZKamZYVW8tdFVCTG9icklWUWhGNG9sU3FKeHJZdHZBRFdndV9WcG5aOGMtMk1rOW91VUtpeVhHVkVfLW5ROEFGODgwTzV0WHc4RzNOVUdiSjl1emR4c1JyT050VmZBNl9hMGE1RlpsMWRPeWZBdXplUnM?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260914T100424Z"
+        },
+        {
+          "title": "High-Denomination Banknotes Aren’t Easiest Way to Launder Now, ECB’s Cipollone Says - Bloomberg.com",
+          "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxPUzc4M21paU5nZlhidmVWaWRuMGxWaG9OS3JKYzNPVWh5SFBiNkhlQUFFNUY3cExGNUtyZnR0NVgzc3BkUVpiTG1ObHhhUVZKSVVjRERpdGRYR055U3FYSDYwbmVueTJyYVNJQmFGVGExZmdWRms4T2lkQ3RzU0NvTTRPTTFLWERoSml2c2FJMzQtME5KTmZyTUt5Y1VfaXpyd21FVjI0V2FqbC0yNDNHS1RuZ1A?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260914T152538Z"
+        },
+        {
+          "title": "Economists See at Least One More ECB Rate Hike: Research Roundup - Bloomberg.com",
+          "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxNRmVmbTBlSERYckpEREd0TkJobDBReGo0S3d3VXJWU1pac2dFdnl0V2ZTVmJwREs1WDdodkNsLThDYzhaSkRrU3ZaYkhZUE5xZFJhM0RtS1c0Zy1mYUlKOEc3MDIxREsyQUh3Q2ZGNV9Zczh6Z1B6SV9od3NOU3AydFF3SnNDaDUweHh3c0hkVnpKYXg4RHhuM0pTNm1KWThHbzNaY3NzbUZZSFpDdTFUTWZHdHY?oc=5",
+          "domain": "bloomberg.com",
+          "seendate": "20260914T091531Z"
+        }
+      ],
+      "articles_raw_count": 38,
+      "source_cap": 99,
+      "source_capped": false,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 38,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 35,
+        "kept": 3,
+        "capped": false
+      },
+      "attributable_source_absent": false,
+      "official": [
+        {
+          "title": "Christine Lagarde: A new age of capital: growth, sovereignty and AI",
+          "link": "https://www.ecb.europa.eu//press/key/date/2026/html/ecb.sp260914_2~a3f0efbee4.en.html",
+          "published": "Mon, 14 Sep 2026 17:15:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "Piero Cipollone: The future of euro cash: trusted today, designed for tomorrow",
+          "link": "https://www.ecb.europa.eu//press/key/date/2026/html/ecb.sp260914_1~91d3436449.en.html",
+          "published": "Mon, 14 Sep 2026 15:00:00 +0200",
+          "issuer": "ECB"
+        },
+        {
+          "title": "Isabel Schnabel: Macroeconomic, fiscal and financial stability in a shock-prone world",
+          "link": "https://www.ecb.europa.eu//press/key/date/2026/html/ecb.sp260914~0ffd556bc8.en.pdf",
+          "published": "Mon, 14 Sep 2026 11:15:00 +0200",
+          "issuer": "ECB"
+        }
+      ]
+    },
+    "PHP": {
+      "articles": [
+        {
+          "title": "PH external debt service up as principal payments climb - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMilwFBVV95cUxQY0ZmbGU2ZldNeHM3RVRqMGx2cE1OLU9SckJFTDNkTGVwbnNVZGVYRnYybV81cHlIZUVjc1FHTEtreE8yV3A3cWJ5bjhBTE0zVjVxZDZjc0RvNDdpbnk3TFJ1a1Y0Z0pDSmpjZ2lzTDh4ZGtkX09hNnlFVURSUjJhVWRta2xRNHZiakVfcWxHZGVsRTQzdUVV0gGcAUFVX3lxTE9pYmktc0JjSkJEQVdsMWdZUWJBRjZ1NGVvRFR1TFVDRkYxNlY0STFNNmo5VkFULUhuUVBtcDRKa1p3VU1wRkxyZHdFUnluQ1dZejF0QUp6a0pibmU3d1FVWHc1UlVSaFZFMmxaYk9lNnpoRVI4cVc5eGlGUzdOY3I1V25FdmtXeU5nem53R3hFcWtEY3J0UzY3NkdEYg?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260914T181100Z"
+        },
+        {
+          "title": "Peso nears P63:$1 level; stocks recover modestly - The Manila Times",
+          "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxOYkpSTE81eGhBREhCeTB3alpRX21RbnYxeVI2cWFrX3dtUDkzRU1sRVZjTTdyX1B3bjhfdHVOUmNjNF9ydkZNa2FUclpCUVl3eXRqbzFHN1VOX1FvbVNQNExDWVdmUGQ5UXk0VmthWVdJMFIxTFBPelZCcGZmTjI0cEhhXzc3LWdvY29GS0x2bUR1aTZ5YkVhbmZRUXp4X0RWOUdFdnQ3YTJ4U0RSdUE1d3JEUjPSAboBQVVfeXFMTTdlZlVJU3A5VFJvVlJxRjRHcDFNeURGYXJSdGFwdzBxdnBiSTVyM0RJZlZfSGVBNlQ0eU9oNEoxS0JlR2JFM2RSajMydjF3MjY4VHJGT3hZWUNKRjFDZ0IyMUQ0RmRINi1uZy1rVnRzX3JfZ2hrbkdaNnFMWW4xS05jeHdyXzkwUUREbTY5V216aXA1QVJuVnR5dWhBMFhBQm81YzBWcEp3Qy13d1I3N3BPdE9wcU9WRXNB?oc=5",
+          "domain": "manilatimes.net",
+          "seendate": "20260914T180358Z"
+        },
+        {
+          "title": "Peso closes at fresh record low of P62.86 to US dollar - GMA Network",
+          "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxPOXhralE3RDZnUkROczF3WGRpanQ0MmY0SHFUZTYxRE5abFVwUTZud2lSay1iYWI4OGtWV3kyeEFiejFNN3Ewa2NRaU5Qb0ZHd1dOTDlfbmY5R3VnM204RzRHS0p4Nmo4LUJkVFRobzlXNklCcTN2THloeDZQdTBlTkdTbVdyd3ZERExiUWtUOFlkbUhkN1hldEtvQnMxd1NTYWJreXNxV2QyM2JiTDN6VndMSTFRQdIBuwFBVV95cUxQSU5LLXhCQzNTUVJjUHlIR3dteW45eTJxcTZYUnRsY19NV3VCVzdJejhTVlAteVg2UFN5Wkk1RFk1SDM0NFZFaVlHSnliMGxXa05UczlCTjBaRnJDdjZJNHNzUDRzS2Y5blkzdWVyZ2NnNHBXYVRleEFDT1F5ajBhNmttMHVfWVU1WnZoUHYxNl9BZjl3MkVjTnM2NmVKRG9wdzdTbTFoQVdjR2lrVlYyaERpWG53UHlkUlNn?oc=5",
+          "domain": "gmanetwork.com",
+          "seendate": "20260914T084827Z"
+        },
+        {
+          "title": "Philippine peso, South Korean won falls most among Asian currencies - Interaksyon",
+          "url": "https://news.google.com/rss/articles/CBMixgFBVV95cUxOZkVLN3VEaTJpQ2RPM0tVRHNxRGp0QVN2cTItUlNfd2FDbjFiRXE2YnRFd2p6REVhT2x6dFBnYmk2ZlZaNkYtaFRpY2dUSm5uR3dfbmp1d3JIZl85cjI3Mmx5cVBuUEdlMUxXQ01kcDhPV25XRTR5aGxSTTZCaDV2NGZ3Y2xxbHJmVVZyTDRoUllzUXZtUjdCUkZ5ZXUzY0RaZE12NEVkT0ttaG90Wmt0Y0FlYjdHeGx6SzlUc2h6M3o5bEtPeWc?oc=5",
+          "domain": "interaksyon.philstar.com",
+          "seendate": "20260914T035404Z"
+        },
+        {
+          "title": "GCash drives faster international transfers and digital trust at the 2026 Philippine Tech Mission to Australia - SunStar Publishing Inc.",
+          "url": "https://news.google.com/rss/articles/CBMi5wFBVV95cUxPR2o5NGRDTW0yY1VZZFhFNWZGUVN3aGZob2NvUW4yeV9VRGgxeGE4Z25sOWZaZUEtNkJoNFpKeE5GdTFmd1REZlNIWXZ4T1hjMXFGWm9qT3NucnZUWThLWTcxVk95VGtoQWppMmRhSXBfdDJ3VDlRUjJOTWQxeTZhRnJZWXB6RXI3eFNZazRYTmRyNW9yNU5fV2lKNTVEZmVlWUxEMkFZSjRmdUFhbnBLU0JLUDhJLUVjelJ4Zkd3aXoxNTI5TEhhNXJidzVEaW5mYjhwelJIUFFwZG9COFU0US1Ma1VGREHSAfQBQVVfeXFMUGgyWkVUUHhVRUk2bTVQOU5jY1lfU2dyM2dYUWVpQWxuN2RPWDVpU0NjdU0wZm1qSzNnNU1PSkw2a0otVHk5STJaUXVQR0NSSm55OTd6N0VyRXZ2ZnNIQ21GYnpZVTdhc1djTkNfTGJ1UG5pYVc3UWhWYVUzZVlqTmRGYktSeE4tNmNpVkdMVDZqOXNpYjRRbWVmbEZRdmc0T18zMXlIblR1M3dzSFdjcDl2bE5RaG1kaTNoazR2X1NWYlVuXzdxWWlSQTQ4blJMdUR2VmZ5Xzc3MzdxMXNjQTBUQS10a1gxNW1mTE1iRUNjdWJLSA?oc=5",
+          "domain": "sunstar.com.ph",
+          "seendate": "20260914T040254Z"
+        },
+        {
+          "title": "Peso breaches 62.8 per dollar to hit new record low - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMikgFBVV95cUxPWFItMVhHZWRJbjJHbFhOeXhkM2t3LVA3QlZwQXFFX3JLQTgyeDVoZjdXMzhyZ2FwQ2dUMmJkdGV0aHJ0aHNfTDdtc2o1dVA4Wkstbm40UDdNZzM2Q29Obl95WGdhQkRSYnlqb2FYUC1pMVdxM1F2OHI3MDdBRUd6MktmZks2a3ZjX3NqaWR1bk5Ld9IBlwFBVV95cUxPdzJGSl9yZWRRSExHRHh4WkFFd3ZSZTJKV05NWXNJS1A5bFl2a3Z4clRjTnhKbi1fQUxNZi1pclRPRnhEVktMNTFpTm5GOTBRb3Z4TGN5ZWNQSGRsODZWcDFMNFlFRXZkWlVwRzhmZWU0a3Q0T3hsYXNwdnM2MXUzRlZ2TzBBOVNHOVNjUkNkdzdQMUV1VmlR?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260914T025500Z"
+        },
+        {
+          "title": "Battered peso extends losing streak, nears 63 vs US dollar - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMimgFBVV95cUxQbHBBN2pYYkNrQWQzWjBmOF9GWldOMmEwX2ZYNWY0TDNMRW5nQzdja2V3N203dXl2ZUNidHlTSHhpV3JjVnZWTGJiY29na1BmSGxPU0tjS3k1THBZOWdCdzhYcHVJRFVOdTZ3cktCV3RLbF96Tk9TSklqUS14YUVsS09xcGF6ci1aT21URW1FT3Y0UXlPVnhjQVF30gGfAUFVX3lxTE52R19SdFdEeUJBUXVOa1N1TjBwVVM4WFZOYV9lUENVSGxVck5YczJMLXhYREVJc3BoSTdyR0N0Ukg3d3lNVTkwbHRJckwyZTVfRllDTDFRWWdHbUtsM2JPLWVBQ01RRm9kSnJmSV96OV9scW5nbmVsdFdaYmIxczZoaWUtdktHNi1MSHZOXy0yNVR0QnpkMGo2dk0zeVI0VQ?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260914T181200Z"
+        },
+        {
+          "title": "Peso sinks to record low as dollar gains on rate-hike bets - Inquirer.net",
+          "url": "https://news.google.com/rss/articles/CBMimwFBVV95cUxNcG1EVE12cnZqbHNLMXFzdkhscTdfWGY1MzNaeXdxRGVLSVptTjFteFcyeHlFQVcxcGlzYTlwRHhiN1RzMFBwamtPWGxqSW9JcDBvU3VpbENxeXZxbUVNTFBOSjhsUjlDb2ctWmNHY1R5bFExUFpITkJjdWFhWVdfdkJvWTdGTkZUVVNlcElvT2xVNFVoUTB2cUgwY9IBoAFBVV95cUxQOTAzQjhNeTd4Mmo4Mmt2OXVJV25FbWNZOFgxalRmMjBQaUtCUDlOZG9RVERmeE1ZaW5qVDd6OGo5T3diYlFyMmNSbTc2Y3NwcWRMYUFfaEhmSTdQZnU2S1QyU0RXWmxjVzlZSDR0VEZIRXk4WjA2eVFZcnE2aU01U1pONTJaYzBybUVkSDFJZHVfMnRaSlpSb0ZNTnl1QkZF?oc=5",
+          "domain": "business.inquirer.net",
+          "seendate": "20260914T092400Z"
+        },
+        {
+          "title": "BSP honors Visayas partners in financial inclusion push - SunStar Publishing Inc.",
+          "url": "https://news.google.com/rss/articles/CBMikAFBVV95cUxOVG5MQXBJLXgwd0FwalRINHExaUk2ajVfQmdfOU12cDhuTjhOajF0eVJTWVN3TWVKMWhkanowWnNsQVZLcEJtNTFSVUt5YTRMN1drTHVnbnY3NnhkcUFLUE5ZZUdldTRtcmZnRUVsbjZBVE0wLXBmQzFQSXlhcV9wOUtFMHN3c1RwYlhDUXRQbG_SAZ4BQVVfeXFMTmtZb2gtYmhJbDlIUGJXMUJ4UE1XZlhVYnMwNjZwOGNVVVhVOWxTWUpFSVNEWW1WR2MzZXF2Q2E2ZEdyUDJrY3dObUpIZnNJcm9Eb0xtMktyR1BIZ0w2MldkcjlXUUFHb2FENV9iazVDZFhUeWxDbDRyM290M1Q0cEJTQ1dXdFdYOFYtdGYtQzBUSGJSb3NaSGJSTzRUclE?oc=5",
+          "domain": "sunstar.com.ph",
+          "seendate": "20260914T114300Z"
+        }
+      ],
+      "articles_raw_count": 31,
+      "source_cap": 99,
+      "source_capped": false,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 31,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 22,
+        "kept": 9,
+        "capped": false
+      },
+      "attributable_source_absent": false
+    },
+    "THB": {
+      "articles": [
+        {
+          "title": "Queen Sirikit commemorative notes return at face value from October 1 - Nation Thailand",
+          "url": "https://news.google.com/rss/articles/CBMiYkFVX3lxTE9KZ093MnR6NDJiRGE2bTdWRHozZUI3OGJvYVRheGo3MnBHdW9wTzBHOEVCb05uWnJtTEtYUndqNXJqdzFkRGNYbUxvZWhlanI5dlFZZnJzWFVHU0h4c0hqTVdB?oc=5",
+          "domain": "nationthailand.com",
+          "seendate": "20260914T071600Z"
+        }
+      ],
+      "articles_raw_count": 14,
+      "source_cap": 99,
+      "source_capped": false,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 14,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 13,
+        "kept": 1,
+        "capped": false
+      },
+      "attributable_source_absent": false
+    },
+    "BRL": {
+      "articles": [
+        {
+          "title": "Brazil rate outlook splits market as investors weigh further cuts - Valor International",
+          "url": "https://news.google.com/rss/articles/CBMizAFBVV95cUxONFBNLWo3RHAxNFFSQW1td3VrNjg4UDdDcGlyZDBqajBnT2lHNUdkcXM0bkV0aFpLSnUwdmFZU1BOUTZJVm5HSlB6RGxhNEhCRTdkRFc3Z0tnOURxdWo0UXNBWDdtWDdYcnVOb0xmRlZkMi1wOHY0WTFCWFNaQnRkVTB6YVgtbFcwczJDSGFRazVrd3dWZEhhZVNNQnR6Tms4Tl94VDV6elhWZmZjR1p6cjFrbzFKdW9yN0hjV0o4OGUxR1JrSTZHaUJGVk7SAdsBQVVfeXFMT1pDdDdVWEhhaWhCcHIzaGF1YTA4XzJhQU5DVlhLQzZpcndFeEhUQ2p0bHhGWTVtQ0xTQ0ZYMXNtUzlLa3ZKNGl1RVltYnhRaUR3MF92V1VFSFZDYXZPTk1IU3ZUMFl4OXhkWjJGRUh1WVBub3ZpN21reXFVWHUxVG9mQk5CcUhOb1F3S3drRVNlWm1fQV85c0VqY0NlV2YyVTM4RnMyZXI0S1YzWjduRjRwNFU0MW1KXzdxUFBKYy11OThrM0tuczZHek1VTGRkT1Vla2tOSzdfZTNr?oc=5",
+          "domain": "valorinternational.globo.com",
+          "seendate": "20260914T114953Z"
+        }
+      ],
+      "articles_raw_count": 18,
+      "source_cap": 99,
+      "source_capped": false,
+      "count_at_cap": false,
+      "articles_dropped_malformed": 0,
+      "channel": "gnews",
+      "gnews_filter": {
+        "raw": 18,
+        "undated": 0,
+        "out_window": 0,
+        "offlist": 17,
+        "kept": 1,
+        "capped": false
+      },
+      "attributable_source_absent": false
+    }
+  },
+  "calendar_hits": [],
+  "gaps": [
+    {
+      "source": "snapshot",
+      "scope": "prev",
+      "reason": "前一份快照为 2026-09-12、非 2026-09-14:比对基准与本日不相邻,prev_primary / prev_ref_date / source_changed_from 均以 2026-09-12 为准",
+      "at": "2026-09-15T01:22:41+00:00"
+    },
+    {
+      "source": "exchange-api",
+      "scope": "all",
+      "reason": "HTTPError: HTTP Error 404: Not Found; HTTPError: HTTP Error 404: Not Found",
+      "at": "2026-09-15T01:22:43+00:00"
+    }
+  ],
+  "meta": {
+    "collector_version": "0.1.0",
+    "caps": {
+      "official_daily": 3,
+      "gdelt_records": 8,
+      "gnews_records": 99
+    }
+  },
+  "derived": {
+    "schema_version": 4,
+    "rates": {
+      "PHP": {
+        "chg_pct_1d": 0.382,
+        "range_5d_low": 62.491,
+        "range_5d_high": 62.868,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.077
+      },
+      "THB": {
+        "chg_pct_1d": 0.56,
+        "range_5d_low": 32.875,
+        "range_5d_high": 33.25,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.028
+      },
+      "BRL": {
+        "chg_pct_1d": 0.896,
+        "range_5d_low": 5.0889,
+        "range_5d_high": 5.1566,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.284
+      },
+      "EUR": {
+        "chg_pct_1d": 0.356,
+        "range_5d_low": 0.85822,
+        "range_5d_high": 0.86573,
+        "range_5d_days": 5,
+        "deviation_pct_prev": 0.054
+      }
+    },
+    "events": {
+      "PHP": {
+        "count": 9,
+        "count_prev": 1,
+        "count_delta": 8,
+        "channel_changed_from": null,
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": false,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 9 条"
+      },
+      "THB": {
+        "count": 1,
+        "count_prev": 0,
+        "count_delta": 1,
+        "channel_changed_from": null,
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": false,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 1 条"
+      },
+      "BRL": {
+        "count": 1,
+        "count_prev": 0,
+        "count_delta": 1,
+        "channel_changed_from": null,
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": false,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 1 条"
+      },
+      "EUR": {
+        "count": 3,
+        "count_prev": 8,
+        "count_delta": null,
+        "channel_changed_from": "gdelt",
+        "count_capped": false,
+        "count_prev_capped": true,
+        "sample_capped": false,
+        "dropped_malformed": 0,
+        "main_sample_capped": false,
+        "events_verdict": "当日采到 3 条(前一日取自 gdelt 通道,口径不可比,不给变化量)"
+      },
+      "USD": {
+        "count": 13,
+        "count_prev": 2,
+        "count_delta": 11,
+        "channel_changed_from": null,
+        "count_capped": false,
+        "count_prev_capped": false,
+        "sample_capped": true,
+        "dropped_malformed": 0,
+        "main_sample_capped": true,
+        "events_verdict": "当日采到 13 条(源返回的原始样本顶到其上限,滤后条数是下界)"
+      }
+    },
+    "real_rate": {
+      "US": {
+        "value": 0.228,
+        "policy_rate": 3.625,
+        "policy_period": "2026-09-08",
+        "cpi": 3.397,
+        "cpi_period": "2026-08"
+      },
+      "EA": {
+        "value": -0.693,
+        "policy_rate": 2.25,
+        "policy_period": "2026-09-08",
+        "cpi": 2.942874,
+        "cpi_period": "2026-07"
+      },
+      "PH": {
+        "value": -1.1,
+        "policy_rate": 5.0,
+        "policy_period": "2026-09-04",
+        "cpi": 6.1,
+        "cpi_period": "2026-08"
+      },
+      "TH": {
+        "value": -0.947,
+        "policy_rate": 1.0,
+        "policy_period": "2026-09-03",
+        "cpi": 1.947079,
+        "cpi_period": "2026-07"
+      },
+      "BR": {
+        "value": 9.557,
+        "policy_rate": 14.0,
+        "policy_period": "2026-09-08",
+        "cpi": 4.4430246091,
+        "cpi_period": "2026-07"
+      }
+    }
+  }
+}
